@@ -1,0 +1,18 @@
+# apps/worker/Dockerfile
+FROM node:20-alpine
+WORKDIR /app
+RUN apk add --no-cache poppler-utils tesseract-ocr tesseract-ocr-data-ara
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Context is root
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml PolicyMap.json ./
+COPY apps/worker/package.json ./apps/worker/
+
+RUN pnpm install --frozen-lockfile
+
+COPY apps/worker ./apps/worker
+COPY ["docs/V3 prompts", "./docs/V3 prompts"]
+
+WORKDIR /app/apps/worker
+# Run with tsx directly for simplicity
+CMD ["npx", "tsx", "src/index.ts", "dev"]

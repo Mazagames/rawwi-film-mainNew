@@ -1,0 +1,153 @@
+/**
+ * Policy map: single source of truth for articles and atoms (Raawi report taxonomy).
+ * Loads from PolicyMap.json at repo root.
+ * Article 25 = admin only; Article 26 = out of scope (no findings).
+ */
+import { readFileSync, existsSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Resolve PolicyMap.json path with fallback logic.
+ * 1. Try POLICY_MAP_PATH env var
+ * 2. Try common locations (repo root, cwd, /app)
+ * 3. Throw clear error if not found
+ */
+function resolvePolicyMapPath(): string {
+  // 1. Env var override
+  if (process.env.POLICY_MAP_PATH) {
+    const envPath = process.env.POLICY_MAP_PATH;
+    if (existsSync(envPath)) return envPath;
+    throw new Error(`POLICY_MAP_PATH set to "${envPath}" but file does not exist`);
+  }
+
+  // 2. Try common locations
+  const candidates = [
+    join(__dirname, "..", "..", "..", "PolicyMap.json"), // Repo root (dev monorepo)
+    join(process.cwd(), "PolicyMap.json"),               // Current working directory
+    "/app/PolicyMap.json",                                // Docker container standard path
+  ];
+
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      console.log(`[policyMap] Loaded from: ${path}`);
+      return path;
+    }
+  }
+
+  // 3. Not found - provide helpful error
+  throw new Error(
+    `PolicyMap.json not found. Tried:\n${candidates.map(c => `  - ${c}`).join('\n')}\n` +
+    `To fix: Set POLICY_MAP_PATH environment variable or ensure PolicyMap.json is copied to container.`
+  );
+}
+
+const POLICY_MAP_PATH = resolvePolicyMapPath();
+
+export type PolicyAtom = { atomId: string; title_ar: string };
+export type PolicyArticle = {
+  articleId: number;
+  title_ar: string;
+  atoms: PolicyAtom[];
+  adminOnly?: boolean;
+  outOfScope?: boolean;
+};
+
+export type PolicyMapData = { version?: string; articles: PolicyArticle[] };
+
+let cached: PolicyMapData | null = null;
+
+function loadPolicyMap(): PolicyMapData {
+  if (cached) return cached;
+  const raw = readFileSync(POLICY_MAP_PATH, "utf8");
+  cached = JSON.parse(raw) as PolicyMapData;
+  return cached;
+}
+
+/** All articles in PolicyMap order (1..26). */
+export function getPolicyArticles(): PolicyArticle[] {
+  return loadPolicyMap().articles;
+}
+
+/** Reviewer/actionable articles only: excludes admin/out-of-scope/empty-definition rows. */
+export function getActionablePolicyArticles(): PolicyArticle[] {
+  return getPolicyArticles().filter((a) => !a.adminOnly && !a.outOfScope && (a.atoms?.length ?? 0) > 0);
+}
+
+export function getActionablePolicyArticleIds(): number[] {
+  return getActionablePolicyArticles().map((a) => a.articleId);
+}
+
+/** Article by id; undefined if not found. */
+export function getPolicyArticle(articleId: number): PolicyArticle | undefined {
+  return getPolicyArticles().find((a) => a.articleId === articleId);
+}
+
+/** Atom title by articleId and atomId (e.g. "12-5"). Returns policy title or fallback. */
+export function getPolicyAtomTitle(articleId: number, atomId: string | null): string | undefined {
+  if (atomId == null || atomId === "") return undefined;
+  const norm = normalizeAtomId(atomId, articleId);
+  const art = getPolicyArticle(articleId);
+  const atom = art?.atoms?.find((a) => a.atomId === norm);
+  return atom?.title_ar;
+}
+
+/** Normalize atom id to "article-atom" form (e.g. "12-5", "4-1"). Handles legacy "5.2" -> "5-2". */
+export function normalizeAtomId(atomId: string | number | null, articleId?: number): string {
+  if (atomId == null || atomId === "") return "";
+  const s = String(atomId).trim();
+  if (/^\d+-\d+$/.test(s)) return s;
+  if (s.includes(".")) {
+    const [a, b] = s.split(".");
+    const art = articleId ?? (a ? parseInt(a, 10) : undefined);
+    const atomNum = b != null ? parseInt(b, 10) : NaN;
+    if (art != null && !Number.isNaN(art) && !Number.isNaN(atomNum)) return `${art}-${atomNum}`;
+  }
+  const num = typeof atomId === "number" ? atomId : parseInt(s.replace(/[^\d]/g, ""), 10);
+  if (Number.isNaN(num)) return s;
+  const art = articleId ?? (s.includes(".") ? parseInt(s.split(".")[0], 10) : undefined);
+  if (art != null && !Number.isNaN(art)) return `${art}-${num}`;
+  return s;
+}
+
+/** Numeric part of atom id for sorting (e.g. "12-5" -> 5). */
+export function atomIdNumeric(atomId: string | null): number {
+  if (!atomId) return 0;
+  const m = String(atomId).match(/-(\d+)$/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/** Allowed atom ids for an article (e.g. ["4-1","4-2",...]). Empty if article has no atoms. */
+export function getPolicyAtomIdsForArticle(articleId: number): string[] {
+  const art = getPolicyArticle(articleId);
+  return (art?.atoms ?? []).map((a) => a.atomId);
+}
+
+/** Return true if atomId is valid for the given articleId (exact or normalized match). */
+export function isValidAtomForArticle(articleId: number, atomId: string | null | undefined): boolean {
+  if (atomId == null || atomId === "") return true;
+  const allowed = getPolicyAtomIdsForArticle(articleId);
+  if (allowed.length === 0) return true;
+  const norm = normalizeAtomId(atomId, articleId);
+  return allowed.includes(norm);
+}
+
+/** Article ids that can have AI/lexicon findings (excludes 25 admin, 26 out-of-scope). */
+export function getScannableArticleIds(): number[] {
+  return getActionablePolicyArticleIds();
+}
+
+export const ADMIN_ONLY_ARTICLE_ID = 25;
+export const OUT_OF_SCOPE_ARTICLE_ID = 26;
+
+/**
+ * Hybrid V3 helper: derive stable concept code from article+atom.
+ * This is additive and keeps legacy article/atom fields unchanged.
+ */
+export function derivePolicyConceptCode(articleId: number, atomId: string | null | undefined): string {
+  const norm = normalizeAtomId(atomId ?? null, articleId);
+  if (!norm) return `ART${articleId}_GENERIC`;
+  return `ART${articleId}_ATOM_${norm.replace(/[^\d-]/g, "")}`;
+}

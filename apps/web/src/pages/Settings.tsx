@@ -1,0 +1,1110 @@
+import { useEffect, useState } from 'react';
+import { useLangStore } from '@/store/langStore';
+import { useAuthStore } from '@/store/authStore';
+import { useSettingsStore, AppSettings } from '@/store/settingsStore';
+import { cn } from '@/utils/cn';
+import { Eye, EyeOff, User, Settings as SettingsIcon, Shield, FileText, FlaskConical, LogOut } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/Card';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Switch } from '@/components/ui/Switch';
+import { Textarea } from '@/components/ui/Textarea';
+import { certificatesApi, clientPortalApi, settingsApi } from '@/api';
+import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabaseClient';
+import { validatePassword } from '@/utils/validation';
+import {
+  createScriptClassificationOption,
+  updateScriptClassificationOption,
+  useScriptClassificationOptions,
+} from '@/lib/scriptClassificationOptions';
+
+type TabId = 'account' | 'platform' | 'security' | 'branding' | 'features';
+
+export default function Settings() {
+  const { t, lang } = useLangStore();
+  const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<TabId>('account');
+  const { settings, updateSettings } = useSettingsStore();
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const {
+    options: scriptClassificationOptions,
+    isLoading: scriptClassificationLoading,
+    reload: reloadScriptClassifications,
+  } = useScriptClassificationOptions(true);
+  const [classificationDrafts, setClassificationDrafts] = useState<Array<{
+    id: string;
+    labelAr: string;
+    labelEn: string;
+    sortOrder: string;
+    isActive: boolean;
+  }>>([]);
+  const [newClassification, setNewClassification] = useState({
+    labelAr: '',
+    labelEn: '',
+    sortOrder: '',
+  });
+  const [savingClassificationId, setSavingClassificationId] = useState<string | null>(null);
+  const [creatingClassification, setCreatingClassification] = useState(false);
+  const [clientTerms, setClientTerms] = useState({ ar: '', en: '' });
+  const [savingClientTerms, setSavingClientTerms] = useState(false);
+  const [clientRegulations, setClientRegulations] = useState({ ar: '', en: '' });
+  const [savingClientRegulations, setSavingClientRegulations] = useState(false);
+  const [certificateFee, setCertificateFee] = useState({
+    baseAmount: '3500',
+    taxRatePercent: '15',
+    currency: 'SAR',
+  });
+  const [savingCertificateFee, setSavingCertificateFee] = useState(false);
+  const [savingMemoryMode, setSavingMemoryMode] = useState(false);
+  const [analysisMemoryLoaded, setAnalysisMemoryLoaded] = useState(false);
+
+  const isAdmin = user?.role === 'Super Admin' || user?.role === 'Admin';
+
+  const tabs = [
+    { id: 'account', label: t('myAccount'), icon: User },
+    ...(isAdmin ? [
+      { id: 'platform', label: t('platformSettings'), icon: SettingsIcon },
+      { id: 'security', label: t('security'), icon: Shield },
+      { id: 'branding', label: t('brandingReports'), icon: FileText },
+      { id: 'features', label: t('featureFlags'), icon: FlaskConical },
+    ] : [])
+  ] as { id: TabId; label: string; icon: any }[];
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const updateSection = <K extends keyof AppSettings>(section: K, values: Partial<AppSettings[K]>) => {
+    updateSettings({ [section]: { ...settings[section], ...values } } as Partial<AppSettings>);
+    toast.success(t('settingsUpdated'));
+  };
+
+  useEffect(() => {
+    setClassificationDrafts(
+      scriptClassificationOptions.map((option) => ({
+        id: option.id,
+        labelAr: option.label_ar,
+        labelEn: option.label_en,
+        sortOrder: String(option.sort_order),
+        isActive: option.is_active,
+      })),
+    );
+  }, [scriptClassificationOptions]);
+
+  useEffect(() => {
+    clientPortalApi.getTerms()
+      .then(setClientTerms)
+      .catch(() => {
+        setClientTerms({
+          ar: 'أقر بأن جميع البيانات والمستندات المقدمة صحيحة، وأوافق على شروط استخدام منصة راوي فيلم وسياسة معالجة الطلبات.',
+          en: 'I confirm that all submitted information and documents are accurate, and I agree to the Raawi Film platform terms and request review policy.',
+        });
+      });
+  }, []);
+
+  useEffect(() => {
+    clientPortalApi.getRegulations()
+      .then(setClientRegulations)
+      .catch(() => {
+        setClientRegulations({
+          ar: `1. المحظورات العامة لمحتوى الأفلام والمسلسلات
+
+1.1 الإساءة لأصول الشريعة الإسلامية المنصوص عليها علميًا في القرآن الكريم والأحاديث النبوية الشريفة المتواترة.
+
+1.2 المساس بالدولة السعودية أو ملوك المملكة العربية السعودية أو ولي العهد، سواء بالأقوال أو الأفعال أو السياق الداعي لذلك، تلميحًا أو صراحة.
+
+1.3 المحتوى الذي يمس الأمن الوطني للمملكة، أو المحتوى الداعي له أو المروج لذلك، ويندرج تحت ذلك:
+- الدعوة للعصيان المدني أو الاضطرابات أو مخالفة الأوامر الملكية والسامية.
+- المحتوى المتضمن تعليم صنع الأسلحة أو المتفجرات ويقلل من مخاطرها.
+- التشكيك بجهود المملكة في خدمة الإسلام والمواقع المقدسة.
+- الإساءة لرجال أو سيدات الأمن كافة بصفة التعميم أو التشكيك بهم كافة.
+
+1.4 المحتوى الوثائقي الذي لم يعتمد على المصادر التاريخية الموثقة والمعتمدة في المملكة، خاصة عند تناول تاريخ الدولة السعودية أو الشخصيات التاريخية الإسلامية.
+
+1.5 الإساءة إلى المملكة العربية السعودية في سياق جمعي أو التعميم على المجتمع أو فئة كبيرة منه.
+
+1.6 المحتوى الموجه للأطفال المتعلق بمواضيع الجرائم والأمن.
+
+2. المجتمع والأخلاق
+
+2.1 المحتوى المتضمن تعليم آلية صناعة المخدرات أو المسكرات.
+
+2.2 المحتوى المخالف لنظام حماية الطفل، بما في ذلك إيذاء الطفل أو ذوي الإعاقة أو السخرية من الإعاقة.
+
+2.3 الدعوة للشذوذ الجنسي أو المثلية الجنسية في المحتوى الموجه للعامة وغير الراشدين.
+
+2.4 إظهار مشاهد الممارسات الجنسية الصريحة.
+
+2.5 الألفاظ النابية بكافة لغاتها.`,
+          en: `1. General Prohibited Content for Films and Series
+
+1.1 Any offense to the established fundamentals of Islamic Sharia as stated in the Holy Quran and mutawatir Prophetic hadith.
+
+1.2 Any offense to the Saudi state, the Kings of Saudi Arabia, or the Crown Prince, whether by words, actions, or encouraging context, explicitly or implicitly.
+
+1.3 Content that harms national security or encourages/promotes such harm.
+
+1.4 Documentary content not based on reliable and officially accepted historical sources in Saudi Arabia.
+
+1.5 Content that insults Saudi Arabia collectively or broadly generalizes against society or large groups.
+
+1.6 Children-oriented content involving crime/security themes in harmful or glamorized framing.
+
+2. Society and Ethics
+
+2.1 Content teaching how to produce drugs or intoxicants.
+
+2.2 Content violating child protection principles, including harm/harassment/neglect toward children or persons with disabilities, or mocking disability.
+
+2.3 Advocacy or positive promotion of homosexuality in content directed to the general public and non-adults.
+
+2.4 Explicit sexual practice scenes.
+
+2.5 Profanity in any language.`,
+        });
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    certificatesApi.getFeeSettings()
+      .then(({ feeConfig }) => {
+        setCertificateFee({
+          baseAmount: String(feeConfig.baseAmount ?? 3500),
+          taxRatePercent: String(Math.round((feeConfig.taxRate ?? 0.15) * 10000) / 100),
+          currency: feeConfig.currency || 'SAR',
+        });
+      })
+      .catch(() => {
+        setCertificateFee({
+          baseAmount: '3500',
+          taxRatePercent: '15',
+          currency: 'SAR',
+        });
+      });
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin || analysisMemoryLoaded) return;
+    settingsApi.getAnalysisMemoryMode()
+      .then(({ mode }) => {
+        updateSettings({ platform: { ...settings.platform, analysisMemoryMode: mode } });
+        setAnalysisMemoryLoaded(true);
+      })
+      .catch(() => {
+        // keep local fallback
+        setAnalysisMemoryLoaded(true);
+      });
+  }, [analysisMemoryLoaded, isAdmin, settings.platform, updateSettings]);
+
+  const handleAnalysisMemoryModeChange = async (mode: 'memory1' | 'memory2') => {
+    updateSection('platform', { analysisMemoryMode: mode });
+    setSavingMemoryMode(true);
+    try {
+      await settingsApi.updateAnalysisMemoryMode(mode);
+      toast.success(lang === 'ar' ? 'تم تحديث وضع الذاكرة' : 'Analysis memory mode updated');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر تحديث وضع الذاكرة' : 'Failed to update analysis memory mode'));
+    } finally {
+      setSavingMemoryMode(false);
+    }
+  };
+
+  const handleSaveClientTerms = async () => {
+    if (!clientTerms.ar.trim() || !clientTerms.en.trim()) {
+      toast.error(lang === 'ar' ? 'يرجى إدخال الشروط بالعربية والإنجليزية' : 'Please enter Arabic and English terms');
+      return;
+    }
+    setSavingClientTerms(true);
+    try {
+      const response = await clientPortalApi.updateTerms(clientTerms);
+      setClientTerms(response.terms);
+      toast.success(lang === 'ar' ? 'تم حفظ شروط تسجيل المستفيدين' : 'Beneficiary registration terms saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر حفظ الشروط' : 'Failed to save terms'));
+    } finally {
+      setSavingClientTerms(false);
+    }
+  };
+
+  const handleSaveClientRegulations = async () => {
+    if (!clientRegulations.ar.trim() || !clientRegulations.en.trim()) {
+      toast.error(lang === 'ar' ? 'يرجى إدخال الضوابط بالعربية والإنجليزية' : 'Please enter Arabic and English regulations');
+      return;
+    }
+    setSavingClientRegulations(true);
+    try {
+      const response = await clientPortalApi.updateRegulations(clientRegulations);
+      setClientRegulations(response.regulations);
+      toast.success(lang === 'ar' ? 'تم حفظ ضوابط تسجيل المستفيدين' : 'Beneficiary registration regulations saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر حفظ الضوابط' : 'Failed to save regulations'));
+    } finally {
+      setSavingClientRegulations(false);
+    }
+  };
+
+  const handleNumberedListKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter') return;
+    const target = event.currentTarget;
+    const { selectionStart, selectionEnd, value } = target;
+    if (selectionStart !== selectionEnd) return;
+
+    const before = value.slice(0, selectionStart);
+    const lineStart = before.lastIndexOf('\n') + 1;
+    const currentLine = before.slice(lineStart);
+    const match = currentLine.match(/^(\s*)(\d+)\.\s/);
+    if (!match) return;
+
+    event.preventDefault();
+    const indent = match[1] ?? '';
+    const nextNumber = Number(match[2] ?? '0') + 1;
+    const insertion = `\n${indent}${nextNumber}. `;
+    const after = value.slice(selectionStart);
+    const nextValue = `${before}${insertion}${after}`;
+
+    target.value = nextValue;
+    const nextCursor = selectionStart + insertion.length;
+    target.setSelectionRange(nextCursor, nextCursor);
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  const handleSaveCertificateFee = async () => {
+    const baseAmount = Number(certificateFee.baseAmount);
+    const taxRatePercent = Number(certificateFee.taxRatePercent);
+    if (!Number.isFinite(baseAmount) || baseAmount < 0) {
+      toast.error(lang === 'ar' ? 'رسوم الشهادة الأساسية غير صالحة' : 'Invalid base certificate fee');
+      return;
+    }
+    if (!Number.isFinite(taxRatePercent) || taxRatePercent < 0 || taxRatePercent > 100) {
+      toast.error(lang === 'ar' ? 'نسبة الضريبة يجب أن تكون بين 0 و100' : 'Tax percent must be between 0 and 100');
+      return;
+    }
+    setSavingCertificateFee(true);
+    try {
+      const response = await certificatesApi.updateFeeSettings({
+        baseAmount,
+        taxRate: taxRatePercent / 100,
+        currency: certificateFee.currency || 'SAR',
+      });
+      setCertificateFee({
+        baseAmount: String(response.feeConfig.baseAmount),
+        taxRatePercent: String(Math.round(response.feeConfig.taxRate * 10000) / 100),
+        currency: response.feeConfig.currency,
+      });
+      toast.success(lang === 'ar' ? 'تم حفظ رسوم الشهادة' : 'Certificate fee saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر حفظ رسوم الشهادة' : 'Failed to save certificate fee'));
+    } finally {
+      setSavingCertificateFee(false);
+    }
+  };
+
+  const updateClassificationDraft = (id: string, updates: Partial<{
+    labelAr: string;
+    labelEn: string;
+    sortOrder: string;
+    isActive: boolean;
+  }>) => {
+    setClassificationDrafts((drafts) => drafts.map((draft) => (
+      draft.id === id ? { ...draft, ...updates } : draft
+    )));
+  };
+
+  const handleSaveClassification = async (draft: {
+    id: string;
+    labelAr: string;
+    labelEn: string;
+    sortOrder: string;
+    isActive: boolean;
+  }) => {
+    if (!draft.labelAr.trim() || !draft.labelEn.trim()) {
+      toast.error(lang === 'ar' ? 'أدخل الاسم العربي والإنجليزي' : 'Enter both Arabic and English labels');
+      return;
+    }
+    setSavingClassificationId(draft.id);
+    try {
+      await updateScriptClassificationOption(draft.id, {
+        labelAr: draft.labelAr,
+        labelEn: draft.labelEn,
+        sortOrder: Number.parseInt(draft.sortOrder || '0', 10) || 0,
+        isActive: draft.isActive,
+      });
+      await reloadScriptClassifications();
+      toast.success(lang === 'ar' ? 'تم تحديث التصنيف' : 'Classification updated');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر تحديث التصنيف' : 'Failed to update classification'));
+    } finally {
+      setSavingClassificationId(null);
+    }
+  };
+
+  const handleToggleClassification = async (draft: {
+    id: string;
+    labelAr: string;
+    labelEn: string;
+    sortOrder: string;
+    isActive: boolean;
+  }) => {
+    setSavingClassificationId(draft.id);
+    try {
+      await updateScriptClassificationOption(draft.id, {
+        isActive: !draft.isActive,
+      });
+      await reloadScriptClassifications();
+      toast.success(lang === 'ar'
+        ? (draft.isActive ? 'تم إيقاف التصنيف' : 'تم تفعيل التصنيف')
+        : (draft.isActive ? 'Classification disabled' : 'Classification enabled'));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر تحديث حالة التصنيف' : 'Failed to update classification status'));
+    } finally {
+      setSavingClassificationId(null);
+    }
+  };
+
+  const handleCreateClassification = async () => {
+    if (!newClassification.labelAr.trim() || !newClassification.labelEn.trim()) {
+      toast.error(lang === 'ar' ? 'أدخل الاسم العربي والإنجليزي' : 'Enter both Arabic and English labels');
+      return;
+    }
+    setCreatingClassification(true);
+    try {
+      await createScriptClassificationOption({
+        labelAr: newClassification.labelAr,
+        labelEn: newClassification.labelEn,
+        sortOrder: Number.parseInt(newClassification.sortOrder || '0', 10) || 0,
+      });
+      setNewClassification({ labelAr: '', labelEn: '', sortOrder: '' });
+      await reloadScriptClassifications();
+      toast.success(lang === 'ar' ? 'تمت إضافة التصنيف' : 'Classification added');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر إضافة التصنيف' : 'Failed to add classification'));
+    } finally {
+      setCreatingClassification(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentPassword.trim()) {
+      toast.error(lang === 'ar' ? 'أدخل كلمة المرور الحالية' : 'Enter your current password');
+      return;
+    }
+    if (!newPassword.trim()) {
+      toast.error(lang === 'ar' ? 'أدخل كلمة المرور الجديدة' : 'Enter new password');
+      return;
+    }
+    const validation = validatePassword(newPassword);
+    if (!validation.ok) {
+      toast.error(lang === 'ar' ? (validation.message ?? 'كلمة مرور غير صالحة') : (validation.message ?? 'Invalid password'));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error(lang === 'ar' ? 'كلمتا المرور غير متطابقتين' : 'Passwords do not match');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const email = user?.email?.trim();
+      if (!email) {
+        throw new Error(lang === 'ar' ? 'تعذر تحديد البريد الإلكتروني للحساب' : 'Unable to resolve account email');
+      }
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password: currentPassword,
+      });
+      if (authError) {
+        throw new Error(lang === 'ar' ? 'كلمة المرور الحالية غير صحيحة' : 'Current password is incorrect');
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      toast.success(lang === 'ar' ? 'تم تغيير كلمة المرور' : 'Password updated');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'فشل تغيير كلمة المرور' : 'Failed to update password'));
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-main">{t('settings')}</h1>
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Sub-sidebar Tabs */}
+        <div className="w-full md:w-64 flex-shrink-0">
+          <Card>
+            <CardContent className="p-2 space-y-1">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors text-sm font-medium text-start",
+                    activeTab === tab.id
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-surface-hover hover:text-text-main"
+                  )}
+                >
+                  <tab.icon className="w-5 h-5 flex-shrink-0" />
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 min-w-0">
+          <Card>
+            <CardContent className="p-6">
+              {activeTab === 'account' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">{t('profile')}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('fullName')}</label>
+                        <Input value={user?.name || ''} disabled />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('email')}</label>
+                        <Input value={user?.email || ''} disabled dir="ltr" className="text-start" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('role')}</label>
+                        <Input value={t(user?.role.toLowerCase().replace(' ', '') as any) || user?.role} disabled />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('preferredLanguage')}</label>
+                        <Select 
+                          value={lang}
+                          disabled
+                          options={[
+                            { value: 'ar', label: 'العربية (Arabic)' },
+                            { value: 'en', label: 'English' }
+                          ]} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <form
+                    className="space-y-4"
+                    onSubmit={handleChangePassword}
+                    aria-label={t('changePassword')}
+                  >
+                    {/* Hidden username for password-manager and a11y (Chrome recommends it) */}
+                    <input
+                      type="email"
+                      name="username"
+                      autoComplete="username"
+                      defaultValue={user?.email ?? ''}
+                      readOnly
+                      aria-hidden="true"
+                      className="absolute w-px h-px -m-px overflow-hidden p-0 border-0 opacity-0 pointer-events-none"
+                    />
+                    <h3 className="text-lg font-bold text-text-main">{t('changePassword')}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="md:col-span-2 max-w-md">
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('currentPassword')}</label>
+                        <div className="relative">
+                          <Input
+                            type={showCurrentPassword ? 'text' : 'password'}
+                            autoComplete="current-password"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            className="pe-11"
+                          />
+                          <button
+                            type="button"
+                            aria-label={showCurrentPassword ? (lang === 'ar' ? 'إخفاء كلمة المرور الحالية' : 'Hide current password') : (lang === 'ar' ? 'إظهار كلمة المرور الحالية' : 'Show current password')}
+                            className="absolute inset-y-0 end-0 flex items-center justify-center px-3 text-text-muted transition-colors hover:text-text-main"
+                            onClick={() => setShowCurrentPassword((v) => !v)}
+                          >
+                            {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-w-md">
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('newPassword')}</label>
+                        <div className="relative">
+                          <Input
+                            type={showNewPassword ? 'text' : 'password'}
+                            autoComplete="new-password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="pe-11"
+                          />
+                          <button
+                            type="button"
+                            aria-label={showNewPassword ? (lang === 'ar' ? 'إخفاء كلمة المرور الجديدة' : 'Hide new password') : (lang === 'ar' ? 'إظهار كلمة المرور الجديدة' : 'Show new password')}
+                            className="absolute inset-y-0 end-0 flex items-center justify-center px-3 text-text-muted transition-colors hover:text-text-main"
+                            onClick={() => setShowNewPassword((v) => !v)}
+                          >
+                            {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-w-md">
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('confirmPassword')}</label>
+                        <div className="relative">
+                          <Input
+                            type={showConfirmPassword ? 'text' : 'password'}
+                            autoComplete="new-password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className="pe-11"
+                          />
+                          <button
+                            type="button"
+                            aria-label={showConfirmPassword ? (lang === 'ar' ? 'إخفاء تأكيد كلمة المرور' : 'Hide confirm password') : (lang === 'ar' ? 'إظهار تأكيد كلمة المرور' : 'Show confirm password')}
+                            className="absolute inset-y-0 end-0 flex items-center justify-center px-3 text-text-muted transition-colors hover:text-text-main"
+                            onClick={() => setShowConfirmPassword((v) => !v)}
+                          >
+                            {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <button type="submit" className="px-4 py-2 bg-primary text-white text-sm rounded-md font-medium hover:bg-primary/90 transition-colors disabled:opacity-50" disabled={changingPassword}>
+                      {changingPassword ? (lang === 'ar' ? 'جاري الحفظ…' : 'Saving…') : t('saveChanges')}
+                    </button>
+                  </form>
+
+                  <hr className="border-border" />
+
+                  <div>
+                    <button 
+                      onClick={handleLogout}
+                      className="flex items-center gap-2 px-4 py-2 bg-error/10 text-error text-sm rounded-md font-medium hover:bg-error/20 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4 rtl:rotate-180" />
+                      <span>{t('signOut')}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'platform' && isAdmin && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">{t('platformSettings')}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('defaultLanguage')}</label>
+                        <Select 
+                          value={settings.platform.defaultLanguage}
+                          onChange={(e) => updateSection('platform', { defaultLanguage: e.target.value as any })}
+                          options={[
+                            { value: 'ar', label: 'العربية' },
+                            { value: 'en', label: 'English' }
+                          ]}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('defaultReportMode')}</label>
+                        <Select 
+                          value={settings.platform.reportMode}
+                          onChange={(e) => updateSection('platform', { reportMode: e.target.value as any })}
+                          options={[
+                            { value: 'in_app', label: t('inApp') },
+                            { value: 'standalone', label: t('standaloneHtml') },
+                            { value: 'both', label: t('both') }
+                          ]}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('dateFormat')}</label>
+                        <Input 
+                          value={settings.platform.dateFormat} 
+                          onChange={(e) => updateSection('platform', { dateFormat: e.target.value })} 
+                          dir="ltr"
+                          className="text-start"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">
+                          {lang === 'ar' ? 'وضع ذاكرة التحليل' : 'Analysis Memory Mode'}
+                        </label>
+                        <Select
+                          value={settings.platform.analysisMemoryMode}
+                          onChange={(e) => void handleAnalysisMemoryModeChange(e.target.value as 'memory1' | 'memory2')}
+                          options={[
+                            { value: 'memory1', label: 'Memory1 (Current)' },
+                            { value: 'memory2', label: 'Memory2 (New)' },
+                          ]}
+                        />
+                        <p className="text-xs text-text-muted mt-1">
+                          {savingMemoryMode
+                            ? (lang === 'ar' ? 'جاري حفظ وضع الذاكرة...' : 'Saving memory mode...')
+                            : (lang === 'ar'
+                              ? 'هذا الخيار يحدد محرك الذاكرة المستخدم في التحليل القادم.'
+                              : 'This controls which memory engine is used for upcoming analyses.')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">
+                      {lang === 'ar' ? 'رسوم الشهادة' : 'Certificate Fees'}
+                    </h3>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <Input
+                        label={lang === 'ar' ? 'الرسوم الأساسية (ريال)' : 'Base Fee (SAR)'}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={certificateFee.baseAmount}
+                        onChange={(e) => setCertificateFee((state) => ({ ...state, baseAmount: e.target.value }))}
+                      />
+                      <Input
+                        label={lang === 'ar' ? 'الضريبة %' : 'Tax %'}
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={certificateFee.taxRatePercent}
+                        onChange={(e) => setCertificateFee((state) => ({ ...state, taxRatePercent: e.target.value }))}
+                      />
+                      <Input
+                        label={lang === 'ar' ? 'العملة' : 'Currency'}
+                        value={certificateFee.currency}
+                        maxLength={3}
+                        onChange={(e) => setCertificateFee((state) => ({ ...state, currency: e.target.value.toUpperCase() }))}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveCertificateFee()}
+                      disabled={savingCertificateFee}
+                      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {savingCertificateFee ? (lang === 'ar' ? 'جاري الحفظ...' : 'Saving...') : (lang === 'ar' ? 'حفظ رسوم الشهادة' : 'Save Certificate Fee')}
+                    </button>
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">
+                      {lang === 'ar' ? 'شروط تسجيل المستفيدين' : 'Beneficiary Registration Terms'}
+                    </h3>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <Textarea
+                        label={lang === 'ar' ? 'الشروط بالعربية' : 'Arabic Terms'}
+                        rows={6}
+                        value={clientTerms.ar}
+                        onChange={(e) => setClientTerms((state) => ({ ...state, ar: e.target.value }))}
+                        onKeyDown={handleNumberedListKeyDown}
+                      />
+                      <Textarea
+                        label={lang === 'ar' ? 'الشروط بالإنجليزية' : 'English Terms'}
+                        rows={6}
+                        value={clientTerms.en}
+                        onChange={(e) => setClientTerms((state) => ({ ...state, en: e.target.value }))}
+                        onKeyDown={handleNumberedListKeyDown}
+                      />
+                    </div>
+                    <p className="text-xs text-text-muted">
+                      {lang === 'ar'
+                        ? 'لإضافة تعداد رقمي: ابدأ السطر بـ "1. " ثم اضغط Enter للترقيم التلقائي.'
+                        : 'For numeric bullets: start a line with "1. " then press Enter for auto-numbering.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveClientTerms()}
+                      disabled={savingClientTerms}
+                      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {savingClientTerms ? (lang === 'ar' ? 'جاري الحفظ...' : 'Saving...') : (lang === 'ar' ? 'حفظ الشروط' : 'Save Terms')}
+                    </button>
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">
+                      {lang === 'ar' ? 'الضوابط العامة للأعمال الدرامية والوثائقية' : 'General Regulations for Dramatic and Documentary'}
+                    </h3>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <Textarea
+                        label={lang === 'ar' ? 'الضوابط بالعربية' : 'Arabic Regulations'}
+                        rows={6}
+                        value={clientRegulations.ar}
+                        onChange={(e) => setClientRegulations((state) => ({ ...state, ar: e.target.value }))}
+                        onKeyDown={handleNumberedListKeyDown}
+                      />
+                      <Textarea
+                        label={lang === 'ar' ? 'الضوابط بالإنجليزية' : 'English Regulations'}
+                        rows={6}
+                        value={clientRegulations.en}
+                        onChange={(e) => setClientRegulations((state) => ({ ...state, en: e.target.value }))}
+                        onKeyDown={handleNumberedListKeyDown}
+                      />
+                    </div>
+                    <p className="text-xs text-text-muted">
+                      {lang === 'ar'
+                        ? 'لإضافة تعداد رقمي: ابدأ السطر بـ "1. " ثم اضغط Enter للترقيم التلقائي.'
+                        : 'For numeric bullets: start a line with "1. " then press Enter for auto-numbering.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveClientRegulations()}
+                      disabled={savingClientRegulations}
+                      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {savingClientRegulations ? (lang === 'ar' ? 'جاري الحفظ...' : 'Saving...') : (lang === 'ar' ? 'حفظ الضوابط' : 'Save Regulations')}
+                    </button>
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">{t('versioningBehavior')}</h3>
+                    
+                    <div className="flex items-center justify-between p-4 bg-background rounded-lg border border-border">
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-sm text-text-main">{t('createVersionOnReplace')}</p>
+                      </div>
+                      <Switch 
+                        checked={settings.platform.createVersionOnFileReplace} 
+                        onCheckedChange={(c) => updateSection('platform', { createVersionOnFileReplace: c })} 
+                      />
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-4 bg-background rounded-lg border border-border">
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-sm text-text-main">{t('requireOverrideReason')}</p>
+                      </div>
+                      <Switch 
+                        checked={settings.platform.requireOverrideReason} 
+                        onCheckedChange={(c) => updateSection('platform', { requireOverrideReason: c })} 
+                      />
+                    </div>
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-bold text-text-main">
+                          {lang === 'ar' ? 'تصنيفات الأعمال' : 'Work Classifications'}
+                        </h3>
+                        <p className="text-sm text-text-muted">
+                          {lang === 'ar'
+                            ? 'أي تصنيف تضيفه هنا سيظهر تلقائياً في قوائم إضافة النصوص للإدارة والمستفيد.'
+                            : 'Any classification added here will automatically appear in script creation dropdowns for admins and clients.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void reloadScriptClassifications()}
+                        className="px-3 py-2 text-sm rounded-md border border-border bg-background hover:bg-surface-hover transition-colors"
+                      >
+                        {lang === 'ar' ? 'تحديث' : 'Refresh'}
+                      </button>
+                    </div>
+
+                    {scriptClassificationLoading ? (
+                      <div className="rounded-lg border border-border bg-background px-4 py-6 text-sm text-text-muted">
+                        {lang === 'ar' ? 'جاري تحميل التصنيفات...' : 'Loading classifications...'}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {classificationDrafts.map((draft) => (
+                          <div key={draft.id} className="rounded-lg border border-border bg-background p-4">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                              <Input
+                                label={lang === 'ar' ? 'الاسم بالعربية' : 'Arabic Label'}
+                                value={draft.labelAr}
+                                onChange={(e) => updateClassificationDraft(draft.id, { labelAr: e.target.value })}
+                              />
+                              <Input
+                                label={lang === 'ar' ? 'الاسم بالإنجليزية' : 'English Label'}
+                                value={draft.labelEn}
+                                onChange={(e) => updateClassificationDraft(draft.id, { labelEn: e.target.value })}
+                              />
+                              <Input
+                                label={lang === 'ar' ? 'الترتيب' : 'Sort Order'}
+                                type="number"
+                                value={draft.sortOrder}
+                                onChange={(e) => updateClassificationDraft(draft.id, { sortOrder: e.target.value })}
+                              />
+                              <div className="space-y-2">
+                                <label className="block text-sm font-medium text-text-main">
+                                  {lang === 'ar' ? 'الحالة' : 'Status'}
+                                </label>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className={cn(
+                                    'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium',
+                                    draft.isActive
+                                      ? 'bg-success/10 text-success'
+                                      : 'bg-surface-hover text-text-muted',
+                                  )}>
+                                    {draft.isActive
+                                      ? (lang === 'ar' ? 'نشط' : 'Active')
+                                      : (lang === 'ar' ? 'مخفي' : 'Hidden')}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleToggleClassification(draft)}
+                                    disabled={savingClassificationId === draft.id}
+                                    className="px-3 py-2 text-xs rounded-md border border-border bg-surface hover:bg-surface-hover transition-colors disabled:opacity-50"
+                                  >
+                                    {draft.isActive
+                                      ? (lang === 'ar' ? 'إيقاف' : 'Disable')
+                                      : (lang === 'ar' ? 'تفعيل' : 'Enable')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSaveClassification(draft)}
+                                    disabled={savingClassificationId === draft.id}
+                                    className="px-3 py-2 text-xs rounded-md bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
+                                  >
+                                    {savingClassificationId === draft.id
+                                      ? (lang === 'ar' ? 'جاري الحفظ…' : 'Saving…')
+                                      : (lang === 'ar' ? 'حفظ' : 'Save')}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="rounded-lg border border-dashed border-border bg-background p-4 space-y-4">
+                      <h4 className="font-semibold text-text-main">
+                        {lang === 'ar' ? 'إضافة تصنيف جديد' : 'Add New Classification'}
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <Input
+                          label={lang === 'ar' ? 'الاسم بالعربية' : 'Arabic Label'}
+                          value={newClassification.labelAr}
+                          onChange={(e) => setNewClassification((state) => ({ ...state, labelAr: e.target.value }))}
+                        />
+                        <Input
+                          label={lang === 'ar' ? 'الاسم بالإنجليزية' : 'English Label'}
+                          value={newClassification.labelEn}
+                          onChange={(e) => setNewClassification((state) => ({ ...state, labelEn: e.target.value }))}
+                        />
+                        <Input
+                          label={lang === 'ar' ? 'الترتيب' : 'Sort Order'}
+                          type="number"
+                          value={newClassification.sortOrder}
+                          onChange={(e) => setNewClassification((state) => ({ ...state, sortOrder: e.target.value }))}
+                        />
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            onClick={() => void handleCreateClassification()}
+                            disabled={creatingClassification}
+                            className="w-full h-10 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          >
+                            {creatingClassification
+                              ? (lang === 'ar' ? 'جاري الإضافة…' : 'Adding…')
+                              : (lang === 'ar' ? 'إضافة' : 'Add')}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'security' && isAdmin && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">{t('security')}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('sessionTimeout')}</label>
+                        <Select 
+                          value={Math.max(60, settings.security.sessionTimeoutMinutes).toString()}
+                          onChange={(e) => updateSection('security', { sessionTimeoutMinutes: Math.max(60, parseInt(e.target.value, 10) || 60) })}
+                          options={[
+                            { value: '60', label: '60' },
+                            { value: '120', label: '120' },
+                            { value: '240', label: '240' },
+                            { value: '480', label: '480' }
+                          ]}
+                        />
+                        <p className="text-xs text-text-muted mt-1">{lang === 'ar' ? 'الحد الأدنى الموصى به: 60 دقيقة (لتجنب انقطاع الجلسة).' : 'Minimum recommended: 60 minutes (avoids session interruption).'}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('auditLogRetention')}</label>
+                        <Select 
+                          value={settings.security.auditLogRetentionDays.toString()}
+                          onChange={(e) => updateSection('security', { auditLogRetentionDays: parseInt(e.target.value) })}
+                          options={[
+                            { value: '30', label: '30' },
+                            { value: '90', label: '90' },
+                            { value: '180', label: '180' },
+                            { value: '365', label: '365' }
+                          ]}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-background rounded-lg border border-border mt-4">
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-sm text-text-main">{t('forceRelogin')}</p>
+                      </div>
+                      <Switch 
+                        checked={settings.security.forceRelogin} 
+                        onCheckedChange={(c) => updateSection('security', { forceRelogin: c })} 
+                      />
+                    </div>
+                  </div>
+
+                  <hr className="border-border" />
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">{t('passwordPolicy')}</h3>
+                    <div className="p-4 bg-background rounded-lg border border-border">
+                      <p className="text-sm text-text-muted">{t('passwordPolicyDesc')}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'branding' && isAdmin && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">{t('brandingReports')}</h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('orgNameAr')}</label>
+                        <Input 
+                          value={settings.branding.orgNameAr} 
+                          onChange={(e) => updateSection('branding', { orgNameAr: e.target.value })} 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('orgNameEn')}</label>
+                        <Input 
+                          value={settings.branding.orgNameEn} 
+                          onChange={(e) => updateSection('branding', { orgNameEn: e.target.value })} 
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('logoUpload')}</label>
+                        <Input 
+                          value={settings.branding.logoUrl} 
+                          onChange={(e) => updateSection('branding', { logoUrl: e.target.value })} 
+                          placeholder="https://..."
+                          dir="ltr"
+                          className="text-start"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('footerNoteAr')}</label>
+                        <Input 
+                          value={settings.branding.footerNoteAr} 
+                          onChange={(e) => updateSection('branding', { footerNoteAr: e.target.value })} 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('footerNoteEn')}</label>
+                        <Input 
+                          value={settings.branding.footerNoteEn} 
+                          onChange={(e) => updateSection('branding', { footerNoteEn: e.target.value })} 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-1.5">{t('paperSize')}</label>
+                        <Input value="A4" disabled />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-background rounded-lg border border-border mt-4">
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-sm text-text-main">{t('showDecisionBadge')}</p>
+                      </div>
+                      <Switch 
+                        checked={settings.branding.showDecisionBadgeInPrint} 
+                        onCheckedChange={(c) => updateSection('branding', { showDecisionBadgeInPrint: c })} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'features' && isAdmin && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-text-main">{t('featureFlags')}</h3>
+                    
+                    <div className="flex items-center justify-between p-4 bg-background rounded-lg border border-border">
+                      <div className="space-y-1">
+                        <p className="font-medium text-sm text-text-main">{t('enableCertificates')}</p>
+                        <p className="text-xs text-text-muted">{t('featureCertDesc')}</p>
+                      </div>
+                      <Switch 
+                        checked={settings.features.enableCertificates} 
+                        onCheckedChange={(c) => updateSection('features', { enableCertificates: c })} 
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-background rounded-lg border border-border">
+                      <div className="space-y-1">
+                        <p className="font-medium text-sm text-text-main">{t('enableLexiconCsv')}</p>
+                        <p className="text-xs text-text-muted">{t('featureLexiconDesc')}</p>
+                      </div>
+                      <Switch 
+                        checked={settings.features.enableLexiconCsv} 
+                        onCheckedChange={(c) => updateSection('features', { enableLexiconCsv: c })} 
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-background rounded-lg border border-border">
+                      <div className="space-y-1">
+                        <p className="font-medium text-sm text-text-main">{t('enableHiddenOverrides')}</p>
+                        <p className="text-xs text-text-muted">{t('featureHiddenDesc')}</p>
+                      </div>
+                      <Switch 
+                        checked={settings.features.enableHiddenOverrides} 
+                        onCheckedChange={(c) => updateSection('features', { enableHiddenOverrides: c })} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,361 @@
+import { useState, type ReactNode } from 'react';
+import {
+  Award,
+  Bell,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Globe,
+  LayoutDashboard,
+  LogOut,
+  PlusSquare,
+  Settings,
+  ShieldCheck,
+} from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { cn } from '@/utils/cn';
+import { formatDateTimeValue } from '@/utils/dateFormat';
+
+export type ClientPortalSection =
+  | 'overview'
+  | 'scripts'
+  | 'new-script'
+  | 'script-view'
+  | 'payment'
+  | 'certificates'
+  | 'notifications'
+  | 'compliance-guidelines'
+  | 'settings';
+
+type ClientPortalLayoutProps = {
+  lang: 'ar' | 'en';
+  companyName: string;
+  beneficiaryType?: 'company' | 'individual';
+  userName?: string;
+  activeSection: ClientPortalSection;
+  onSectionChange: (section: ClientPortalSection) => void;
+  onToggleLanguage: () => void;
+  onLogout: () => void;
+  subscriptionLabel: string;
+  sectionBadges?: Partial<Record<ClientPortalSection, number>>;
+  notificationsMenu?: {
+    unreadCount: number;
+    items: Array<{
+      id: string;
+      title: string;
+      createdAt: string;
+      readAt?: string;
+    }>;
+    onOpenNotifications: () => void;
+    onMarkRead?: (id: string) => void;
+  };
+  children: ReactNode;
+};
+
+type NavItem = {
+  id: ClientPortalSection;
+  labelAr: string;
+  labelEn: string;
+  descriptionAr: string;
+  descriptionEn: string;
+  icon: typeof LayoutDashboard;
+  badge?: number;
+};
+
+const navItems: NavItem[] = [
+  {
+    id: 'overview',
+    labelAr: 'لوحة التحكم',
+    labelEn: 'Overview',
+    descriptionAr: 'ملخص سريع لحركة النصوص',
+    descriptionEn: 'Quick summary of script activity',
+    icon: LayoutDashboard,
+  },
+  {
+    id: 'scripts',
+    labelAr: 'نصوصي',
+    labelEn: 'My Scripts',
+    descriptionAr: 'متابعة الحالات والقرارات',
+    descriptionEn: 'Track statuses and decisions',
+    icon: FileText,
+  },
+  {
+    id: 'new-script',
+    labelAr: 'إضافة نص',
+    labelEn: 'Add Script',
+    descriptionAr: 'إضافة نص جديد',
+    descriptionEn: 'Submit a new script',
+    icon: PlusSquare,
+  },
+  {
+    id: 'certificates',
+    labelAr: 'الشهادات',
+    labelEn: 'Certificates',
+    descriptionAr: 'الشهادات والوثائق الصادرة',
+    descriptionEn: 'Issued certificates and documents',
+    icon: Award,
+  },
+  {
+    id: 'notifications',
+    labelAr: 'الإشعارات',
+    labelEn: 'Notifications',
+    descriptionAr: 'آخر التنبيهات والتحديثات',
+    descriptionEn: 'Latest alerts and updates',
+    icon: Bell,
+  },
+  {
+    id: 'compliance-guidelines',
+    labelAr: 'الضوابط العامة للأعمال الدرامية والوثائقية',
+    labelEn: 'General Regulations for Dramatic and Documentary Works',
+    descriptionAr: 'الضوابط العامة المنظمة للأعمال الدرامية والوثائقية',
+    descriptionEn: 'General regulations governing dramatic and documentary works',
+    icon: ShieldCheck,
+  },
+  {
+    id: 'settings',
+    labelAr: 'الإعدادات',
+    labelEn: 'Settings',
+    descriptionAr: 'بيانات الحساب',
+    descriptionEn: 'Account settings',
+    icon: Settings,
+  },
+];
+
+export function ClientPortalLayout({
+  lang,
+  companyName,
+  beneficiaryType = 'company',
+  userName,
+  activeSection,
+  onSectionChange,
+  onToggleLanguage,
+  onLogout,
+  subscriptionLabel,
+  sectionBadges,
+  notificationsMenu,
+  children,
+}: ClientPortalLayoutProps) {
+  const isArabic = lang === 'ar';
+  const isIndividual = beneficiaryType === 'individual';
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isNotifMenuOpen, setIsNotifMenuOpen] = useState(false);
+  const CollapseIcon = isArabic
+    ? (isSidebarCollapsed ? ChevronLeft : ChevronRight)
+    : (isSidebarCollapsed ? ChevronRight : ChevronLeft);
+
+  return (
+    <div className="client-portal-theme client-portal-shell relative isolate min-h-screen text-text-main">
+      <div className="flex min-h-screen w-full flex-col px-3 py-3 md:px-5 md:py-5">
+        <header className="client-portal-panel relative z-[200] mb-4 rounded-[calc(var(--radius)+0.75rem)] border border-border/70 px-4 py-4 shadow-[0_20px_60px_rgba(31,23,36,0.08)] md:px-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Building2 className="h-7 w-7" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-[0.24em] text-text-muted">
+                  {isArabic ? (isIndividual ? 'بوابة المستفيد الفرد' : 'بوابة المستفيدين') : (isIndividual ? 'Individual Beneficiary Portal' : 'Beneficiary Portal')}
+                </p>
+                <h1 className="text-xl font-bold md:text-2xl">{companyName}</h1>
+                <p className="text-sm text-text-muted">
+                  {isArabic
+                    ? 'بوابة لمتابعة النصوص والطلبات والوثائق'
+                    : 'Dashboard for scripts, requests, and documents'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+              {subscriptionLabel ? (
+                <span className="hidden" aria-hidden="true">
+                  <Badge variant="success">{subscriptionLabel}</Badge>
+                </span>
+              ) : null}
+              {userName ? <span className="px-2 text-sm text-text-muted">{userName}</span> : null}
+              {notificationsMenu ? (
+                <div className="relative">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsNotifMenuOpen((v) => !v)}
+                    className="relative"
+                  >
+                    <Bell className="h-4 w-4" />
+                    {notificationsMenu.unreadCount > 0 ? (
+                      <span className="absolute -right-2 -top-2 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold text-white">
+                        {notificationsMenu.unreadCount}
+                      </span>
+                    ) : null}
+                  </Button>
+                  {isNotifMenuOpen ? (
+                    <div className="absolute end-0 top-full z-[5000] mt-2 w-[360px] rounded-xl border border-border bg-background p-3 shadow-[0_24px_60px_rgba(31,23,36,0.25)]">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-text-main">{isArabic ? 'الإشعارات' : 'Notifications'}</p>
+                        <button
+                          type="button"
+                          className="text-xs text-primary"
+                          onClick={() => {
+                            setIsNotifMenuOpen(false);
+                            notificationsMenu.onOpenNotifications();
+                          }}
+                        >
+                          {isArabic ? 'عرض الكل' : 'View all'}
+                        </button>
+                      </div>
+                      <div className="max-h-64 space-y-2 overflow-auto">
+                        {notificationsMenu.items.length === 0 ? (
+                          <p className="py-3 text-center text-xs text-text-muted">{isArabic ? 'لا توجد إشعارات' : 'No notifications'}</p>
+                        ) : (
+                          notificationsMenu.items.map((item) => {
+                            const unread = !item.readAt;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className={cn(
+                                  'block w-full rounded-lg border p-2 text-start text-xs',
+                                  unread ? 'border-primary/40 bg-primary/5' : 'border-border bg-surface',
+                                )}
+                                onClick={() => {
+                                  notificationsMenu.onMarkRead?.(item.id);
+                                  setIsNotifMenuOpen(false);
+                                  notificationsMenu.onOpenNotifications();
+                                }}
+                              >
+                                <p className="font-semibold text-text-main">{item.title}</p>
+                                <p className="mt-1 text-text-muted">{formatDateTimeValue(item.createdAt, { lang })}</p>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <Button variant="outline" size="sm" onClick={onToggleLanguage}>
+                <Globe className="me-2 h-4 w-4" />
+                {isArabic ? 'English' : 'عربي'}
+              </Button>
+              <Button variant="outline" size="sm" onClick={onLogout}>
+                <LogOut className="me-2 h-4 w-4" />
+                {isArabic ? 'تسجيل الخروج' : 'Logout'}
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <div className={cn('relative z-0 grid flex-1 gap-4', isSidebarCollapsed ? 'lg:grid-cols-[92px_minmax(0,1fr)]' : 'lg:grid-cols-[300px_minmax(0,1fr)]')}>
+          <aside className={cn('client-portal-panel hidden rounded-[calc(var(--radius)+0.75rem)] border border-border/70 p-4 shadow-[0_20px_60px_rgba(31,23,36,0.06)] lg:block', isSidebarCollapsed && 'px-3')}>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              {!isSidebarCollapsed ? (
+                <div className="min-w-0">
+                  <p className="text-xs font-medium uppercase tracking-[0.24em] text-text-muted">
+                    {isArabic ? 'تنقل البوابة' : 'Portal Navigation'}
+                  </p>
+                  <p className="mt-1 text-sm text-text-muted">
+                    {isArabic ? 'يمكنك طي الشريط لتوسيع مساحة العمل.' : 'Collapse the sidebar to expand the workspace.'}
+                  </p>
+                </div>
+              ) : (
+                <span className="sr-only">{isArabic ? 'الشريط الجانبي' : 'Sidebar'}</span>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsSidebarCollapsed((value) => !value)}
+                className="shrink-0"
+                aria-label={isSidebarCollapsed
+                  ? (isArabic ? 'توسيع الشريط الجانبي' : 'Expand sidebar')
+                  : (isArabic ? 'طي الشريط الجانبي' : 'Collapse sidebar')}
+                title={isSidebarCollapsed
+                  ? (isArabic ? 'توسيع الشريط الجانبي' : 'Expand sidebar')
+                  : (isArabic ? 'طي الشريط الجانبي' : 'Collapse sidebar')}
+              >
+                <CollapseIcon className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <nav className={cn('space-y-2', !isSidebarCollapsed && 'mt-4')}>
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = item.id === activeSection;
+                const badgeValue = item.badge ?? sectionBadges?.[item.id];
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    data-active={active}
+                    onClick={() => onSectionChange(item.id)}
+                    className={cn(
+                      'client-portal-sidebar-link flex w-full rounded-[calc(var(--radius)+0.45rem)] px-4 py-3 text-start transition',
+                      isSidebarCollapsed ? 'items-center justify-center px-2' : 'items-start gap-3',
+                      active
+                        ? 'bg-primary/8 text-primary shadow-[0_10px_30px_rgba(103,42,85,0.08)]'
+                        : 'hover:bg-background text-text-main',
+                    )}
+                    aria-label={isArabic ? item.labelAr : item.labelEn}
+                    title={isArabic ? item.labelAr : item.labelEn}
+                  >
+                    <span className={cn('mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', active ? 'bg-primary text-white' : 'bg-background text-text-muted')}>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    {!isSidebarCollapsed ? (
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                          {isArabic ? item.labelAr : item.labelEn}
+                          {typeof badgeValue === 'number' && badgeValue > 0 ? (
+                            <Badge variant="outline" className="px-2 py-0 text-[10px]">
+                              {badgeValue}
+                            </Badge>
+                          ) : null}
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-text-muted">
+                          {isArabic ? item.descriptionAr : item.descriptionEn}
+                        </span>
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
+
+          <div className="min-w-0 space-y-4">
+            <div className="client-portal-panel flex gap-2 overflow-x-auto rounded-[calc(var(--radius)+0.6rem)] border border-border/70 p-2 shadow-[0_16px_40px_rgba(31,23,36,0.05)] lg:hidden">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = item.id === activeSection;
+                const badgeValue = item.badge ?? sectionBadges?.[item.id];
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onSectionChange(item.id)}
+                    className={cn(
+                      'flex min-w-max items-center gap-2 rounded-[calc(var(--radius)+0.4rem)] px-3 py-2 text-sm transition',
+                      active ? 'bg-primary text-white' : 'bg-background text-text-main',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span>{isArabic ? item.labelAr : item.labelEn}</span>
+                    {typeof badgeValue === 'number' && badgeValue > 0 ? (
+                      <Badge variant="outline" className="px-2 py-0 text-[10px]">
+                        {badgeValue}
+                      </Badge>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="min-w-0">{children}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

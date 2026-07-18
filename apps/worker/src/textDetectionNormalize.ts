@@ -1,0 +1,91 @@
+import { canonicalArabicToken, findStringMatches } from "./lexiconCache.js";
+import { isExactContiguousSpan } from "./exactContiguousMatch.js";
+
+const ARABIC_CHAR_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/u;
+const ARABIC_LETTER_GAP_RE = /(?<=[\u0621-\u064A\u066E-\u066F\u0671-\u06D3\u06FA-\u06FC\u06FF])\s+(?=[\u0621-\u064A\u066E-\u066F\u0671-\u06D3\u06FA-\u06FC\u06FF])/gu;
+
+type NormalizeOptions = {
+  stripPunctuation?: boolean;
+};
+
+function hasArabicChars(value: string): boolean {
+  return ARABIC_CHAR_RE.test(value);
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function shouldUseFlexibleArabicMatcher(rawNeedle: string): boolean {
+  const trimmed = rawNeedle.trim();
+  if (!trimmed || !hasArabicChars(trimmed)) return false;
+  const tokenCount = trimmed.split(/\s+/).filter(Boolean).length;
+  // Flexible regex matching is useful for short lexicon-style phrases, but it becomes
+  // disproportionately expensive for longer model-generated evidence snippets.
+  return trimmed.length <= 48 && tokenCount <= 6;
+}
+
+export function normalizeDetectionText(value: string, options: NormalizeOptions = {}): string {
+  const input = value ?? "";
+  let normalized = hasArabicChars(input)
+    ? canonicalArabicToken(input)
+    : input.normalize("NFC").toLowerCase();
+
+  if (options.stripPunctuation) {
+    normalized = normalized.replace(/[^\p{L}\p{N}\s]/gu, " ");
+  }
+
+  return normalized
+    .replace(ARABIC_LETTER_GAP_RE, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function includesNormalizedNeedle(
+  sourceText: string,
+  needle: string,
+  options: NormalizeOptions = {}
+): boolean {
+  const rawNeedle = needle ?? "";
+  if (hasArabicChars(rawNeedle)) {
+    const termType = rawNeedle.trim().includes(" ") ? "phrase" : "word";
+    const normalizedNeedle = normalizeDetectionText(needle, options);
+    if (!normalizedNeedle) return false;
+    const normalizedSource = normalizeDetectionText(sourceText, options);
+    if (termType === "word") {
+      const boundaryRegex = new RegExp(
+        `(^|[^\\p{L}\\p{N}_])(${escapeRegex(normalizedNeedle)})(?=[^\\p{L}\\p{N}_]|$)`,
+        "u"
+      );
+      if (boundaryRegex.test(normalizedSource)) return true;
+    } else if (normalizedSource.includes(normalizedNeedle)) {
+      return true;
+    }
+
+    if (!shouldUseFlexibleArabicMatcher(rawNeedle)) {
+      return false;
+    }
+
+    const matched = findStringMatches(sourceText, rawNeedle, termType).length > 0;
+    if (matched) return true;
+    if (termType === "word") return false;
+  }
+
+  const normalizedNeedle = normalizeDetectionText(needle, options);
+  if (!normalizedNeedle) return false;
+  const normalizedSource = normalizeDetectionText(sourceText, options);
+  return normalizedSource.includes(normalizedNeedle);
+}
+
+export function containsAnyNormalized(
+  sourceText: string,
+  needles: string[],
+  options: NormalizeOptions = {}
+): boolean {
+  return needles.some((needle) => includesNormalizedNeedle(sourceText, needle, options));
+}
+
+export function isDetectionVerbatim(sourceText: string, snippet: string): boolean {
+  if (!snippet || snippet.length === 0) return false;
+  return isExactContiguousSpan(sourceText, snippet);
+}

@@ -1,0 +1,294 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/Cairo-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/Cairo-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/Roboto-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/Roboto-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/Roboto-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
+  
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  
+  --font-arabic: 'Cairo', sans-serif;
+  --font-english: 'Poppins', sans-serif;
+
+  --radius-default: var(--radius);
+}
+
+@layer base {
+  :root {
+    /* 🎨 Master Identity File */
+    
+    /* Primary Colors */
+    --primary: #672a55;
+    --primary-hover: #7d3566;
+    --secondary: #76b6b7;
+    
+    /* Neutrals */
+    --background: #f5f3f8;
+    --surface: #ffffff;
+    --border: #e6deea;
+    --text-main: #1f1724;
+    --text-muted: #74697a;
+    
+    /* Semantic Colors */
+    --success: #1f9d69;
+    --warning: #c68a17;
+    --error: #cb4a59;
+    --info: #4f6ef7;
+  
+    /* Layout Tokens */
+    --radius: 0.65rem;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--text-main);
+    font-family: var(--font-english);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Font switching based on HTML dir attribute */
+  html[dir="rtl"] body {
+    font-family: var(--font-arabic);
+  }
+
+  /* Workspace imported script: Cairo for all nodes (overrides DOCX inline fonts). */
+  .script-import-body,
+  .script-import-body * {
+    font-family: var(--font-arabic) !important;
+  }
+
+  /* A4-style script sheet (workspace page mode + formatted scroll view) */
+  .workspace-a4-stage {
+    --script-sheet-font-size: 1.0625rem;
+    --script-sheet-line-height: 1.72;
+    --script-sheet-para-gap: 0.35em;
+    background: linear-gradient(165deg, #e4e9f0 0%, #d8dfe8 45%, #eef1f6 100%);
+    border-radius: var(--radius);
+  }
+  .workspace-a4-stage--fluid {
+    background: linear-gradient(165deg, #f0f3f8 0%, #e8ecf4 100%);
+    padding: 1.25rem 0.5rem;
+  }
+  .workspace-a4-zoom-inner {
+    width: 210mm;
+    max-width: 100%;
+  }
+  .workspace-a4-sheet {
+    width: 210mm;
+    max-width: 100%;
+    min-height: 297mm;
+    box-sizing: border-box;
+    background: #fff;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.06),
+      0 12px 40px rgba(15, 23, 42, 0.1);
+    border-radius: 2px;
+    padding: 22mm 20mm;
+    margin: 0 auto;
+  }
+  .workspace-a4-sheet--scroll {
+    min-height: min(297mm, 72vh);
+    width: min(210mm, 100%);
+  }
+  .workspace-a4-sheet .script-import-body {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    background: transparent !important;
+    font-size: var(--script-sheet-font-size) !important;
+    line-height: var(--script-sheet-line-height) !important;
+  }
+  .workspace-a4-sheet .script-import-body p,
+  .workspace-a4-sheet .script-import-body .pdf-line {
+    margin-bottom: var(--script-sheet-para-gap);
+  }
+  @media (max-width: 768px) {
+    .workspace-a4-sheet {
+      min-height: auto;
+      padding: 1rem 1.1rem;
+    }
+    .workspace-a4-zoom-inner {
+      width: 100%;
+    }
+  }
+
+  /* DOCX / screenplay-style paragraph classes (Mammoth styleMap) */
+  .script-import-body .script-docx-title {
+    font-size: 1.35em;
+    font-weight: 700;
+    margin: 0 0 0.5em;
+    text-align: center;
+  }
+  .script-import-body .script-docx-subtitle {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 0 0 1em;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .script-import-body .script-heading-1 {
+    font-size: 1.2em;
+    font-weight: 700;
+    margin: 1em 0 0.4em;
+  }
+  .script-import-body .script-heading-2,
+  .script-import-body .script-heading-3 {
+    font-size: 1.08em;
+    font-weight: 600;
+    margin: 0.85em 0 0.35em;
+  }
+  .script-import-body .script-scene-heading {
+    font-weight: 700;
+    margin-top: 1.15em;
+    margin-bottom: 0.45em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.98em;
+  }
+  .script-import-body .script-action {
+    margin-bottom: 0.5em;
+  }
+  .script-import-body .script-character {
+    text-align: center;
+    font-weight: 600;
+    margin-top: 0.9em;
+    margin-bottom: 0.12em;
+  }
+  .script-import-body .script-dialogue {
+    margin-inline: 18%;
+    margin-bottom: 0.3em;
+  }
+  .script-import-body .script-parenthetical {
+    margin-inline: 24%;
+    font-style: italic;
+    margin-bottom: 0.2em;
+    font-size: 0.96em;
+  }
+  .script-import-body .script-transition {
+    text-align: end;
+    font-weight: 600;
+    margin-top: 0.65em;
+    margin-bottom: 0.35em;
+  }
+  html[dir="rtl"] .script-import-body .script-transition {
+    text-align: start;
+  }
+  .script-import-body .script-general {
+    margin-bottom: 0.4em;
+  }
+  .script-import-body .pdf-line {
+    margin: 0 0 0.15em;
+  }
+  .script-import-body .pdf-page-body .pdf-line:last-child {
+    margin-bottom: 0;
+  }
+
+  @media print {
+    @page {
+      margin: 20mm 15mm;
+      size: A4;
+    }
+
+    body {
+      background-color: white !important;
+      color: black !important;
+      font-size: 11pt;
+    }
+
+    html[dir="rtl"] body {
+      font-family: 'Cairo', sans-serif !important;
+    }
+
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      box-shadow: none !important;
+      text-shadow: none !important;
+    }
+
+    .print\:hidden {
+      display: none !important;
+    }
+
+    .print\:break-inside-avoid {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+
+    .print\:break-before {
+      break-before: page !important;
+      page-break-before: always !important;
+    }
+
+    /* Simplify borders and shadows for print */
+    .print\:border-none {
+      border: none !important;
+    }
+
+    .print\:bg-transparent {
+      background: transparent !important;
+    }
+
+    .print\:text-black {
+      color: black !important;
+    }
+  }
+
+  /* Highlight wrapper for finding ranges (visible in all themes; unmistakable for lexicon/AI findings) */
+  .ap-highlight {
+    background: rgba(255, 0, 0, 0.25) !important;
+    outline: 2px solid rgba(255, 0, 0, 0.7) !important;
+    border-radius: 4px !important;
+    padding: 1px 3px !important;
+  }
+}

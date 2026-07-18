@@ -1,0 +1,1703 @@
+import { httpClient, USE_MOCK_API, API_BASE_URL } from './httpClient';
+import { prepareUnicodeForExtractTransport } from '@/utils/extractUnicode';
+import { Company, Script, ScriptVersion, Task, AnalysisJob, ChunkStatus, Finding, LexiconTerm, LexiconHistoryEntry, Report, ReportListItem, FindingReviewResponse, AnalysisModeProfile } from './models';
+import { supabase } from '@/lib/supabaseClient';
+
+/** Response from GET /me: current user with permissions from RBAC. */
+export interface MeResponse {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    permissions: string[];
+    allowedSections?: string[]; // NEW: Section-based permissions
+    canUseQuickAnalysis?: boolean;
+  };
+}
+
+export const authApi = {
+  login: (email: string, password: string) => httpClient.post('/auth/login', { email, password }),
+  /** Current user profile + permissions from RBAC tables. Requires auth. */
+  getMe: (): Promise<MeResponse> => httpClient.get('/me'),
+};
+
+export type AnalysisMemoryMode = 'memory1' | 'memory2';
+
+export const settingsApi = {
+  getAnalysisMemoryMode: (): Promise<{ mode: AnalysisMemoryMode }> =>
+    httpClient.get('/settings/analysis-memory'),
+  updateAnalysisMemoryMode: (mode: AnalysisMemoryMode): Promise<{ ok: true; mode: AnalysisMemoryMode }> =>
+    httpClient.put('/settings/analysis-memory', { mode }),
+};
+
+export interface ClientPortalRegisterBody {
+  beneficiaryType?: 'company' | 'individual';
+  name: string;
+  email: string;
+  companyEmail?: string;
+  password: string;
+  companyNameAr: string;
+  companyNameEn: string;
+  website?: string;
+  phone?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  postalCode?: string;
+  representativeName?: string;
+  representativeTitle?: string;
+  mobile?: string;
+  contactEmail?: string;
+  contactMobile?: string;
+  about?: string;
+  yearsOfExperience?: number | null;
+  companyLogoFile?: File | null;
+  legalDocuments?: {
+    cr?: File | null;
+    license?: File | null;
+    nationalAddress?: File | null;
+    mediaContentProductionLicense?: File | null;
+  };
+  acceptedTerms: boolean;
+  acceptedRegulations?: boolean;
+  otpVerificationToken?: string;
+  individualProfile?: {
+    fullName: string;
+    dateOfBirth: string;
+    nationality: string;
+    nationalIdOrIqama: string;
+    mobile: string;
+    cvFile?: File | null;
+    idDocumentFile?: File | null;
+  };
+}
+
+export interface ClientPortalSubmissionItem {
+  scriptId: string;
+  title: string;
+  type: string;
+  status: string;
+  createdAt: string;
+  expectedRank?: 'low' | 'medium' | 'high' | string | null;
+  receivedAt?: string | null;
+  currentVersionId?: string | null;
+  workClassification?: string | null;
+  synopsis?: string | null;
+  storySummary?: string | null;
+  scriptSummaryPdfUrl?: string | null;
+  hasSecurityScenes?: boolean;
+  securityContentAttachmentUrl?: string | null;
+  fileUrl?: string | null;
+  latestReportId?: string | null;
+  latestReportReviewStatus?: string | null;
+  latestReportCreatedAt?: string | null;
+}
+
+export interface ClientPortalRevisionCycleEvent {
+  id: string;
+  eventType: string;
+  actorUserId?: string | null;
+  payload?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ClientPortalRevisionCycleSnapshot {
+  id: string;
+  findingsTotal: number;
+  findingsApproved: number;
+  findingsViolation: number;
+  severityCounts?: Record<string, number>;
+  typeCounts?: Record<string, number>;
+  createdAt: string;
+}
+
+export interface ClientPortalRevisionCycleItem {
+  id: string;
+  cycleNumber: number;
+  sourceReportId?: string | null;
+  sourceJobId?: string | null;
+  sentBy: string;
+  sentByName?: string | null;
+  sentAt: string;
+  returnedAt?: string | null;
+  status: 'sent' | 'returned' | 'reanalyzed' | 'closed' | string;
+  adminNote?: string | null;
+  beneficiaryReturnedVersionId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  snapshots: ClientPortalRevisionCycleSnapshot[];
+  events: ClientPortalRevisionCycleEvent[];
+  sharedReports?: Array<{
+    id: string;
+    jobId: string;
+    reviewStatus: string;
+    reviewNotes?: string | null;
+    findingsCount: number;
+    severityCounts?: Record<string, number>;
+    createdAt: string;
+    sharedFormats?: Array<'pdf' | 'docx'>;
+  }>;
+  sourceReport?: {
+    id: string;
+    jobId: string;
+    reviewStatus: string;
+    reviewNotes?: string | null;
+    findingsCount: number;
+    severityCounts?: Record<string, number>;
+    createdAt: string;
+  } | null;
+  reanalyzedReport?: {
+    id: string;
+    jobId: string;
+    reviewStatus: string;
+    reviewNotes?: string | null;
+    findingsCount: number;
+    severityCounts?: Record<string, number>;
+    createdAt: string;
+  } | null;
+  comparisonSummary?: {
+    baseline_findings?: number;
+    reanalyzed_findings?: number;
+    findings_delta?: number;
+    canonical?: {
+      baseline_count?: number;
+      reanalyzed_count?: number;
+      persisting_count?: number;
+      resolved_count?: number;
+      new_count?: number;
+    };
+  } | null;
+}
+
+export interface ClientPortalRevisionCyclesResponse {
+  script: {
+    id: string;
+    title: string;
+    status: string;
+    fileUrl?: string | null;
+  };
+  cycles: ClientPortalRevisionCycleItem[];
+}
+
+export interface ClientPortalSharedCycleReportPayloadResponse {
+  script: {
+    id: string;
+    title: string;
+    status: string;
+  };
+  cycle: {
+    id: string;
+    cycleNumber: number;
+  };
+  report: {
+    id: string;
+    jobId: string;
+    reviewStatus: string;
+    reviewNotes?: string | null;
+    findingsCount: number;
+    severityCounts?: Record<string, number> | null;
+    summaryJson?: Record<string, unknown> | null;
+    createdAt: string;
+  };
+  findings: Array<{
+    id: string;
+    source: string;
+    articleId: number;
+    atomId?: string | null;
+    severity: string;
+    titleAr: string;
+    descriptionAr?: string | null;
+    rationaleAr?: string | null;
+    evidenceSnippet: string;
+    pageNumber?: number | null;
+    createdAt: string;
+  }>;
+}
+
+export interface AdminClientSubmissionItem {
+  scriptId: string;
+  title: string;
+  type: string;
+  status: string;
+  synopsis?: string | null;
+  submittedAt: string;
+  expectedRank?: 'low' | 'medium' | 'high' | string | null;
+  receivedAt?: string | null;
+  currentVersionId?: string | null;
+  companyId: string;
+  companyNameAr?: string | null;
+  companyNameEn?: string | null;
+  submittedByUserId?: string | null;
+  submittedByName?: string | null;
+  submittedByEmail?: string | null;
+  assigneeId?: string | null;
+  assigneeName?: string | null;
+  latestJobId?: string | null;
+  latestJobStatus?: string | null;
+  latestJobProgressPercent?: number | null;
+  latestJobCompletedAt?: string | null;
+  latestReportId?: string | null;
+  latestReportReviewStatus?: string | null;
+  latestReportCreatedAt?: string | null;
+  subscriptionPlan: 'free';
+  subscriptionStatus: 'active' | 'inactive';
+}
+
+export interface ClientPortalRejectionDetailsResponse {
+  script: {
+    id: string;
+    title: string;
+    status: string;
+  };
+  decision?: {
+    status: 'rejected';
+    decidedAt?: string | null;
+    adminComment?: string | null;
+    sharedReportsCount: number;
+  };
+  sharedReports?: Array<{
+    report: {
+      id: string;
+      jobId: string;
+      reviewStatus: string;
+      reviewNotes?: string | null;
+      findingsCount: number;
+      severityCounts?: Record<string, number> | null;
+      summaryJson?: Record<string, unknown> | null;
+      createdAt: string;
+    };
+    findings: Array<{
+      id: string;
+      source: string;
+      articleId: number;
+      atomId?: string | null;
+      severity: string;
+      titleAr: string;
+      descriptionAr?: string | null;
+      rationaleAr?: string | null;
+      evidenceSnippet: string;
+      pageNumber?: number | null;
+      createdAt: string;
+    }>;
+  }>;
+  // Backward-compatible legacy fields (used by existing UI paths)
+  report?: {
+    id: string;
+    jobId: string;
+    reviewStatus: string;
+    reviewNotes?: string | null;
+    findingsCount: number;
+    severityCounts?: Record<string, number> | null;
+    summaryJson?: Record<string, unknown> | null;
+    createdAt: string;
+  };
+  findings?: Array<{
+    id: string;
+    source: string;
+    articleId: number;
+    atomId?: string | null;
+    severity: string;
+    titleAr: string;
+    descriptionAr?: string | null;
+    rationaleAr?: string | null;
+    evidenceSnippet: string;
+    pageNumber?: number | null;
+    createdAt: string;
+  }>;
+}
+
+export interface ClientPortalMeResponse {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: 'Client';
+  };
+  subscription: {
+    plan: 'free';
+    status: 'active' | 'inactive';
+    price: number;
+  };
+  company: {
+    beneficiaryType?: 'company' | 'individual';
+    companyId: string;
+    nameAr: string;
+    nameEn: string;
+    representativeName?: string | null;
+    representativeTitle?: string | null;
+    email?: string | null;
+    mobile?: string | null;
+    website?: string | null;
+    phone?: string | null;
+    city?: string | null;
+    country?: string | null;
+    contactEmail?: string | null;
+    contactMobile?: string | null;
+    about?: string | null;
+    yearsOfExperience?: number | null;
+    createdAt: string;
+    individualProfile?: {
+      fullName?: string | null;
+      dateOfBirth?: string | null;
+      nationality?: string | null;
+      nationalIdOrIqama?: string | null;
+      city?: string | null;
+      mobile?: string | null;
+    } | null;
+  } | null;
+}
+
+export interface ClientPortalMeUpdateBody {
+  beneficiaryType?: 'company' | 'individual';
+  userName?: string;
+  companyNameAr?: string;
+  companyNameEn?: string;
+  representativeName?: string;
+  representativeTitle?: string;
+  companyEmail?: string;
+  companyMobile?: string;
+  website?: string;
+  phone?: string;
+  city?: string;
+  country?: string;
+  contactMobile?: string;
+  about?: string;
+  yearsOfExperience?: number | null;
+  individualProfile?: {
+    fullName?: string;
+    dateOfBirth?: string;
+    nationality?: string;
+    nationalIdOrIqama?: string;
+    city?: string;
+    mobile?: string;
+  };
+}
+
+export interface CertificateDemoCard {
+  id: string;
+  labelAr: string;
+  labelEn: string;
+  brand: string;
+  maskedNumber: string;
+}
+
+export interface CertificatePaymentInfo {
+  id: string;
+  paymentStatus: string;
+  paymentMethod: string;
+  paymentReference: string;
+  demoCardId?: string | null;
+  cardBrand?: string | null;
+  cardLast4?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+}
+
+export interface ScriptCertificateInfo {
+  id: string;
+  certificateNumber: string;
+  certificateStatus: string;
+  issuedAt: string;
+  certificateData?: Record<string, unknown>;
+}
+
+export interface CertificateDashboardItem {
+  scriptId: string;
+  scriptTitle: string;
+  scriptType: string;
+  scriptStatus?: string;
+  approvedAt: string;
+  companyId?: string | null;
+  companyNameAr?: string | null;
+  companyNameEn?: string | null;
+  companyLogoUrl?: string | null;
+  certificateFee: {
+    baseAmount: number;
+    taxAmount: number;
+    totalAmount: number;
+    currency: string;
+  };
+  certificateStatus: 'payment_pending' | 'payment_failed' | 'issued';
+  latestPayment: CertificatePaymentInfo | null;
+  certificate: ScriptCertificateInfo | null;
+}
+
+export interface ClientCertificatesResponse {
+  demoCards: CertificateDemoCard[];
+  defaultTemplate?: CertificateTemplate | null;
+  feeConfig?: {
+    baseAmount: number;
+    taxRate: number;
+    taxAmount: number;
+    totalAmount: number;
+    currency: string;
+  };
+  items: CertificateDashboardItem[];
+}
+
+export interface AdminCertificatesResponse {
+  summary: {
+    approvedScripts: number;
+    completedPayments: number;
+    issuedCertificates: number;
+    pendingPayments: number;
+  };
+  defaultTemplate?: CertificateTemplate | null;
+  items: CertificateDashboardItem[];
+}
+
+export interface CertificateFeeConfigResponse {
+  feeConfig: {
+    baseAmount: number;
+    taxRate: number;
+    taxAmount: number;
+    totalAmount: number;
+    currency: string;
+  };
+}
+
+export interface ProcessDemoCertificatePaymentResponse {
+  ok: boolean;
+  alreadyIssued?: boolean;
+  payment?: CertificatePaymentInfo;
+  certificate?: ScriptCertificateInfo;
+  error?: string;
+}
+
+export interface AdminCertificateActionResponse {
+  ok: boolean;
+  alreadyCompleted?: boolean;
+  payment?: CertificatePaymentInfo;
+  certificate?: ScriptCertificateInfo;
+  error?: string;
+}
+
+export type CertificatePageSize = 'A4' | 'A5' | 'Letter';
+export type CertificateOrientation = 'portrait' | 'landscape';
+export type CertificateBackgroundFit = 'cover' | 'contain' | 'tile';
+export type CertificateElementType = 'logo' | 'title' | 'paragraph' | 'script_name' | 'company_name' | 'qr' | 'image' | 'date' | 'footer';
+
+export interface CertificateTemplateElement {
+  id: string;
+  type: CertificateElementType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text?: string;
+  imageUrl?: string;
+  logoSource?: 'film_commission' | 'client' | 'uploaded';
+  fontFamily?: string;
+  fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  color?: string;
+  align?: 'left' | 'center' | 'right';
+  opacity?: number;
+}
+
+export interface CertificateTemplateData {
+  elements: CertificateTemplateElement[];
+}
+
+export interface CertificateTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  isDefault: boolean;
+  pageSize: CertificatePageSize;
+  orientation: CertificateOrientation;
+  backgroundColor: string;
+  backgroundImageUrl?: string | null;
+  backgroundImageFit: CertificateBackgroundFit;
+  backgroundImageOpacity: number;
+  templateData: CertificateTemplateData;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CertificateTemplatesResponse {
+  templates: CertificateTemplate[];
+}
+
+export interface CertificateVerificationResponse {
+  certificate: {
+    certificateNumber: string;
+    certificateStatus: string;
+    issuedAt: string;
+    scriptTitle: string;
+    scriptType: string;
+    scriptStatus: string;
+    submittedAt?: string | null;
+    approvedAt?: string | null;
+    companyNameAr?: string | null;
+    companyNameEn?: string | null;
+    approvedScript?: {
+      downloadUrl: string;
+      fileName: string;
+      fileType?: string | null;
+    } | null;
+    payment?: {
+      status: string;
+      totalAmount: number;
+      currency: string;
+      completedAt?: string | null;
+    } | null;
+    verification: {
+      verified: boolean;
+      contentSnapshotAvailable: boolean;
+      contentHash?: string | null;
+    };
+  };
+}
+
+export const clientPortalApi = {
+  register: async (payload: ClientPortalRegisterBody): Promise<{ ok: true; registration: 'pending_review'; userId: string; companyId: string }> => {
+    if (USE_MOCK_API) {
+      return httpClient.post('/client-portal/register', payload);
+    }
+    const form = new FormData();
+    form.append('name', payload.name);
+    form.append('beneficiaryType', payload.beneficiaryType ?? 'company');
+    form.append('email', payload.email);
+    if (payload.companyEmail) form.append('companyEmail', payload.companyEmail);
+    form.append('password', payload.password);
+    form.append('companyNameAr', payload.companyNameAr);
+    form.append('companyNameEn', payload.companyNameEn);
+    if (payload.website) form.append('website', payload.website);
+    if (payload.phone) form.append('phone', payload.phone);
+    if (payload.addressLine1) form.append('addressLine1', payload.addressLine1);
+    if (payload.addressLine2) form.append('addressLine2', payload.addressLine2);
+    if (payload.city) form.append('city', payload.city);
+    if (payload.postalCode) form.append('postalCode', payload.postalCode);
+    if (payload.representativeName) form.append('representativeName', payload.representativeName);
+    if (payload.representativeTitle) form.append('representativeTitle', payload.representativeTitle);
+    if (payload.mobile) form.append('mobile', payload.mobile);
+    if (payload.contactEmail) form.append('contactEmail', payload.contactEmail);
+    if (payload.contactMobile) form.append('contactMobile', payload.contactMobile);
+    if (payload.about) form.append('about', payload.about);
+    if (payload.yearsOfExperience != null) form.append('yearsOfExperience', String(payload.yearsOfExperience));
+    form.append('acceptedTerms', payload.acceptedTerms ? 'true' : 'false');
+    form.append('acceptedRegulations', payload.acceptedRegulations ? 'true' : 'false');
+    if (payload.otpVerificationToken) form.append('otpVerificationToken', payload.otpVerificationToken);
+    if (payload.companyLogoFile) form.append('companyLogoFile', payload.companyLogoFile);
+    if (payload.legalDocuments?.cr) form.append('crDocument', payload.legalDocuments.cr);
+    if (payload.legalDocuments?.license) form.append('licenseDocument', payload.legalDocuments.license);
+    if (payload.legalDocuments?.nationalAddress) form.append('nationalAddressDocument', payload.legalDocuments.nationalAddress);
+    if (payload.legalDocuments?.mediaContentProductionLicense) form.append('mediaContentProductionLicenseDocument', payload.legalDocuments.mediaContentProductionLicense);
+    if (payload.individualProfile) {
+      form.append('individualFullName', payload.individualProfile.fullName);
+      form.append('individualDateOfBirth', payload.individualProfile.dateOfBirth);
+      form.append('individualNationality', payload.individualProfile.nationality);
+      form.append('individualNationalIdOrIqama', payload.individualProfile.nationalIdOrIqama);
+      form.append('individualMobile', payload.individualProfile.mobile);
+      if (payload.individualProfile.cvFile) form.append('individualCvFile', payload.individualProfile.cvFile);
+      if (payload.individualProfile.idDocumentFile) form.append('individualIdDocumentFile', payload.individualProfile.idDocumentFile);
+    }
+
+    const anonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!anonKey) {
+      throw new Error('VITE_SUPABASE_ANON_KEY is required for public registration');
+    }
+
+    const res = await fetch(`${API_BASE_URL}/client-portal/register`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error((data as { error?: string }).error || res.statusText || 'Registration failed');
+    }
+    return data as { ok: true; registration: 'pending_review'; userId: string; companyId: string };
+  },
+  sendRegistrationOtp: async (payload: { email: string; beneficiaryType?: 'company' | 'individual' }): Promise<{ ok: true; expiresInSeconds: number; resendAfterSeconds: number }> => {
+    if (USE_MOCK_API) return httpClient.post('/client-portal/register/send-otp', payload);
+    const anonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!anonKey) throw new Error('VITE_SUPABASE_ANON_KEY is required for public OTP flow');
+    const res = await fetch(`${API_BASE_URL}/client-portal/register/send-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data as { error?: string }).error || res.statusText || 'Failed to send OTP');
+    return data as { ok: true; expiresInSeconds: number; resendAfterSeconds: number };
+  },
+  verifyRegistrationOtp: async (payload: { email: string; otp: string }): Promise<{ ok: true; verificationToken: string; verificationTokenExpiresAt: string }> => {
+    if (USE_MOCK_API) return httpClient.post('/client-portal/register/verify-otp', payload);
+    const anonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!anonKey) throw new Error('VITE_SUPABASE_ANON_KEY is required for public OTP flow');
+    const res = await fetch(`${API_BASE_URL}/client-portal/register/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data as { error?: string }).error || res.statusText || 'Failed to verify OTP');
+    return data as { ok: true; verificationToken: string; verificationTokenExpiresAt: string };
+  },
+  getTerms: (): Promise<{ ar: string; en: string }> =>
+    httpClient.get('/client-portal/terms'),
+  updateTerms: (terms: { ar: string; en: string }): Promise<{ ok: boolean; terms: { ar: string; en: string } }> =>
+    httpClient.put('/client-portal/admin/terms', terms),
+  getRegulations: (): Promise<{ ar: string; en: string }> =>
+    httpClient.get('/client-portal/regulations'),
+  updateRegulations: (regulations: { ar: string; en: string }): Promise<{ ok: boolean; regulations: { ar: string; en: string } }> =>
+    httpClient.put('/client-portal/admin/regulations', regulations),
+  getMe: (): Promise<ClientPortalMeResponse> =>
+    httpClient.get('/client-portal/me'),
+  updateMe: (payload: ClientPortalMeUpdateBody): Promise<{ ok: true; profile: ClientPortalMeResponse }> =>
+    httpClient.put('/client-portal/me', payload),
+  getSubmissions: (): Promise<ClientPortalSubmissionItem[]> =>
+    httpClient.get('/client-portal/submissions'),
+  getAdminSubmissions: (): Promise<AdminClientSubmissionItem[]> =>
+    httpClient.get('/client-portal/admin/submissions'),
+  getRejectionDetails: (scriptId: string): Promise<ClientPortalRejectionDetailsResponse> =>
+    httpClient.get(`/client-portal/rejections/${encodeURIComponent(scriptId)}`),
+  getRevisionCycles: (scriptId: string): Promise<ClientPortalRevisionCyclesResponse> =>
+    httpClient.get(`/client-portal/scripts/${encodeURIComponent(scriptId)}/revision-cycles`),
+  getRevisionCycleSharedReportPayload: (
+    scriptId: string,
+    cycleId: string,
+    reportId: string,
+  ): Promise<ClientPortalSharedCycleReportPayloadResponse> =>
+    httpClient.get(
+      `/client-portal/scripts/${encodeURIComponent(scriptId)}/revision-cycles/${encodeURIComponent(cycleId)}/reports/${encodeURIComponent(reportId)}`,
+    ),
+  resubmitRevisionCycle: (
+    scriptId: string,
+    cycleId: string,
+    payload: {
+      revisedFileUrl: string;
+      revisedFileName?: string;
+      revisedFileType?: string;
+      revisedFileSize?: number;
+      beneficiaryComment?: string;
+    },
+  ): Promise<{ ok: true; scriptId: string; cycleId: string; newVersionId: string; cycleNumber: number; scriptStatus: string; cycleStatus: string }> =>
+    httpClient.post(
+      `/client-portal/scripts/${encodeURIComponent(scriptId)}/revision-cycles/${encodeURIComponent(cycleId)}/resubmit`,
+      payload,
+    ),
+};
+
+export const certificatesApi = {
+  getClientDashboard: (): Promise<ClientCertificatesResponse> =>
+    httpClient.get('/certificates/client'),
+  getAdminDashboard: (): Promise<AdminCertificatesResponse> =>
+    httpClient.get('/certificates/admin'),
+  confirmAdminPayment: (scriptId: string): Promise<AdminCertificateActionResponse> =>
+    httpClient.post('/certificates/admin/confirm-payment', { scriptId }),
+  issueAdminCertificate: (
+    scriptId: string,
+    forceRegenerate = false,
+  ): Promise<AdminCertificateActionResponse> =>
+    httpClient.post('/certificates/admin/issue', { scriptId, forceRegenerate }),
+  getTemplates: (): Promise<CertificateTemplatesResponse> =>
+    httpClient.get('/certificates/templates'),
+  createTemplate: (payload: { name: string; description?: string }): Promise<{ ok: boolean; template: CertificateTemplate }> =>
+    httpClient.post('/certificates/templates', payload),
+  getTemplate: (templateId: string): Promise<{ template: CertificateTemplate }> =>
+    httpClient.get(`/certificates/templates/${encodeURIComponent(templateId)}`),
+  updateTemplate: (
+    templateId: string,
+    payload: Partial<Omit<CertificateTemplate, 'id' | 'createdAt' | 'updatedAt'>>,
+  ): Promise<{ ok: boolean; template: CertificateTemplate }> =>
+    httpClient.put(`/certificates/templates/${encodeURIComponent(templateId)}`, payload),
+  setDefaultTemplate: (templateId: string): Promise<{ ok: boolean; template: CertificateTemplate }> =>
+    httpClient.post(`/certificates/templates/${encodeURIComponent(templateId)}/default`, {}),
+  verifyCertificate: (certificateNumber: string): Promise<CertificateVerificationResponse> =>
+    httpClient.get(`/certificates/verify/${encodeURIComponent(certificateNumber)}`),
+  processDemoPayment: (
+    scriptId: string,
+    demoCardId: string,
+  ): Promise<ProcessDemoCertificatePaymentResponse> =>
+    httpClient.post('/certificates/pay', { scriptId, demoCardId }),
+  getClientCertificateFileUrl: (
+    scriptId: string,
+    download = false,
+  ): Promise<{ ok: boolean; signedUrl: string; filePath: string }> =>
+    httpClient.get(`/certificates/client/file/${encodeURIComponent(scriptId)}${download ? '?download=1' : ''}`),
+  getAdminCertificateFileUrl: (
+    scriptId: string,
+    download = false,
+  ): Promise<{ ok: boolean; signedUrl: string; filePath: string }> =>
+    httpClient.get(`/certificates/admin/file/${encodeURIComponent(scriptId)}${download ? '?download=1' : ''}`),
+  getFeeSettings: (): Promise<CertificateFeeConfigResponse> =>
+    httpClient.get('/certificates/admin/fee-settings'),
+  updateFeeSettings: (payload: { baseAmount: number; taxRate: number; currency?: string }): Promise<{ ok: boolean; feeConfig: CertificateFeeConfigResponse['feeConfig'] }> =>
+    httpClient.put('/certificates/admin/fee-settings', payload),
+};
+
+export interface NotificationItem {
+  id: string;
+  type: string;
+  title: string;
+  body?: string;
+  metadata: Record<string, unknown>;
+  readAt?: string;
+  createdAt: string;
+}
+
+export const notificationsApi = {
+  getList: (): Promise<{ data: NotificationItem[]; unreadCount: number }> =>
+    httpClient.get('/notifications'),
+  getUnreadCount: (): Promise<{ unreadCount: number }> =>
+    httpClient.get('/notifications/count'),
+  markRead: (id: string): Promise<{ ok: boolean }> =>
+    httpClient.patch(`/notifications/${encodeURIComponent(id)}/read`, {}),
+  markAllRead: (): Promise<{ ok: boolean }> =>
+    httpClient.post('/notifications/read-all', {}),
+};
+
+export const companiesApi = {
+  getCompanies: (): Promise<Company[]> => httpClient.get('/companies'),
+  approveCompany: (id: string): Promise<Company> => httpClient.post(`/companies/${id}/approve`, {}),
+  rejectCompany: (id: string, reason: string): Promise<Company> => httpClient.post(`/companies/${id}/reject`, { reason }),
+  addCompany: (company: Company): Promise<Company> => httpClient.post('/companies', company),
+  updateCompany: (id: string, updates: Partial<Company>): Promise<Company> => httpClient.put(`/companies/${id}`, updates),
+  deleteCompany: (id: string): Promise<{ ok: boolean }> => httpClient.delete(`/companies/${id}`),
+  /** Upload logo for company (multipart). Returns updated company. */
+  uploadCompanyLogo: async (companyId: string, file: File): Promise<Company> => {
+    const form = new FormData();
+    form.append('file', file);
+    if (USE_MOCK_API) {
+      return httpClient.request(`/companies/${companyId}/logo`, { method: 'POST', body: form });
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('Unauthorized');
+    const res = await fetch(`${API_BASE_URL}/companies/${companyId}/logo`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || res.statusText);
+    }
+    return res.json();
+  },
+  /** Remove company logo. Returns updated company. */
+  removeCompanyLogo: (companyId: string): Promise<Company> => httpClient.delete(`/companies/${companyId}/logo`),
+  /** Upload legal document for internal client (multipart). */
+  uploadCompanyLegalDocument: async (
+    companyId: string,
+    type: 'cr' | 'license' | 'national_address',
+    file: File,
+  ): Promise<Company> => {
+    const form = new FormData();
+    form.append('type', type);
+    form.append('file', file);
+    if (USE_MOCK_API) {
+      return httpClient.request(`/companies/${companyId}/legal-documents`, { method: 'POST', body: form });
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('Unauthorized');
+    const res = await fetch(`${API_BASE_URL}/companies/${companyId}/legal-documents`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || res.statusText);
+    }
+    return res.json();
+  },
+};
+
+export type UploadUrlResponse = { url: string; path?: string };
+export interface ScriptRevisionCycleSummaryItem {
+  id: string;
+  cycleNumber: number;
+  status: string;
+  sentAt: string;
+  returnedAt?: string | null;
+  reanalyzedAt?: string | null;
+  sourceReportId?: string | null;
+  reanalyzedReportId?: string | null;
+  baselineFindings: number;
+  reanalyzedFindings?: number | null;
+  findingsDelta?: number | null;
+  baselineSeverityCounts?: Record<string, number>;
+  reanalyzedSeverityCounts?: Record<string, number>;
+  comparisonSummary?: {
+    baseline_findings?: number;
+    reanalyzed_findings?: number;
+    findings_delta?: number;
+    canonical?: {
+      baseline_count?: number;
+      reanalyzed_count?: number;
+      persisting_count?: number;
+      resolved_count?: number;
+      new_count?: number;
+    };
+    severity_delta?: {
+      low?: number;
+      medium?: number;
+      high?: number;
+      critical?: number;
+    };
+  } | null;
+}
+
+export interface ScriptRevisionCycleSummaryResponse {
+  scriptId: string;
+  cycles: ScriptRevisionCycleSummaryItem[];
+}
+
+export interface ScriptRevisionHistoryExportResponse {
+  exportedAt: string;
+  script: {
+    id: string;
+    title: string;
+    status: string;
+    currentVersionId?: string | null;
+    createdAt: string;
+    companyId?: string | null;
+    companyNameAr?: string | null;
+    companyNameEn?: string | null;
+  };
+  versions: Array<{
+    id: string;
+    versionNumber: number;
+    sourceFileName?: string | null;
+    sourceFileType?: string | null;
+    sourceFileSize?: number | null;
+    sourceFileUrl?: string | null;
+    extractionStatus?: string | null;
+    createdAt: string;
+  }>;
+  cycles: Array<Record<string, unknown>>;
+}
+
+export const scriptsApi = {
+  getScripts: (): Promise<Script[]> => httpClient.get('/scripts'),
+  getQuickScripts: (): Promise<Script[]> => httpClient.get('/scripts/quick'),
+  createQuickScript: (body?: { title?: string; synopsis?: string; type?: 'Film' | 'Series' | 'film' | 'series'; status?: string }): Promise<Script> =>
+    httpClient.post('/scripts/quick', body ?? {}),
+  getScript: (id: string): Promise<Script> => httpClient.get(`/scripts/${encodeURIComponent(id)}`),
+  addScript: (script: Script): Promise<Script> => httpClient.post('/scripts', script),
+  updateScript: (id: string, updates: Partial<Script>): Promise<Script> => httpClient.patch(`/scripts/${encodeURIComponent(id)}`, updates), // NEW
+  /** Check if current user can approve/reject/send-back this script (backend policy). Use to gate UI. */
+  getDecisionCan: (id: string): Promise<{ canApprove: boolean; canReject: boolean; canSendForReview: boolean; reason?: string }> =>
+    httpClient.get(`/scripts/${encodeURIComponent(id)}/decision/can`),
+  /** Check if current regulator can submit a recommendation on this script. */
+  getRecommendationCan: (id: string): Promise<{ canRecommend: boolean; reason?: string }> =>
+    httpClient.get(`/scripts/${encodeURIComponent(id)}/recommendation/can`),
+  /** Make approval/rejection decision on a script */
+  makeDecision: (
+    id: string,
+    decision: 'approve' | 'reject' | 'send_for_review',
+    reason: string,
+    relatedReportId?: string,
+    options?: {
+      issueCertificate?: boolean;
+      clientComment?: string;
+      shareReportsToClient?: boolean;
+      shareReportIds?: string[];
+      shareReportFormats?: Array<'pdf' | 'docx'>;
+    },
+  ): Promise<{ success: boolean; script: Script; message: string }> =>
+    httpClient.post(`/scripts/${encodeURIComponent(id)}/decision`, {
+      decision,
+      reason,
+      relatedReportId,
+      ...(options?.issueCertificate != null ? { issueCertificate: options.issueCertificate } : {}),
+      ...(options?.clientComment != null ? { clientComment: options.clientComment } : {}),
+      ...(options?.shareReportsToClient != null ? { shareReportsToClient: options.shareReportsToClient } : {}),
+      ...(options?.shareReportIds != null ? { shareReportIds: options.shareReportIds } : {}),
+      ...(options?.shareReportFormats != null ? { shareReportFormats: options.shareReportFormats } : {}),
+    }),
+  /** Submit a regulator recommendation on a script. */
+  makeRecommendation: (
+    id: string,
+    recommendation: 'recommended_approval' | 'recommended_rejection',
+    reason: string,
+    relatedReportId?: string,
+  ): Promise<{ success: boolean; script: Script; message: string }> =>
+    httpClient.post(`/scripts/${encodeURIComponent(id)}/recommendation`, {
+      recommendation,
+      reason,
+      ...(relatedReportId ? { relatedReportId } : {}),
+    }),
+  getScriptVersions: (scriptId: string, options?: { signal?: AbortSignal }): Promise<ScriptVersion[]> =>
+    httpClient.get(`/scripts/${encodeURIComponent(scriptId)}/versions`, { signal: options?.signal }),
+  getRevisionCycleSummary: (scriptId: string): Promise<ScriptRevisionCycleSummaryResponse> =>
+    httpClient.get(`/scripts/${encodeURIComponent(scriptId)}/revision-cycles/summary`),
+  getRevisionHistoryExport: (scriptId: string): Promise<ScriptRevisionHistoryExportResponse> =>
+    httpClient.get(`/scripts/${encodeURIComponent(scriptId)}/revision-history`),
+  createVersion: (scriptId: string, versionData: any, options?: { signal?: AbortSignal }): Promise<any> =>
+    httpClient.post('/scripts/versions', { ...versionData, scriptId }, { signal: options?.signal }),
+  /** Get signed upload URL; returns { url, path? }. */
+  getUploadUrl: (fileName: string, options?: { signal?: AbortSignal }): Promise<UploadUrlResponse> =>
+    httpClient.post('/upload', { fileName }, { signal: options?.signal }),
+  /** Upload file bytes to the signed URL (no auth). */
+  uploadToSignedUrl: async (file: File, signedUrl: string, options?: { signal?: AbortSignal }): Promise<void> => {
+    const res = await fetch(signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+      signal: options?.signal,
+    });
+    if (!res.ok) throw new Error(res.statusText || 'Upload failed');
+  },
+  /** Delete a script by id. */
+  deleteScript: (id: string): Promise<{ ok: boolean }> => httpClient.delete(`/scripts/${encodeURIComponent(id)}`),
+  uploadFile: (file: File): Promise<any> => httpClient.post('/upload', { fileName: file.name }),
+  extractText: (
+    versionId: string,
+    text?: string,
+    options?: {
+      enqueueAnalysis?: boolean;
+      contentHtml?: string | null;
+      pages?: Array<{ pageNumber: number; text: string; html?: string | null; displayFontStack?: string }>;
+      signal?: AbortSignal;
+    }
+  ): Promise<any> => {
+    // Unicode: NFC + well-formed UTF-16 + C0 strip (see docs/UNICODE_EXTRACT_PIPELINE.md).
+    // PDFs can also break JSON: backslash + u that isn't \uXXXX — escape backslashes last.
+    const safe = (s: string) =>
+      prepareUnicodeForExtractTransport(String(s)).replace(/\\/g, '\\u005C');
+    const body: Record<string, unknown> = {
+      versionId,
+      ...(options?.enqueueAnalysis !== undefined && { enqueueAnalysis: options.enqueueAnalysis }),
+    };
+    if (text !== undefined && text !== null) body.text = safe(String(text));
+    if (options?.contentHtml !== undefined && options?.contentHtml !== null) body.contentHtml = safe(String(options.contentHtml));
+    if (options?.pages != null && options.pages.length > 0) {
+      body.pages = options.pages.map((p) => ({
+        pageNumber: p.pageNumber,
+        text: safe(p.text),
+        ...(p.html != null && p.html !== "" && { html: safe(p.html) }),
+        ...(typeof p.displayFontStack === 'string' &&
+          p.displayFontStack.trim() && {
+            displayFontStack: p.displayFontStack.trim().slice(0, 480),
+          }),
+      }));
+    }
+    return httpClient.post('/extract', body, { signal: options?.signal });
+  },
+  cancelVersionExtraction: (versionId: string): Promise<ScriptVersion> =>
+    httpClient.patch('/extract', { versionId, action: 'cancel' }),
+  /** Queue analysis for a version (creates new analysis_jobs + chunks). POST /tasks */
+  createTask: (
+    versionId: string,
+    options?: {
+      forceFresh?: boolean;
+      analysisProfile?: AnalysisModeProfile;
+      pipelineVersion?: 'v1' | 'v2';
+      analysisOptions?: { mergeStrategy?: 'same_location_only' | 'every_occurrence' };
+    }
+  ): Promise<{ jobId: string; manualReviewContextCount?: number; linkedRevisionCycleNumber?: number | null }> =>
+    httpClient.post('/tasks', {
+      versionId,
+      ...(options?.forceFresh ? { forceFresh: true } : {}),
+      ...(options?.analysisProfile ? { analysisProfile: options.analysisProfile } : {}),
+      pipelineVersion: options?.pipelineVersion ?? 'v2',
+      ...(options?.analysisOptions ? { analysisOptions: options.analysisOptions } : {}),
+    }),
+  /** Get editor content and sections for a version. GET /scripts/editor?scriptId=...&versionId=... */
+  getEditor: (scriptId: string, versionId: string): Promise<EditorContentResponse> =>
+    httpClient.get(`/scripts/editor?scriptId=${encodeURIComponent(scriptId)}&versionId=${encodeURIComponent(versionId)}`),
+  /** Check whether another version already has the exact same canonical content. */
+  getDuplicateScripts: (versionId: string): Promise<DuplicateScriptCheckResponse> =>
+    httpClient.get(`/scripts/duplicates?versionId=${encodeURIComponent(versionId)}`),
+  /** Get saved highlight report (job) for script. Returns { jobId: string | null }. */
+  getHighlightPreference: (scriptId: string): Promise<{ jobId: string | null }> =>
+    httpClient.get(`/scripts/highlight-preference?scriptId=${encodeURIComponent(scriptId)}`),
+  /** Save which report (job) to use for highlights for this script (persists across sessions). */
+  setHighlightPreference: (scriptId: string, jobId: string): Promise<{ jobId: string }> =>
+    httpClient.put('/scripts/highlight-preference', { scriptId, jobId }),
+};
+
+export interface EditorSectionResponse {
+  id: string;
+  index: number;
+  title: string;
+  startOffset: number;
+  endOffset: number;
+  meta: Record<string, unknown>;
+}
+
+export interface EditorPageResponse {
+  pageNumber: number;
+  content: string;
+  contentHtml?: string | null;
+  startOffsetGlobal: number;
+  /** CSS font-family stack from PDF import (pdf.js fontName → web stack); null = Cairo default. */
+  displayFontStack?: string | null;
+  /** Extraction/display metadata for this page (OCR, quality flags, future editorial annotations). */
+  meta?: Record<string, unknown>;
+}
+
+export interface EditorContentResponse {
+  content: string;
+  /** Hash of content (script_text.content_hash) for offset-canonical checks. */
+  contentHash?: string | null;
+  /** Optional HTML from DOCX for formatted view; offsets refer to content. */
+  contentHtml?: string | null;
+  sections: EditorSectionResponse[];
+  /** When present, script is stored per-page; use for page-based workspace view. */
+  pages?: EditorPageResponse[];
+  /** Time-limited URL to original PDF (page N matches viewer page N). */
+  sourcePdfSignedUrl?: string | null;
+}
+
+export interface DuplicateScriptMatch {
+  scriptId: string;
+  versionId: string;
+  versionNumber: number;
+  scriptTitle: string;
+  scriptStatus: string;
+  sourceFileName?: string | null;
+  createdAt: string;
+  companyName?: string | null;
+  importedByName?: string | null;
+  contextType?: 'client' | 'quick_analysis';
+  contextLabel?: string | null;
+  sameScript: boolean;
+  isCurrentVersion: boolean;
+  analyzedBefore: boolean;
+  latestAnalysisAt?: string | null;
+  latestReviewerName?: string | null;
+}
+
+export interface DuplicateScriptCheckResponse {
+  exactMatch: boolean;
+  contentHash?: string | null;
+  duplicateCount: number;
+  matches: DuplicateScriptMatch[];
+}
+
+export type GetTasksParams = { scriptId?: string; versionId?: string; limit?: number };
+
+async function controlAnalysisJob(jobId: string, action: 'pause' | 'resume' | 'stop' | 'cancel'): Promise<AnalysisJob> {
+  try {
+    // Prefer POST for job control because Supabase Edge deployments have shown
+    // more reliable request-body handling on POST than PATCH in production.
+    return await httpClient.post('/tasks', { jobId, action });
+  } catch (error) {
+    const status = (error as Error & { status?: number } | null)?.status;
+    if (status === 405 || status === 404) {
+      return httpClient.patch('/tasks', { jobId, action });
+    }
+    throw error;
+  }
+}
+
+export const tasksApi = {
+  /** List analysis jobs (GET /tasks). Optional filters; limit default 20, max 100. */
+  getTasks: (params?: GetTasksParams): Promise<AnalysisJob[]> => {
+    const search = new URLSearchParams();
+    if (params?.scriptId) search.set('scriptId', params.scriptId);
+    if (params?.versionId) search.set('versionId', params.versionId);
+    if (params?.limit != null) search.set('limit', String(params.limit));
+    const qs = search.toString();
+    return httpClient.get(qs ? `/tasks?${qs}` : '/tasks');
+  },
+  /** Get a single analysis job by ID. */
+  getJob: (jobId: string): Promise<AnalysisJob> => httpClient.get(`/tasks?jobId=${encodeURIComponent(jobId)}`),
+  /** Get per-chunk statuses for a job (debug). */
+  getJobChunks: (jobId: string): Promise<ChunkStatus[]> => httpClient.get(`/tasks?jobId=${encodeURIComponent(jobId)}&chunks=true`),
+  pauseJob: (jobId: string): Promise<AnalysisJob> => controlAnalysisJob(jobId, 'pause'),
+  resumeJob: (jobId: string): Promise<AnalysisJob> => controlAnalysisJob(jobId, 'resume'),
+  stopJob: (jobId: string): Promise<AnalysisJob> => controlAnalysisJob(jobId, 'stop'),
+  cancelJob: (jobId: string): Promise<AnalysisJob> => controlAnalysisJob(jobId, 'cancel'),
+  addTask: (task: Task): Promise<Task> => httpClient.post('/tasks', task),
+};
+
+/** Shape returned by GET /findings?jobId=... or ?reportId=... */
+export interface AnalysisFinding {
+  id: string;
+  jobId: string;
+  scriptId: string;
+  versionId: string;
+  source: string;
+  articleId: number;
+  atomId: string | null;
+  severity: string;
+  confidence: number;
+  titleAr: string;
+  descriptionAr: string;
+  rationaleAr?: string | null;
+  evidenceSnippet: string;
+  startOffsetGlobal: number | null;
+  endOffsetGlobal: number | null;
+  startLineChunk: number | null;
+  endLineChunk: number | null;
+  pageNumber?: number | null;
+  /** Offsets within script_pages.content for page_number (when set). */
+  startOffsetPage?: number | null;
+  endOffsetPage?: number | null;
+  anchorStatus?: 'exact' | 'fuzzy' | 'unresolved' | null;
+  anchorMethod?: string | null;
+  anchorPageNumber?: number | null;
+  anchorStartOffsetPage?: number | null;
+  anchorEndOffsetPage?: number | null;
+  anchorStartOffsetGlobal?: number | null;
+  anchorEndOffsetGlobal?: number | null;
+  anchorText?: string | null;
+  anchorConfidence?: number | null;
+  anchorUpdatedAt?: string | null;
+  location: Record<string, unknown>;
+  createdAt: string;
+  reviewStatus: 'violation' | 'approved';
+  reviewReason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewedRole: string | null;
+  createdBy?: string | null;
+  manualComment?: string | null;
+  editedBy?: string | null;
+  editedAt?: string | null;
+}
+
+export interface CreateManualFindingBody {
+  reportId: string;
+  scriptId: string;
+  versionId: string;
+  startOffsetGlobal: number;
+  endOffsetGlobal: number;
+  excerpt?: string;
+  articleId: number;
+  atomId?: string | null;
+  severity: string;
+  manualComment?: string;
+}
+
+export interface ManualFindingResponse extends AnalysisFinding {
+  atomMappingWarning?: string | null;
+}
+
+export interface ReclassifyFindingBody {
+  findingId?: string;
+  reviewFindingId?: string;
+  articleId: number;
+  atomId?: string | null;
+  severity: string;
+  manualComment?: string | null;
+  evidenceSnippet?: string | null;
+  rationaleAr?: string | null;
+}
+
+export interface ValidateFindingSnippetBody {
+  findingId: string;
+  snippet: string;
+}
+
+export interface ValidateFindingSnippetResponse {
+  ok: boolean;
+  found: boolean;
+  snippet?: string;
+  pageNumber?: number | null;
+  startOffsetGlobal?: number;
+  endOffsetGlobal?: number;
+  startOffsetPage?: number | null;
+  endOffsetPage?: number | null;
+  matchCount?: number;
+  error?: string;
+}
+
+export interface AnalysisReviewFinding {
+  id: string;
+  jobId: string;
+  reportId: string;
+  scriptId: string;
+  versionId: string;
+  canonicalFindingId?: string | null;
+  sourceKind: 'ai' | 'glossary' | 'manual' | 'special';
+  primaryArticleId: number;
+  primaryAtomId?: string | null;
+  severity: string;
+  reviewStatus: 'violation' | 'approved' | 'needs_review';
+  titleAr: string;
+  descriptionAr?: string | null;
+  rationaleAr?: string | null;
+  evidenceSnippet: string;
+  manualComment?: string | null;
+  actionText?: string | null;
+  pageNumber?: number | null;
+  startOffsetGlobal?: number | null;
+  endOffsetGlobal?: number | null;
+  startOffsetPage?: number | null;
+  endOffsetPage?: number | null;
+  anchorStatus: 'exact' | 'unresolved';
+  anchorMethod?: string | null;
+  anchorText?: string | null;
+  anchorConfidence?: number | null;
+  isManual: boolean;
+  isHidden: boolean;
+  includeInReport: boolean;
+  approvedReason?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  editedBy?: string | null;
+  editedAt?: string | null;
+  createdFromJobId?: string | null;
+  supersedesReviewFindingId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReclassifyFindingResponse {
+  ok: true;
+  finding?: AnalysisFinding;
+  reviewFinding?: AnalysisReviewFinding;
+  atomMappingWarning?: string | null;
+  reportAggregates?: FindingReviewResponse['reportAggregates'];
+}
+
+export interface SetReviewFindingReportVisibilityBody {
+  reviewFindingId: string;
+  includeInReport: boolean;
+}
+
+export interface SetReviewFindingReportVisibilityResponse {
+  ok: true;
+  reviewFinding: AnalysisReviewFinding;
+}
+
+export interface SetFindingActionBody {
+  findingId?: string;
+  reviewFindingId?: string;
+  actionText?: string | null;
+}
+
+export interface SetFindingActionResponse {
+  ok: true;
+  reviewFinding?: AnalysisReviewFinding;
+  reviewFindings?: AnalysisReviewFinding[];
+  updatedIds?: string[];
+}
+
+export interface DeleteFindingCardBody {
+  findingId?: string;
+  reviewFindingId?: string;
+}
+
+export const findingsApi = {
+  getFindings: (): Promise<Finding[]> => httpClient.get('/findings'),
+  /** List findings for a specific job (with review status). */
+  getByJob: (jobId: string): Promise<AnalysisFinding[]> => httpClient.get(`/findings?jobId=${encodeURIComponent(jobId)}`),
+  /** List findings for a report (resolves report id to job). */
+  getByReport: (reportId: string): Promise<AnalysisFinding[]> => httpClient.get(`/findings?reportId=${encodeURIComponent(reportId)}`),
+  /** List reviewer-facing finding cards for a specific job. */
+  getReviewByJob: (jobId: string): Promise<AnalysisReviewFinding[]> =>
+    httpClient.get(`/findings/review-layer?jobId=${encodeURIComponent(jobId)}`),
+  /** List reviewer-facing finding cards for a report (resolves report id to job). */
+  getReviewByReport: (reportId: string): Promise<AnalysisReviewFinding[]> =>
+    httpClient.get(`/findings/review-layer?reportId=${encodeURIComponent(reportId)}`),
+  addFinding: (finding: Finding): Promise<Finding> => httpClient.post('/findings', finding),
+  updateFindingStatus: (id: string, status: string, comment?: string, author?: string) =>
+    httpClient.put(`/findings/${id}`, { status, comment, author }),
+  updateFindingOverride: (id: string, override: any) =>
+    httpClient.put(`/findings/${id}`, { override }),
+  /** Approve (mark safe) or revert a finding. */
+  reviewFinding: (findingId: string, toStatus: 'approved' | 'violation', reason: string): Promise<FindingReviewResponse> =>
+    httpClient.post('/findings/review', { findingId, toStatus, reason }),
+  reviewReviewFinding: (reviewFindingId: string, toStatus: 'approved' | 'violation', reason: string): Promise<FindingReviewResponse> =>
+    httpClient.post('/findings/review', { reviewFindingId, toStatus, reason }),
+  setReviewFindingReportVisibility: (body: SetReviewFindingReportVisibilityBody): Promise<SetReviewFindingReportVisibilityResponse> =>
+    httpClient.post('/findings/report-visibility', body),
+  setFindingAction: (body: SetFindingActionBody): Promise<SetFindingActionResponse> =>
+    httpClient.post('/findings/action', body),
+  deleteFindingCard: (body: DeleteFindingCardBody): Promise<{ ok: true; findingId?: string; reviewFindingId?: string }> =>
+    httpClient.post('/findings/delete', body),
+  reclassifyFinding: async (body: ReclassifyFindingBody): Promise<ReclassifyFindingResponse> => {
+    try {
+      return await httpClient.post('/findings/reclassify', body);
+    } catch (error) {
+      const status = (error as Error & { status?: number } | null)?.status;
+      if (status === 404 || status === 405) {
+        return httpClient.post('/findings', { action: 'reclassify', ...body });
+      }
+      throw error;
+    }
+  },
+  validateFindingSnippet: (body: ValidateFindingSnippetBody): Promise<ValidateFindingSnippetResponse> =>
+    httpClient.post('/findings/validate-snippet', body),
+  /** Create a manual finding (POST /findings/manual). */
+  createManual: (body: CreateManualFindingBody): Promise<ManualFindingResponse> =>
+    httpClient.post('/findings/manual', body),
+};
+
+export const lexiconApi = {
+  getTerms: (): Promise<LexiconTerm[]> => httpClient.get('/lexicon/terms'),
+  addTerm: (term: LexiconTerm): Promise<LexiconTerm> => httpClient.post('/lexicon/terms', term),
+  updateTerm: (id: string, updates: Partial<LexiconTerm>, changedBy: string, reason?: string) =>
+    httpClient.put(`/lexicon/terms/${id}`, { ...updates, changed_by: changedBy, change_reason: reason }),
+  deactivateTerm: (id: string, changedBy: string, reason?: string) =>
+    httpClient.put(`/lexicon/terms/${id}`, { is_active: false, changed_by: changedBy, change_reason: reason }),
+  getHistory: (id: string): Promise<LexiconHistoryEntry[]> => httpClient.get(`/lexicon/history/${id}`),
+  /** Generate Arabic conjugations/forms for a term (AI). Returns variants to store as term_variants. */
+  generateConjugations: (term: string): Promise<{ variants: string[] }> =>
+    httpClient.post('/lexicon/generate-conjugations', { term }),
+  /** Generate term variants from a user prompt (AI). Returns candidate variants to review before saving. */
+  generateFromPrompt: (prompt: string, title?: string): Promise<{ variants: string[] }> =>
+    httpClient.post('/lexicon/generate-from-prompt', { prompt, title }),
+};
+
+let reportsEndpointUnavailable = false;
+let reportsAvailabilityKnown = false;
+let reportsAvailabilityProbe: Promise<void> | null = null;
+
+function isHttp404(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'status' in error && (error as { status?: unknown }).status === 404;
+}
+
+function createReportsUnavailableError(): Error & { status?: number } {
+  const error = new Error('Reports service is unavailable in this environment. Deploy edge functions: reports and scripts, then retry.') as Error & { status?: number };
+  error.status = 404;
+  return error;
+}
+
+async function requestReports<T>(request: () => Promise<T>, fallbackValue?: T): Promise<T> {
+  if (reportsEndpointUnavailable) {
+    if (fallbackValue !== undefined) return fallbackValue;
+    throw createReportsUnavailableError();
+  }
+  if (reportsAvailabilityKnown) {
+    return request();
+  }
+  if (reportsAvailabilityProbe) {
+    await reportsAvailabilityProbe.catch(() => undefined);
+    if (reportsEndpointUnavailable) {
+      if (fallbackValue !== undefined) return fallbackValue;
+      throw createReportsUnavailableError();
+    }
+    return request();
+  }
+  let resolveProbe!: () => void;
+  let rejectProbe!: (reason?: unknown) => void;
+  reportsAvailabilityProbe = new Promise<void>((resolve, reject) => {
+    resolveProbe = resolve;
+    rejectProbe = reject;
+  });
+  try {
+    const result = await request();
+    reportsAvailabilityKnown = true;
+    resolveProbe();
+    return result;
+  } catch (error) {
+    if (isHttp404(error)) {
+      reportsEndpointUnavailable = true;
+      reportsAvailabilityKnown = false;
+      resolveProbe();
+      if (fallbackValue !== undefined) return fallbackValue;
+      throw createReportsUnavailableError();
+    }
+    rejectProbe(error);
+    throw error;
+  } finally {
+    reportsAvailabilityProbe = null;
+  }
+}
+
+export const reportsApi = {
+  /** List ALL reports visible to current user (RLS-filtered: users see own reports, admins see all). */
+  listAll: (): Promise<ReportListItem[]> => requestReports(() => httpClient.get('/reports'), []),
+  /** List reports for a script (newest first). */
+  listByScript: (scriptId: string): Promise<ReportListItem[]> =>
+    requestReports(() => httpClient.get(`/reports?scriptId=${encodeURIComponent(scriptId)}`), []),
+  /** Get full report by report id. */
+  getById: (id: string): Promise<Report> =>
+    requestReports(() => httpClient.get(`/reports?id=${encodeURIComponent(id)}`)),
+  /** Get full report by job id. */
+  getByJob: (jobId: string): Promise<Report> =>
+    requestReports(() => httpClient.get(`/reports?jobId=${encodeURIComponent(jobId)}`)),
+  /** Update review status on a report. If updateScriptStatus is true, also updates parent script status. */
+  review: (id: string, reviewStatus: string, reviewNotes?: string, updateScriptStatus?: boolean): Promise<{ ok: boolean }> =>
+    requestReports(() =>
+      httpClient.post('/reports', { id, review_status: reviewStatus, review_notes: reviewNotes ?? '', update_script_status: updateScriptStatus })),
+  /** Delete a report by id. */
+  deleteReport: (id: string): Promise<{ ok: boolean }> =>
+    requestReports(() => httpClient.delete(`/reports?id=${encodeURIComponent(id)}`)),
+  /** Get lifecycle payload for Script Journey report. */
+  getScriptJourney: (scriptId: string): Promise<ScriptJourneyPayload> =>
+    requestReports(() => httpClient.get(`/reports/script-journey?scriptId=${encodeURIComponent(scriptId)}`)),
+  /** Get regulator performance payload for admin reporting. */
+  getRegulatorPerformance: (userId: string, range?: { from?: string; to?: string }): Promise<RegulatorPerformancePayload> =>
+    requestReports(() => httpClient.get(`/reports/regulator-performance?userId=${encodeURIComponent(userId)}${range?.from ? `&from=${encodeURIComponent(range.from)}` : ''}${range?.to ? `&to=${encodeURIComponent(range.to)}` : ''}`)),
+};
+
+export interface ScriptJourneyPayload {
+  script: {
+    id: string;
+    title: string;
+    status: string | null;
+    createdAt: string | null;
+    receivedAt: string | null;
+    type: string | null;
+    workClassification: string | null;
+    episodeCount: number | null;
+    expectedRank: string | null;
+    synopsis: string | null;
+    storySummary: string | null;
+    attachments?: {
+      scriptFileUrl?: string | null;
+      scriptSummaryPdfUrl?: string | null;
+      hasSecurityScenes?: boolean | null;
+      securityContentAttachmentUrl?: string | null;
+    };
+  };
+  beneficiary: {
+    id: string | null;
+    nameAr: string | null;
+    nameEn: string | null;
+    type: string | null;
+    contactPerson: string | null;
+    contactPersonEmail: string | null;
+    email: string | null;
+  };
+  decision: {
+    status: string | null;
+    decidedAt: string | null;
+    decidedBy: string | null;
+    decidedByName: string | null;
+    reason: string | null;
+    relatedReportId: string | null;
+  };
+  summary: {
+    totalCycles: number;
+    totalProcessDays: number | null;
+    firstFindingsCount: number;
+    finalFindingsCount: number;
+    reportsCount: number;
+    jobsCount: number;
+  };
+  timeline: Array<{
+    type: string;
+    at: string;
+    actorId?: string | null;
+    actorName?: string | null;
+    note?: string | null;
+    toStatus?: string | null;
+    reason?: string | null;
+  }>;
+  cycles: Array<{
+    cycleId: string;
+    cycleNumber: number;
+    status: string | null;
+    sentAt: string | null;
+    returnedAt: string | null;
+    reanalyzedAt: string | null;
+    adminNote: string | null;
+    sentBy: string | null;
+    sentByName: string | null;
+    sourceJobId: string | null;
+    reanalyzedJobId: string | null;
+    sourceReportId: string | null;
+    reanalyzedReportId: string | null;
+    sourceFindingsTotal: number;
+    reanalyzedFindingsTotal: number;
+    sourceFindingsBySeverity: Record<string, number>;
+    reanalyzedFindingsBySeverity: Record<string, number>;
+    sourceFindingsBySource: Record<string, number>;
+    reanalyzedFindingsBySource: Record<string, number>;
+    comparison?: {
+      canonical?: {
+        resolved_count?: number;
+        persisting_count?: number;
+        new_count?: number;
+      };
+    } | null;
+  }>;
+  findingsEvolution: Array<{
+    cycleNumber: number;
+    sourceFindingsTotal: number;
+    reanalyzedFindingsTotal: number;
+    comparisonSummary?: {
+      canonical?: {
+        resolved_count?: number;
+        persisting_count?: number;
+        new_count?: number;
+      };
+    } | null;
+  }>;
+}
+
+export interface RegulatorPerformancePayload {
+  regulator: {
+    id: string;
+    name: string;
+    email: string | null;
+    roleKey: string | null;
+  };
+  scope: {
+    from: string | null;
+    to: string | null;
+    generatedAt: string;
+  };
+  summary: {
+    totalAssignedScripts: number;
+    totalRecommendations: number;
+    totalApprovalRecommendations: number;
+    totalRejectionRecommendations: number;
+    totalSendBacks: number;
+    totalCyclesHandled: number;
+    finalDecisionCount: number;
+    finalApprovedCount: number;
+    finalRejectedCount: number;
+    recommendationAgreementRate: number | null;
+    averageFirstActionMinutes: number | null;
+    averageTurnaroundDays: number | null;
+  };
+  scripts: Array<{
+    id: string;
+    title: string | null;
+    status: string | null;
+    beneficiaryId: string | null;
+    beneficiaryName: string | null;
+    beneficiaryType: string | null;
+    receivedAt: string | null;
+    assignedAt: string | null;
+    firstActionAt: string | null;
+    lastActionAt: string | null;
+    firstActionMinutes: number | null;
+    turnaroundDays: number | null;
+    recommendationsCount: number;
+    recommendationApprovalCount: number;
+    recommendationRejectionCount: number;
+    sendBackCount: number;
+    cycleCount: number;
+    latestRecommendation: {
+      type: string | null;
+      reason: string | null;
+      at: string | null;
+      reportId: string | null;
+    } | null;
+    finalDecision: {
+      status: string | null;
+      at: string | null;
+      by: string | null;
+      byName: string | null;
+      reason: string | null;
+    } | null;
+    reportsCount: number;
+  }>;
+  cycles: Array<{
+    id: string;
+    scriptId: string | null;
+    cycleNumber: number | null;
+    status: string | null;
+    sentAt: string | null;
+    returnedAt: string | null;
+    reanalyzedAt: string | null;
+    sentBy: string | null;
+    sentByName: string | null;
+    adminNote: string | null;
+    sourceReportId: string | null;
+    reanalyzedReportId: string | null;
+    sourceJobId: string | null;
+    reanalyzedJobId: string | null;
+    cycleEvents: Array<Record<string, unknown>>;
+    comparison: Record<string, unknown> | null;
+  }>;
+  timeline: Array<Record<string, unknown>>;
+  notes: string[];
+}
+
+export interface UserListItem {
+  id: string;
+  email: string;
+  name: string;
+  roleKey: string | null;
+  status: 'active' | 'disabled';
+  allowedSections?: string[];
+  permissions?: string[];
+}
+
+export interface CreateUserBody {
+  name: string;
+  email: string;
+  roleKey: string;
+  permissions?: string[];
+  canAcceptReject?: boolean;
+  canSendForReview?: boolean;
+  canUseQuickAnalysis?: boolean;
+  mode?: 'invite' | 'temp_password';
+  tempPassword?: string;
+  allowedSections?: string[];
+}
+
+export interface CreateUserResponse {
+  userId: string;
+  invited: boolean;
+  existing?: boolean;
+  /** Only in DEV when mode is temp_password; never in PROD. */
+  tempPassword?: string;
+}
+
+export interface UpdateUserBody {
+  userId: string;
+  name?: string;
+  roleKey?: string;
+  status?: 'active' | 'disabled';
+  allowedSections?: string[];
+  permissions?: string[];
+  canAcceptReject?: boolean;
+  canSendForReview?: boolean;
+  canUseQuickAnalysis?: boolean;
+}
+
+export interface DeleteUserBody {
+  userId: string;
+}
+
+export const usersApi = {
+  getUsers: (): Promise<UserListItem[]> => httpClient.get('/users'),
+  createUser: (body: CreateUserBody): Promise<CreateUserResponse> => httpClient.post('/users', body),
+  updateUser: (body: UpdateUserBody): Promise<{ userId: string; updated: boolean }> =>
+    httpClient.patch('/users', body),
+  deleteUser: (body: DeleteUserBody): Promise<{ userId: string; deleted: boolean }> =>
+    httpClient.delete(`/users?userId=${encodeURIComponent(body.userId)}`, { body: { userId: body.userId } }),
+};
+
+export interface SendInviteBody {
+  email: string;
+  name?: string;
+  role: string;
+  permissions?: string[]; // legacy-compatible full permission list
+  canAcceptReject?: boolean;
+  canSendForReview?: boolean;
+  canUseQuickAnalysis?: boolean;
+  allowedSections?: string[]; // NEW: Section-based permissions
+}
+
+export interface SendInviteResponse {
+  ok: boolean;
+  expiresAt: string;
+  email: string;
+}
+
+export interface ConsumeInviteBody {
+  token: string;
+  password: string;
+  name?: string;
+}
+
+export const invitesApi = {
+  sendInvite: (body: SendInviteBody): Promise<SendInviteResponse> => httpClient.post('/invites', body),
+  consumeInvite: (body: ConsumeInviteBody): Promise<{ ok: boolean }> => httpClient.post('/invites-consume', body),
+};
+
+export const overridesApi = {
+  setOverride: (findingId: string, overrideData: any) => httpClient.post(`/findings/${findingId}/override`, overrideData),
+  revertOverride: (findingId: string) => httpClient.delete(`/findings/${findingId}/override`),
+};

@@ -1,0 +1,47 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:document-extract": "tsx src/utils/documentExtract.scene.test.ts && tsx src/utils/documentExtract.pdf-arabic.test.ts && tsx src/utils/documentExtract.table-aware.test.ts"
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "^4.3.2",
+    "@supabase/supabase-js": "^2.95.3",
+    "@types/qrcode": "^1.5.6",
+    "buffer": "^6.0.3",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "dompurify": "^3.2.2",
+    "events": "^3.3.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.563.0",
+    "mammoth": "^1.11.0",
+    "pdfjs-dist": "^4.7.76",
+    "process": "^0.11.10",
+    "qrcode": "^1.5.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-hot-toast": "^2.6.0",
+    "react-router-dom": "^7.13.0",
+    "recharts": "^3.7.0",
+    "tailwind-merge": "^3.4.0",
+    "tesseract.js": "^7.0.0",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.17",
+    "@types/node": "^22.0.0",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.1.1",
+    "tailwindcss": "4.1.17",
+    "tsx": "^4.19.2",
+    "typescript": "5.9.3",
+    "vite": "7.2.4"
+  }
+}

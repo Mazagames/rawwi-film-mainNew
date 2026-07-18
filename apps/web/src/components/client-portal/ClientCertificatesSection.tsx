@@ -1,0 +1,786 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Document, Font, Image, Page, Text, View, pdf } from '@react-pdf/renderer';
+import QRCode from 'qrcode';
+import { Award, BadgeCheck, Download, Eye, Loader2, ShieldCheck } from 'lucide-react';
+import {
+  certificatesApi,
+  type CertificateDashboardItem,
+  type CertificateDemoCard,
+  type CertificateTemplate,
+  type CertificateTemplateElement,
+  type ClientCertificatesResponse,
+} from '@/api';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Modal } from '@/components/ui/Modal';
+import { supabase } from '@/lib/supabaseClient';
+
+type ClientCertificatesSectionProps = {
+  lang: 'ar' | 'en';
+};
+
+type CertificateStatus = CertificateDashboardItem['certificateStatus'];
+type CertificateExportDebug = {
+  scriptId: string;
+  certificateNumber: string;
+  templateId: string | null;
+  templateElementsRaw: number;
+  templateElementsValid: number;
+  usedTemplate: boolean;
+  firstBlobSize: number;
+  fallbackBlobSize: number | null;
+  usedFallbackLayout: boolean;
+  values: ReturnType<typeof getCertificateValues>;
+  skippedUnsupportedImages: number;
+  offCanvasElements: number;
+  zeroOpacityElements: number;
+  usedSafeTemplateMode: boolean;
+};
+
+const fontBase = typeof window !== 'undefined' ? window.location.origin : '';
+
+Font.register({
+  family: 'CertificateCairo',
+  fonts: [
+    { src: `${fontBase}/fonts/Cairo-Regular.ttf` },
+    { src: `${fontBase}/fonts/Cairo-Bold.ttf`, fontWeight: 700 },
+  ],
+});
+
+function formatCurrency(amount: number, currency: string, lang: 'ar' | 'en') {
+  return new Intl.NumberFormat(lang === 'ar' ? 'ar-SA' : 'en-US', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatDate(value: string, lang: 'ar' | 'en') {
+  return new Date(value).toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US');
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function statusBadgeVariant(status: CertificateStatus): 'success' | 'warning' | 'error' {
+  if (status === 'issued') return 'success';
+  if (status === 'payment_failed') return 'error';
+  return 'warning';
+}
+
+function statusLabel(status: CertificateStatus, lang: 'ar' | 'en') {
+  if (status === 'issued') return lang === 'ar' ? 'صادرة' : 'Issued';
+  if (status === 'payment_failed') return lang === 'ar' ? 'الدفع فشل' : 'Payment failed';
+  return lang === 'ar' ? 'قيد الإصدار' : 'Issuing';
+}
+
+const PDF_PAGE_SIZE: Record<string, { width: number; height: number }> = {
+  A4: { width: 595.28, height: 841.89 },
+  A5: { width: 419.53, height: 595.28 },
+  Letter: { width: 612, height: 792 },
+};
+
+function getCertificateValues(item: CertificateDashboardItem, lang: 'ar' | 'en') {
+  const rawData = (item.certificate?.certificateData ?? {}) as Record<string, unknown>;
+  const certificateNumber = item.certificate?.certificateNumber ?? String(rawData.certificate_number ?? '');
+  const scriptTitle = String(rawData.script_title ?? item.scriptTitle);
+  const companyName =
+    String(rawData.company_name_ar ?? '').trim() ||
+    String(rawData.company_name_en ?? '').trim() ||
+    String(item.companyNameAr ?? '').trim() ||
+    String(item.companyNameEn ?? '').trim() ||
+    '';
+  const issuedAt = item.certificate?.issuedAt ?? String(rawData.issued_at ?? item.approvedAt);
+  const amountPaid = typeof rawData.amount_paid === 'number' ? rawData.amount_paid : item.certificateFee.totalAmount;
+  const currency = String(rawData.currency ?? item.certificateFee.currency);
+  return {
+    certificateNumber,
+    scriptTitle,
+    companyName: companyName || (lang === 'ar' ? 'غير محدد' : 'Not specified'),
+    scriptType: item.scriptType,
+    issuedAt,
+    approvedAt: item.approvedAt,
+    amountPaid,
+    currency,
+    amountPaidFormatted: formatCurrency(amountPaid, currency, lang),
+  };
+}
+
+function resolveClientLogoUrl(item: CertificateDashboardItem): string | null {
+  const rawData = (item.certificate?.certificateData ?? {}) as Record<string, unknown>;
+  const raw = String(rawData.company_logo_url ?? item.companyLogoUrl ?? '').trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw) || raw.startsWith('data:')) return raw;
+  const cleaned = raw.replace(/^company-logos\//, '').replace(/^\/+/, '');
+  if (!cleaned) return null;
+  const { data } = supabase.storage.from('company-logos').getPublicUrl(cleaned);
+  return data?.publicUrl ?? null;
+}
+
+function isSvgImageSource(src?: string | null) {
+  const value = (src ?? '').trim().toLowerCase();
+  if (!value) return false;
+  return value.startsWith('data:image/svg+xml') || value.endsWith('.svg');
+}
+
+function resolveFilmCommissionLogoUrl() {
+  if (typeof window === 'undefined') return '/fclogo.png';
+  return `${window.location.origin}/fclogo.png`;
+}
+
+function getCertificateVerificationUrl(item: CertificateDashboardItem) {
+  const certificateNumber = item.certificate?.certificateNumber ?? 'certificate';
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}/verify-certificate/${encodeURIComponent(certificateNumber)}`;
+}
+
+function resolveTemplateText(text: string | undefined, item: CertificateDashboardItem, lang: 'ar' | 'en') {
+  const values = getCertificateValues(item, lang);
+  return (text ?? '')
+    .replaceAll('{{certificate_number}}', values.certificateNumber)
+    .replaceAll('{{script_title}}', values.scriptTitle)
+    .replaceAll('{{script_type}}', values.scriptType)
+    .replaceAll('{{company_name}}', values.companyName)
+    .replaceAll('{{issued_at}}', formatDate(values.issuedAt, lang))
+    .replaceAll('{{approved_at}}', formatDate(values.approvedAt, lang))
+    .replaceAll('{{amount_paid}}', values.amountPaidFormatted)
+    .replaceAll('{{verification_url}}', getCertificateVerificationUrl(item));
+}
+
+function resolvePdfFontFamily(fontFamily?: string, forceBuiltinFont = false) {
+  if (forceBuiltinFont) return 'Helvetica';
+  const normalized = (fontFamily ?? '').toLowerCase();
+  if (
+    normalized.includes('cairo') ||
+    normalized.includes('hacen') ||
+    normalized.includes('arabic') ||
+    normalized.includes('tahoma')
+  ) {
+    return 'CertificateCairo';
+  }
+  if (normalized.includes('times')) return 'Times-Roman';
+  return 'Helvetica';
+}
+
+function pageDimensions(template?: CertificateTemplate | null) {
+  const base = PDF_PAGE_SIZE[template?.pageSize ?? 'A4'] ?? PDF_PAGE_SIZE.A4;
+  const orientation = template?.orientation ?? 'landscape';
+  return orientation === 'landscape'
+    ? { width: Math.max(base.width, base.height), height: Math.min(base.width, base.height) }
+    : { width: Math.min(base.width, base.height), height: Math.max(base.width, base.height) };
+}
+
+function elementStyle(element: CertificateTemplateElement, page: { width: number; height: number }, template?: CertificateTemplate | null) {
+  const ratio = template
+    ? ((template.orientation === 'portrait' ? 1 / ({ A4: 297 / 210, A5: 210 / 148, Letter: 11 / 8.5 }[template.pageSize] ?? 297 / 210) : ({ A4: 297 / 210, A5: 210 / 148, Letter: 11 / 8.5 }[template.pageSize] ?? 297 / 210)))
+    : 16 / 9;
+  const baseWidth = 1000;
+  const baseHeight = baseWidth / ratio;
+  const rawLeft = (element.x / baseWidth) * page.width;
+  const rawTop = (element.y / baseHeight) * page.height;
+  const rawWidth = (element.width / baseWidth) * page.width;
+  const rawHeight = (element.height / baseHeight) * page.height;
+  const width = clamp(rawWidth, 8, page.width);
+  const height = clamp(rawHeight, 8, page.height);
+  const left = clamp(rawLeft, 0, Math.max(0, page.width - width));
+  const top = clamp(rawTop, 0, Math.max(0, page.height - height));
+  return {
+    position: 'absolute' as const,
+    left,
+    top,
+    width,
+    height,
+    opacity: element.opacity ?? 1,
+  };
+}
+
+function sanitizeTemplateElements(template?: CertificateTemplate | null): CertificateTemplateElement[] {
+  const raw = template?.templateData?.elements;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((element) => {
+      if (!element || typeof element.id !== 'string' || typeof element.type !== 'string') return null;
+      const x = Number((element as any).x);
+      const y = Number((element as any).y);
+      const width = Number((element as any).width);
+      const height = Number((element as any).height);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) return null;
+      if (width <= 0 || height <= 0) return null;
+      return { ...element, x, y, width, height } as CertificateTemplateElement;
+    })
+    .filter((element): element is CertificateTemplateElement => Boolean(element));
+}
+
+function hasRenderableTemplateContent(elements: CertificateTemplateElement[]): boolean {
+  return elements.some((element) => {
+    if (element.type === 'qr') return true;
+    if (element.type === 'logo') return Boolean(element.imageUrl) || element.logoSource === 'client' || element.logoSource === 'film_commission';
+    if (element.type === 'image') return Boolean(element.imageUrl);
+    return Boolean((element.text ?? '').trim());
+  });
+}
+
+function TemplateElementPdf({ element, item, lang, page, template, qrDataUrl, forceBuiltinFont = false }: {
+  element: CertificateTemplateElement;
+  item: CertificateDashboardItem;
+  lang: 'ar' | 'en';
+  page: { width: number; height: number };
+  template: CertificateTemplate;
+  qrDataUrl: string;
+  forceBuiltinFont?: boolean;
+}) {
+  const boxStyle = elementStyle(element, page, template);
+  if (element.type === 'logo' && element.logoSource === 'film_commission') {
+    return <Image src={resolveFilmCommissionLogoUrl()} style={[boxStyle, { objectFit: 'contain' }]} />;
+  }
+  if (element.type === 'logo' && element.logoSource === 'client') {
+    const clientLogoUrl = resolveClientLogoUrl(item);
+    if (clientLogoUrl && !isSvgImageSource(clientLogoUrl)) {
+      return <Image src={clientLogoUrl} style={[boxStyle, { objectFit: 'contain' }]} />;
+    }
+    return (
+      <View style={[boxStyle, { borderWidth: 1, borderColor: '#d1d5db', alignItems: 'center', justifyContent: 'center' }]}>
+        <Text style={{ fontSize: 10, color: '#6b7280' }}>{lang === 'ar' ? 'شعار المستفيد' : 'Beneficiary Logo'}</Text>
+      </View>
+    );
+  }
+  if ((element.type === 'image' || element.type === 'logo') && element.imageUrl && !isSvgImageSource(element.imageUrl)) {
+    return <Image src={element.imageUrl} style={[boxStyle, { objectFit: 'contain' }]} />;
+  }
+  if (element.type === 'qr') {
+    return <Image src={qrDataUrl} style={[boxStyle, { objectFit: 'contain', backgroundColor: '#ffffff' }]} />;
+  }
+  return (
+    <Text
+      style={[
+        boxStyle,
+        {
+          fontSize: element.fontSize ?? 18,
+          fontFamily: resolvePdfFontFamily(element.fontFamily, forceBuiltinFont),
+          fontWeight: element.bold ? 700 : 400,
+          fontStyle: element.italic ? 'italic' : 'normal',
+          color: element.color ?? '#111827',
+          textAlign: element.align ?? 'center',
+          lineHeight: 1.35,
+        },
+      ]}
+    >
+      {resolveTemplateText(element.text, item, lang)}
+    </Text>
+  );
+}
+
+function CertificatePdfDocument({ item, lang, template, qrDataUrl, forceBuiltinFont = false, safeTemplateMode = false }: {
+  item: CertificateDashboardItem;
+  lang: 'ar' | 'en';
+  template?: CertificateTemplate | null;
+  qrDataUrl: string;
+  forceBuiltinFont?: boolean;
+  safeTemplateMode?: boolean;
+}) {
+  const values = getCertificateValues(item, lang);
+  const page = pageDimensions(template);
+  const templateElements = sanitizeTemplateElements(template);
+  if (template && templateElements.length > 0 && hasRenderableTemplateContent(templateElements)) {
+    const safeBackgroundImageUrl = !safeTemplateMode && template.backgroundImageUrl && !isSvgImageSource(template.backgroundImageUrl)
+      ? template.backgroundImageUrl
+      : null;
+    return (
+      <Document>
+        <Page wrap={false} size={[page.width, page.height]} style={{ position: 'relative', backgroundColor: template.backgroundColor }}>
+          {safeBackgroundImageUrl ? (
+            <Image
+              src={safeBackgroundImageUrl}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: page.width,
+                height: page.height,
+                opacity: template.backgroundImageOpacity,
+                objectFit: template.backgroundImageFit === 'contain' ? 'contain' : 'cover',
+              }}
+            />
+          ) : null}
+          {templateElements.map((element) => (
+            <TemplateElementPdf key={element.id} element={element} item={item} lang={lang} page={page} template={template} qrDataUrl={qrDataUrl} forceBuiltinFont={forceBuiltinFont} />
+          ))}
+        </Page>
+      </Document>
+    );
+  }
+  return (
+    <Document>
+      <Page size="A4" orientation="landscape" style={{ padding: 44, backgroundColor: '#fffdf8', color: '#1f2333', fontFamily: forceBuiltinFont ? 'Helvetica' : (lang === 'ar' ? 'CertificateCairo' : 'Helvetica') }}>
+        <View style={{ borderWidth: 8, borderColor: '#d2ba6a', padding: 28, height: '100%' }}>
+          <Text style={{ fontSize: 12, color: '#86652c', letterSpacing: 2 }}>{lang === 'ar' ? 'نظام راوي فيلم' : 'RAAWI FILM SYSTEM'}</Text>
+          <Text style={{ marginTop: 10, fontSize: 34, color: '#3c2a63', fontWeight: 700 }}>{lang === 'ar' ? 'شهادة اعتماد النص' : 'Script Approval Certificate'}</Text>
+          <Text style={{ marginTop: 18, fontSize: 15, lineHeight: 1.7 }}>
+            {lang === 'ar'
+              ? 'تشهد منصة راوي فيلم بأن النص التالي تم اعتماده ضمن دورة المراجعة الحالية، وأُنجزت رسوم الشهادة التجريبية الخاصة به بنجاح.'
+              : 'Raawi Film certifies that this script has been approved in the current review cycle and its demo certificate fee has been completed successfully.'}
+          </Text>
+          <View style={{ marginTop: 26, flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            {[
+              [lang === 'ar' ? 'رقم الشهادة' : 'Certificate Number', values.certificateNumber],
+              [lang === 'ar' ? 'تاريخ الإصدار' : 'Issued Date', formatDate(values.issuedAt, lang)],
+              [lang === 'ar' ? 'اسم النص' : 'Script Title', values.scriptTitle],
+              [lang === 'ar' ? 'شركة الإنتاج' : 'Production Company', values.companyName],
+              [lang === 'ar' ? 'نوع العمل' : 'Script Type', values.scriptType],
+              [lang === 'ar' ? 'المبلغ المسدد' : 'Amount Paid', values.amountPaidFormatted],
+            ].map(([label, value]) => (
+              <View key={label} style={{ width: '31%', borderWidth: 1, borderColor: '#e9dec0', padding: 12 }}>
+                <Text style={{ fontSize: 9, color: '#8b7f66' }}>{label}</Text>
+                <Text style={{ marginTop: 6, fontSize: 13, fontWeight: 700 }}>{value}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={{ position: 'absolute', right: 72, bottom: 72, width: 96, height: 96 }}>
+            <Image src={qrDataUrl} style={{ width: 96, height: 96 }} />
+          </View>
+        </View>
+      </Page>
+    </Document>
+  );
+}
+
+async function generateCertificatePdfBlob(item: CertificateDashboardItem, lang: 'ar' | 'en', template?: CertificateTemplate | null) {
+  const certificateNumber = item.certificate?.certificateNumber ?? 'certificate';
+  const values = getCertificateValues(item, lang);
+  const templateElements = sanitizeTemplateElements(template);
+  const debug: CertificateExportDebug = {
+    scriptId: item.scriptId,
+    certificateNumber,
+    templateId: template?.id ?? null,
+    templateElementsRaw: template?.templateData?.elements?.length ?? 0,
+    templateElementsValid: templateElements.length,
+    usedTemplate: Boolean(template && templateElements.length > 0),
+    firstBlobSize: 0,
+    fallbackBlobSize: null,
+    usedFallbackLayout: false,
+    values,
+    skippedUnsupportedImages: 0,
+    offCanvasElements: 0,
+    zeroOpacityElements: 0,
+    usedSafeTemplateMode: false,
+  };
+  const page = pageDimensions(template);
+  debug.zeroOpacityElements = templateElements.filter((element) => (element.opacity ?? 1) <= 0.01).length;
+  debug.offCanvasElements = templateElements.filter((element) => {
+    const style = elementStyle(element, page, template);
+    const left = Number(style.left ?? 0);
+    const top = Number(style.top ?? 0);
+    const width = Number(style.width ?? 0);
+    const height = Number(style.height ?? 0);
+    if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) return true;
+    if (width <= 0 || height <= 0) return true;
+    if (left > page.width || top > page.height) return true;
+    return false;
+  }).length;
+  const unsupportedImageCount = templateElements.filter((element) => {
+    if (element.type !== 'image' && element.type !== 'logo') return false;
+    if (element.type === 'logo' && element.logoSource === 'film_commission') return false;
+    if (element.type === 'logo' && element.logoSource === 'client') {
+      const logoUrl = resolveClientLogoUrl(item);
+      return !logoUrl || isSvgImageSource(logoUrl);
+    }
+    return isSvgImageSource(element.imageUrl ?? '');
+  }).length;
+  debug.skippedUnsupportedImages = unsupportedImageCount + (template?.backgroundImageUrl && isSvgImageSource(template.backgroundImageUrl) ? 1 : 0);
+  const qrDataUrl = await QRCode.toDataURL(getCertificateVerificationUrl(item), {
+    errorCorrectionLevel: 'M',
+    margin: 1,
+    scale: 8,
+  });
+  let blob = await pdf(<CertificatePdfDocument item={item} lang={lang} template={template} qrDataUrl={qrDataUrl} />).toBlob();
+  debug.firstBlobSize = blob.size;
+  if (template && templateElements.length > 0) {
+    // Safety path: same template layout but safer font/background handling.
+    const safeBlob = await pdf(
+      <CertificatePdfDocument
+        item={item}
+        lang={lang}
+        template={template}
+        qrDataUrl={qrDataUrl}
+        safeTemplateMode
+      />,
+    ).toBlob();
+    if (safeBlob.size > 1500) {
+      blob = safeBlob;
+      debug.usedSafeTemplateMode = true;
+    }
+  }
+  if (blob.size < 1500) {
+    debug.usedFallbackLayout = true;
+    blob = await pdf(
+      <CertificatePdfDocument
+        item={item}
+        lang={lang}
+        template={null}
+        qrDataUrl={qrDataUrl}
+        forceBuiltinFont={lang !== 'ar'}
+      />,
+    ).toBlob();
+    debug.fallbackBlobSize = blob.size;
+  }
+  return { blob, debug };
+}
+
+async function downloadCertificateDocument(item: CertificateDashboardItem, lang: 'ar' | 'en', template?: CertificateTemplate | null) {
+  const certificateNumber = item.certificate?.certificateNumber ?? 'certificate';
+  const { blob, debug } = await generateCertificatePdfBlob(item, lang, template);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${certificateNumber}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 500);
+  return debug;
+}
+
+export function ClientCertificatesSection({ lang }: ClientCertificatesSectionProps) {
+  const [data, setData] = useState<ClientCertificatesResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [selectedItem, setSelectedItem] = useState<CertificateDashboardItem | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState('');
+  const [isPaying, setIsPaying] = useState(false);
+  const [downloadingId, setDownloadingId] = useState('');
+  const [previewingId, setPreviewingId] = useState('');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [exportDebug, setExportDebug] = useState<CertificateExportDebug | null>(null);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await certificatesApi.getClientDashboard();
+      setData(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر تحميل بيانات الشهادات' : 'Unable to load certificates data'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedItem || !data?.demoCards?.length) {
+      setSelectedCardId('');
+      return;
+    }
+    setSelectedCardId((current) => current || data.demoCards[0].id);
+  }, [selectedItem, data?.demoCards]);
+
+  const summary = useMemo(() => {
+    const items = data?.items ?? [];
+    return {
+      approved: items.length,
+      pending: items.filter((item) => item.certificateStatus === 'payment_pending').length,
+      failed: items.filter((item) => item.certificateStatus === 'payment_failed').length,
+      issued: items.filter((item) => item.certificateStatus === 'issued').length,
+    };
+  }, [data]);
+
+  const handlePay = async () => {
+    if (!selectedItem || !selectedCardId) return;
+    setIsPaying(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await certificatesApi.processDemoPayment(selectedItem.scriptId, selectedCardId);
+      if (!response.ok && !response.alreadyIssued) {
+        setError(response.error || (lang === 'ar' ? 'فشلت عملية الدفع التجريبية' : 'Demo payment failed'));
+      } else {
+        setNotice(
+          response.alreadyIssued
+            ? (lang === 'ar' ? 'هذه الشهادة صادرة بالفعل.' : 'This certificate has already been issued.')
+            : (lang === 'ar' ? 'تم إتمام الدفع التجريبي وإصدار الشهادة.' : 'Demo payment completed and certificate issued.'),
+        );
+      }
+      setSelectedItem(null);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر إتمام الدفع التجريبي' : 'Unable to complete demo payment'));
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  const handleDownload = async (item: CertificateDashboardItem) => {
+    setDownloadingId(item.scriptId);
+    setError('');
+    try {
+      const response = await certificatesApi.getClientCertificateFileUrl(item.scriptId, true);
+      window.open(response.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر تنزيل ملف الشهادة' : 'Unable to download certificate file'));
+    } finally {
+      setDownloadingId('');
+    }
+  };
+
+  const handlePreview = async (item: CertificateDashboardItem) => {
+    setPreviewingId(item.scriptId);
+    setError('');
+    try {
+      const response = await certificatesApi.getClientCertificateFileUrl(item.scriptId, false);
+      window.open(response.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر فتح معاينة الشهادة' : 'Unable to open certificate preview'));
+    } finally {
+      setPreviewingId('');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="rounded-[calc(var(--radius)+0.3rem)] border border-error/20 bg-error/10 p-3 text-sm text-error">{error}</div>
+      )}
+      {notice && (
+        <div className="rounded-[calc(var(--radius)+0.3rem)] border border-success/20 bg-success/10 p-3 text-sm text-success">{notice}</div>
+      )}
+      {exportDebug && (
+        <div className="rounded-[calc(var(--radius)+0.3rem)] border border-primary/20 bg-primary/5 p-3 text-xs text-text-muted">
+          <div className="flex items-center justify-between gap-2">
+            <span>{lang === 'ar' ? 'تشخيص تصدير الشهادة متاح' : 'Certificate export diagnostics available'}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const payload = JSON.stringify(exportDebug, null, 2);
+                navigator.clipboard.writeText(payload).catch(() => {});
+              }}
+            >
+              {lang === 'ar' ? 'نسخ التشخيص' : 'Copy diagnostics'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Card className="client-portal-panel overflow-hidden border-border/80 shadow-[0_18px_50px_rgba(31,23,36,0.06)]">
+        <CardHeader>
+          <CardTitle>{lang === 'ar' ? 'الشهادات' : 'Certificates'}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-2">
+            <Card className="border-border/70 bg-background/70">
+              <CardContent className="flex items-center justify-between p-5">
+                <div>
+                  <p className="text-sm text-text-muted">{lang === 'ar' ? 'النصوص المعتمدة' : 'Approved Scripts'}</p>
+                  <p className="mt-2 text-3xl font-bold">{summary.approved}</p>
+                </div>
+                <Award className="h-8 w-8 text-primary" />
+              </CardContent>
+            </Card>
+            <Card className="border-border/70 bg-background/70">
+              <CardContent className="flex items-center justify-between p-5">
+                <div>
+                  <p className="text-sm text-text-muted">{lang === 'ar' ? 'شهادات صادرة' : 'Issued Certificates'}</p>
+                  <p className="mt-2 text-3xl font-bold text-success">{summary.issued}</p>
+                </div>
+                <BadgeCheck className="h-8 w-8 text-success" />
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="client-portal-panel overflow-hidden border-border/80 shadow-[0_18px_50px_rgba(31,23,36,0.06)]">
+        <CardHeader>
+          <CardTitle>{lang === 'ar' ? 'الشهادات الصادرة' : 'Issued Certificates'}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {lang === 'ar' ? 'جاري تحميل الشهادات...' : 'Loading certificates...'}
+            </div>
+          ) : !data || data.items.length === 0 ? (
+            <p className="text-sm text-text-muted">
+              {lang === 'ar'
+                ? 'لا توجد شهادات متاحة حالياً. بمجرد اعتماد النص من الإدارة ستظهر الشهادة هنا.'
+                : 'There are no certificates available yet. Once admin approves a script, the certificate will appear here.'}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {data.items.map((item) => (
+                <div key={item.scriptId} className="rounded-[calc(var(--radius)+0.35rem)] border border-border bg-background/80 p-4">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-lg font-semibold">{item.scriptTitle}</p>
+                        <Badge variant={statusBadgeVariant(item.certificateStatus)}>{statusLabel(item.certificateStatus, lang)}</Badge>
+                      </div>
+                      <p className="text-sm text-text-muted">
+                        {item.scriptType} • {lang === 'ar' ? 'تاريخ الاعتماد' : 'Approved on'} {formatDate(item.approvedAt, lang)}
+                      </p>
+                      
+                      {item.certificate ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm text-success">
+                            {lang === 'ar' ? 'رقم الشهادة:' : 'Certificate number:'} {item.certificate.certificateNumber}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {item.certificateStatus === 'issued' ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handleDownload(item)}
+                            isLoading={downloadingId === item.scriptId}
+                          >
+                            <Download className="me-2 h-4 w-4" />
+                            {lang === 'ar' ? 'تنزيل الشهادة' : 'Download Certificate'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handlePreview(item)}
+                            isLoading={previewingId === item.scriptId}
+                          >
+                            <Eye className="me-2 h-4 w-4" />
+                            {lang === 'ar' ? 'معاينة الشهادة' : 'Preview Certificate'}
+                          </Button>
+                          <Badge variant="success">
+                            <ShieldCheck className="me-1 h-3.5 w-3.5" />
+                            {lang === 'ar' ? 'صادرة' : 'Issued'}
+                          </Badge>
+                        </>
+                      ) : (
+                        <Badge variant="outline">
+                          {lang === 'ar' ? 'جاري تجهيز الشهادة' : 'Preparing certificate'}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Modal
+        isOpen={Boolean(selectedItem)}
+        onClose={() => !isPaying && setSelectedItem(null)}
+        title={lang === 'ar' ? 'إتمام الدفع التجريبي للشهادة' : 'Complete Demo Certificate Payment'}
+        className="max-w-2xl"
+      >
+        {!selectedItem ? null : (
+          <div className="space-y-4">
+            <div className="rounded-[calc(var(--radius)+0.35rem)] border border-border bg-background/80 p-4">
+              <p className="font-semibold">{selectedItem.scriptTitle}</p>
+              <p className="mt-1 text-sm text-text-muted">
+                {lang === 'ar' ? 'إجمالي الرسوم:' : 'Total fee:'}{' '}
+                {formatCurrency(selectedItem.certificateFee.totalAmount, selectedItem.certificateFee.currency, lang)}
+              </p>
+            </div>
+
+            <div className="rounded-[calc(var(--radius)+0.35rem)] border border-warning/20 bg-warning/10 p-4 text-sm leading-7 text-warning">
+              {lang === 'ar'
+                ? 'اختر بطاقة تجريبية. البطاقات الناجحة ستصدر الشهادة مباشرة، بينما البطاقة المرفوضة ستعيد حالة الدفع الفاشل حتى نختبر الواجهة.'
+                : 'Choose a demo card. Successful cards will issue the certificate immediately, while the declined card will keep the payment in a failed state for testing.'}
+            </div>
+
+            <div className="space-y-3">
+              {(data?.demoCards ?? []).map((card) => (
+                <label
+                  key={card.id}
+                  className={`flex cursor-pointer items-start gap-3 rounded-[calc(var(--radius)+0.35rem)] border p-4 transition ${
+                    selectedCardId === card.id ? 'border-primary bg-primary/5' : 'border-border bg-background/70'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="demo-card"
+                    checked={selectedCardId === card.id}
+                    onChange={() => setSelectedCardId(card.id)}
+                    className="mt-1"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-semibold">{lang === 'ar' ? card.labelAr : card.labelEn}</p>
+                    <p className="mt-1 text-sm text-text-muted">{card.maskedNumber}</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-text-muted">{card.brand}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setSelectedItem(null)} disabled={isPaying}>
+                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+              </Button>
+              <Button onClick={() => void handlePay()} isLoading={isPaying} disabled={!selectedCardId}>
+                {lang === 'ar' ? 'إتمام الدفع' : 'Complete payment'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+      <Modal
+        isOpen={previewOpen}
+        onClose={() => {
+          setPreviewOpen(false);
+          if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            setPreviewUrl(null);
+          }
+        }}
+        title={lang === 'ar' ? 'معاينة الشهادة' : 'Certificate Preview'}
+        className="max-w-5xl"
+      >
+        {!previewUrl ? (
+          <p className="text-sm text-text-muted">{lang === 'ar' ? 'لا توجد معاينة متاحة' : 'No preview available'}</p>
+        ) : (
+          <div className="space-y-3">
+            <object
+              data={previewUrl}
+              type="application/pdf"
+              className="h-[75vh] w-full rounded-md border border-border bg-white"
+            >
+              <div className="flex h-[75vh] flex-col items-center justify-center gap-3 rounded-md border border-border bg-background p-4 text-center">
+                <p className="text-sm text-text-muted">
+                  {lang === 'ar'
+                    ? 'تعذر عرض المعاينة داخل الصفحة بسبب إعدادات المتصفح.'
+                    : 'Preview could not be shown inside this page due to browser settings.'}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => window.open(previewUrl, '_blank', 'noopener,noreferrer')}
+                  >
+                    {lang === 'ar' ? 'فتح المعاينة في تبويب جديد' : 'Open Preview in New Tab'}
+                  </Button>
+                </div>
+              </div>
+            </object>
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => window.open(previewUrl, '_blank', 'noopener,noreferrer')}
+              >
+                {lang === 'ar' ? 'فتح في تبويب جديد' : 'Open in New Tab'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}

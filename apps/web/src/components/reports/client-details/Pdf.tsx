@@ -1,0 +1,100 @@
+import React from "react";
+import { Document, Image, Page, Text, View } from "@react-pdf/renderer";
+import { formatDate, formatDateTime } from "@/utils/dateFormat";
+import { clientDetailsStyles as s } from "./styles";
+import type { ClientDetailsScriptRow } from "./mapper";
+const A4_WIDTH = 595.28;
+const A4_HEIGHT = 841.89;
+
+function clean(v: unknown, max = 40): string {
+  const t = String(v ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
+export interface ClientDetailsSectionPdfProps {
+  lang: "ar" | "en";
+  dateFormat?: string;
+  generatedAt: string;
+  coverImageDataUrl?: string | null;
+  logoUrl?: string;
+  dashboardLogoUrl?: string;
+  client: {
+    name: string;
+    representative: string;
+    email: string;
+    phone: string;
+    registrationDate: string;
+    status: string;
+    logoUrl?: string;
+  };
+  stats: { total: number; approved: number; inReview: number; draft: number };
+  rows: ClientDetailsScriptRow[];
+}
+
+export const ClientDetailsSectionPdf: React.FC<ClientDetailsSectionPdfProps> = (p) => {
+  const isAr = p.lang === "ar";
+  const rtl = isAr ? s.rtl : {};
+  return (
+    <Document>
+      <Page size="A4" wrap={false} style={[s.cover, isAr ? s.pageAr : {}]}>
+        <View style={{ width: A4_WIDTH, height: A4_HEIGHT, position: "relative" }}>
+          {p.logoUrl ? (
+            <View style={{ position: "absolute", top: 44, left: 44, right: 44, alignItems: "center" }}>
+              <Image src={p.logoUrl} style={{ width: 140, height: 44, objectFit: "contain" }} />
+            </View>
+          ) : null}
+          {p.coverImageDataUrl ? (
+            <Image
+              src={p.coverImageDataUrl}
+              style={{ position: "absolute", top: -2, left: -2, width: A4_WIDTH + 4, height: A4_HEIGHT + 4, objectFit: "cover" }}
+            />
+          ) : null}
+          <View style={{ position: "absolute", left: 44, right: 44, bottom: 92 }}>
+            <View style={s.coverMetaBlock}>
+              <Text style={[s.coverTitle, rtl]}>{isAr ? "تقرير المستفيد التفصيلي" : "Beneficiary Detailed Report"}</Text>
+              <Text style={[s.coverText, rtl]}>{p.client.name}</Text>
+              <Text style={[s.coverText, rtl]}>{formatDate(new Date(), { lang: p.lang, format: p.dateFormat })}</Text>
+            </View>
+          </View>
+        </View>
+      </Page>
+      <Page size="A4" style={[s.page, isAr ? s.pageAr : {}]}>
+        <Text style={[s.title, rtl]}>{isAr ? "تقرير المستفيد التفصيلي" : "Beneficiary Detailed Report"}</Text>
+        <Text style={[s.subtitle, rtl]}>{isAr ? `وقت الإنشاء: ${formatDateTime(new Date(p.generatedAt), { lang: p.lang })}` : `Generated: ${formatDateTime(new Date(p.generatedAt), { lang: p.lang })}`}</Text>
+        <View style={s.profile}>
+          <Text style={[s.profileLine, rtl]}>{isAr ? `اسم المستفيد: ${p.client.name}` : `Beneficiary Name: ${p.client.name}`}</Text>
+          <Text style={[s.profileLine, rtl]}>{isAr ? `المندوب: ${p.client.representative}` : `Representative: ${p.client.representative}`}</Text>
+          <Text style={[s.profileLine, rtl]}>{isAr ? `البريد: ${p.client.email}` : `Email: ${p.client.email}`}</Text>
+          <Text style={[s.profileLine, rtl]}>{isAr ? `الهاتف: ${p.client.phone}` : `Phone: ${p.client.phone}`}</Text>
+          <Text style={[s.profileLine, rtl]}>{isAr ? `تاريخ التسجيل: ${clean(p.client.registrationDate, 16)}` : `Registration: ${clean(p.client.registrationDate, 16)}`}</Text>
+        </View>
+        <View style={s.statRow}>
+          <View style={s.stat}><Text style={s.statValue}>{p.stats.total}</Text><Text style={s.statLabel}>{isAr ? "إجمالي النصوص" : "Total Scripts"}</Text></View>
+          <View style={s.stat}><Text style={s.statValue}>{p.stats.approved}</Text><Text style={s.statLabel}>{isAr ? "معتمد" : "Approved"}</Text></View>
+          <View style={s.stat}><Text style={s.statValue}>{p.stats.inReview}</Text><Text style={s.statLabel}>{isAr ? "قيد المراجعة" : "In Review"}</Text></View>
+          <View style={s.stat}><Text style={s.statValue}>{p.stats.draft}</Text><Text style={s.statLabel}>{isAr ? "مسودة" : "Draft"}</Text></View>
+        </View>
+        <View style={s.table}>
+          <View style={s.tr}>
+            <Text style={[s.th, s.c1, rtl]}>{isAr ? "العنوان" : "Title"}</Text>
+            <Text style={[s.th, s.c2, rtl]}>{isAr ? "النوع" : "Type"}</Text>
+            <Text style={[s.th, s.c3, rtl]}>{isAr ? "التاريخ" : "Date"}</Text>
+            <Text style={[s.th, s.c4, rtl]}>{isAr ? "المسند إليه" : "Assignee"}</Text>
+            <Text style={[s.th, s.c5, rtl]}>{isAr ? "تقارير" : "Reports"}</Text>
+            <Text style={[s.th, s.c6, rtl]}>{isAr ? "الحالة" : "Status"}</Text>
+          </View>
+          {p.rows.map((r, idx) => (
+            <View key={`row-${idx}`} style={s.tr}>
+              <Text style={[s.td, s.c1, rtl]}>{clean(r.title, 28)}</Text>
+              <Text style={[s.td, s.c2, rtl]}>{clean(r.type, 10)}</Text>
+              <Text style={[s.td, s.c3, rtl]}>{clean(r.date, 14)}</Text>
+              <Text style={[s.td, s.c4, rtl]}>{clean(r.assignee, 24)}</Text>
+              <Text style={[s.td, s.c5, rtl]}>{String(r.reportsCount)}</Text>
+              <Text style={[s.td, s.c6, rtl]}>{clean(r.status, 20)}</Text>
+            </View>
+          ))}
+        </View>
+      </Page>
+    </Document>
+  );
+};

@@ -1,0 +1,94 @@
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuthStore } from '@/store/authStore';
+import { useLangStore } from '@/store/langStore';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
+import { Globe } from 'lucide-react';
+
+export function ClientLogin() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { login } = useAuthStore();
+  const { t, lang, toggleLang } = useLangStore();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+    try {
+      await login(email, password);
+      const target = useAuthStore.getState().isClient() ? '/client' : '/app';
+      navigate(target, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col bg-background text-text-main">
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
+        <div className="w-full max-w-4xl flex rounded-2xl shadow-xl overflow-hidden border border-border bg-surface">
+          <div className="flex-1 p-8 sm:p-10 relative">
+            <button
+              onClick={toggleLang}
+              className="absolute top-4 right-4 flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-text-main transition-colors px-2.5 py-1.5 rounded-md hover:bg-background border border-border"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>{lang === 'ar' ? 'English' : 'عربي'}</span>
+            </button>
+
+            <div className="max-w-sm mx-auto mt-6 space-y-6">
+              <div className="flex justify-center">
+                <img src="/fclogo.png" alt="FC" className="h-12 object-contain" />
+              </div>
+              <div className="space-y-1 text-center">
+                <h2 className="text-2xl font-bold tracking-tight">{lang === 'ar' ? 'دخول المستفيد' : 'Beneficiary Login'}</h2>
+                <p className="text-text-muted text-sm">
+                  {lang === 'ar' ? 'سجّل الدخول إلى بوابة المستفيد' : 'Sign in to the beneficiary portal'}
+                </p>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <Input label={t('email')} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required dir="ltr" autoComplete="email" />
+                <Input label={t('password')} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required dir="ltr" autoComplete="current-password" />
+                {error && <div className="p-2.5 text-xs text-error bg-error/10 border border-error/20 rounded-md">{error}</div>}
+
+                <div className="flex items-center justify-between text-xs">
+                  <Link to="/client/forgot-password" className="text-primary hover:text-primary-hover font-medium">{t('forgotPassword')}</Link>
+                  <Link to="/portal/register" className="text-primary hover:text-primary-hover font-medium">
+                    {lang === 'ar' ? 'ليس لديك حساب؟ سجّل' : "Don't have an account? Register"}
+                  </Link>
+                </div>
+
+                <Button type="submit" className="w-full" isLoading={isLoading}>{t('login')}</Button>
+
+                <div className="text-center pt-1">
+                  <Link to="/" className="text-sm text-text-muted hover:text-text-main">
+                    {lang === 'ar' ? 'العودة للرئيسية' : 'Back to main'}
+                  </Link>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div className="hidden md:flex w-[45%] bg-primary items-center justify-center p-8 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary to-primary-hover" />
+            <div className="relative z-10 text-white text-center space-y-5">
+              <img src="/raawilogonew.png" alt="Raawi" className="h-24 mx-auto drop-shadow-xl" />
+              <h1 className="text-3xl font-bold tracking-tight">{lang === 'ar' ? 'بوابة المستفيدين' : 'Beneficiary Portal'}</h1>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer className="py-5 flex justify-center">
+        <img src="/raawilogonew.png" alt="Raawi" className="h-16 object-contain opacity-90" />
+      </footer>
+    </div>
+  );
+}

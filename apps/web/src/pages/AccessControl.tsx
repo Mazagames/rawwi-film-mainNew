@@ -1,0 +1,736 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useLangStore } from '@/store/langStore';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
+import { AdminTableFilters } from '@/components/ui/AdminTableFilters';
+import { Search, Plus, UserCog, Shield, Eye, Pencil, UserX, UserCheck, Trash2 } from 'lucide-react';
+import { usersApi, invitesApi, reportsApi, type UserListItem } from '@/api';
+import { downloadRegulatorPerformancePdf } from '@/components/reports/regulator-performance/download';
+import toast from 'react-hot-toast';
+const PAGE_SIZE = 10;
+
+const ROLE_OPTIONS = [
+  { value: 'admin', labelKey: 'admin' as const },
+  { value: 'super_admin', labelKey: 'superAdmin' as const },
+  { value: 'regulator', labelKey: 'regulator' as const },
+];
+
+const ALL_SECTIONS = ['clients', 'tasks', 'glossary', 'reports', 'access_control', 'audit'] as const;
+
+const SECTION_OPTIONS: { value: string; labelKey: string }[] = [
+  { value: 'clients', labelKey: 'clients' },
+  { value: 'tasks', labelKey: 'tasks' },
+  { value: 'glossary', labelKey: 'glossary' },
+  { value: 'reports', labelKey: 'reports' },
+  { value: 'access_control', labelKey: 'accessControl' },
+  { value: 'audit', labelKey: 'auditLog' },
+];
+
+function getDefaultSectionsForRoleKey(roleKey: string): string[] {
+  const k = roleKey.toLowerCase().replace(/\s/g, '_');
+  if (k === 'super_admin') return [...ALL_SECTIONS];
+  if (k === 'admin') return [...ALL_SECTIONS];
+  if (k === 'regulator') return ['clients', 'reports', 'glossary'];
+  return ['clients', 'reports'];
+}
+
+function isRegulatorRoleKey(roleKey: string): boolean {
+  return roleKey.toLowerCase().replace(/\s/g, '_') === 'regulator';
+}
+
+function getDefaultQuickAnalysisAccessForRoleKey(roleKey: string): boolean {
+  const normalized = roleKey.toLowerCase().replace(/\s/g, '_');
+  return normalized === 'super_admin' || normalized === 'admin';
+}
+
+type UserPermissionBlockProps = {
+  roleKey: string;
+  allowedSections: string[];
+  canAcceptReject: boolean;
+  canSendForReview: boolean;
+  canUseQuickAnalysis: boolean;
+  onRoleKeyChange: (roleKey: string) => void;
+  onAllowedSectionsChange: (sections: string[]) => void;
+  onCanAcceptRejectChange: (value: boolean) => void;
+  onCanSendForReviewChange: (value: boolean) => void;
+  onCanUseQuickAnalysisChange: (value: boolean) => void;
+  t: (key: any) => string;
+  lang: string;
+  roleHelpText: string;
+};
+
+function UserPermissionBlock({
+  roleKey,
+  allowedSections,
+  canAcceptReject,
+  canSendForReview,
+  canUseQuickAnalysis,
+  onRoleKeyChange,
+  onAllowedSectionsChange,
+  onCanAcceptRejectChange,
+  onCanSendForReviewChange,
+  onCanUseQuickAnalysisChange,
+  t,
+  lang,
+  roleHelpText,
+}: UserPermissionBlockProps) {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-text-main">{t('role')}</label>
+        <select
+          className="flex h-10 w-full rounded-[var(--radius)] border border-border bg-surface px-3 py-2 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
+          value={roleKey}
+          onChange={(e) => onRoleKeyChange(e.target.value)}
+        >
+          {ROLE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {t(opt.labelKey)}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-text-muted">{roleHelpText}</p>
+      </div>
+
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-text-main">
+          {lang === 'ar' ? 'الأقسام الظاهرة في لوحة التحكم' : 'Dashboard sections this user can see'}
+        </label>
+        <div className="flex flex-wrap gap-3">
+          {SECTION_OPTIONS.map((opt) => (
+            <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allowedSections.includes(opt.value)}
+                onChange={(e) => {
+                  onAllowedSectionsChange(
+                    e.target.checked
+                      ? [...allowedSections, opt.value]
+                      : allowedSections.filter((s) => s !== opt.value),
+                  );
+                }}
+                className="rounded border-border"
+              />
+              <span className="text-sm text-text-main">{t(opt.labelKey)}</span>
+            </label>
+          ))}
+          {isRegulatorRoleKey(roleKey) && (
+            <>
+              <label className="flex items-center gap-2 cursor-pointer rounded-lg border border-border bg-surface px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={canAcceptReject}
+                  onChange={(e) => onCanAcceptRejectChange(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <span className="text-sm text-text-main">
+                  {lang === 'ar' ? 'يمكنه قبول أو رفض النصوص' : 'Can accept or reject scripts'}
+                </span>
+              </label>
+            </>
+          )}
+          <label className="flex items-center gap-2 cursor-pointer rounded-lg border border-border bg-surface px-3 py-2">
+            <input
+              type="checkbox"
+              checked={canUseQuickAnalysis}
+              onChange={(e) => onCanUseQuickAnalysisChange(e.target.checked)}
+              className="rounded border-border"
+            />
+            <span className="text-sm text-text-main">
+              {lang === 'ar' ? 'يمكنه الوصول إلى تحليل الأعمال' : 'Can access Works Analysis'}
+            </span>
+          </label>
+          {isRegulatorRoleKey(roleKey) && (
+            <>
+              <label className="flex items-center gap-2 cursor-pointer rounded-lg border border-border bg-surface px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={canSendForReview}
+                  onChange={(e) => onCanSendForReviewChange(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <span className="text-sm text-text-main">
+                  {lang === 'ar' ? 'يمكنه إرجاع النص للمراجعة' : 'Can send script back for review'}
+                </span>
+              </label>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AccessControl() {
+  const { t, lang } = useLangStore();
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [users, setUsers] = useState<UserListItem[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    roleKey: 'admin',
+    allowedSections: getDefaultSectionsForRoleKey('admin'),
+    canAcceptReject: false,
+    canSendForReview: false,
+    canUseQuickAnalysis: getDefaultQuickAnalysisAccessForRoleKey('admin'),
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const [viewUser, setViewUser] = useState<UserListItem | null>(null);
+  const [editUser, setEditUser] = useState<UserListItem | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    roleKey: 'admin',
+    status: 'active' as 'active' | 'disabled',
+    allowedSections: [] as string[],
+    canAcceptReject: false,
+    canSendForReview: false,
+    canUseQuickAnalysis: false,
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [downloadingPerformanceReportUserId, setDownloadingPerformanceReportUserId] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    setAccessDenied(false);
+    try {
+      const list = await usersApi.getUsers();
+      setUsers(list);
+    } catch (err: any) {
+      const msg = err?.message ?? '';
+      if (msg.includes('Forbidden') || msg.includes('403') || msg.includes('manage_users')) {
+        setUsers([]);
+        setAccessDenied(true);
+        return;
+      }
+      toast.error(msg || 'Failed to load users list. Check console.');
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, roleFilter, statusFilter]);
+
+  const filteredUsers = users.filter((u) => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch = !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    const matchesRole = roleFilter === 'all' || (u.roleKey ?? '') === roleFilter;
+    const matchesStatus = statusFilter === 'all' || (u.status ?? '') === statusFilter;
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+  const pageCount = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pagedUsers = filteredUsers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const handleSubmit = async () => {
+    const name = form.name.trim();
+    const email = form.email.trim().toLowerCase();
+    if (!email) {
+      toast.error(lang === 'ar' ? 'البريد الإلكتروني مطلوب' : 'Email is required');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await invitesApi.sendInvite({
+        email,
+        name: name || undefined,
+        role: form.roleKey,
+        allowedSections: form.allowedSections.length ? form.allowedSections : undefined,
+        canAcceptReject: form.canAcceptReject,
+        canSendForReview: form.canSendForReview,
+        canUseQuickAnalysis: form.canUseQuickAnalysis,
+      });
+      toast.success(lang === 'ar' ? 'تم إرسال الدعوة إلى البريد الإلكتروني' : 'Invite sent to email');
+      setIsModalOpen(false);
+      setForm({
+        name: '',
+        email: '',
+        roleKey: 'admin',
+        allowedSections: getDefaultSectionsForRoleKey('admin'),
+        canAcceptReject: false,
+        canSendForReview: false,
+        canUseQuickAnalysis: getDefaultQuickAnalysisAccessForRoleKey('admin'),
+      });
+      await loadUsers();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to send invite');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openEdit = (user: UserListItem) => {
+    setEditUser(user);
+    const roleKey = user.roleKey ?? 'admin';
+    setEditForm({
+      name: user.name,
+      roleKey,
+      status: user.status,
+      allowedSections: (user.allowedSections && user.allowedSections.length > 0) ? user.allowedSections : getDefaultSectionsForRoleKey(roleKey),
+      canAcceptReject: Array.isArray(user.permissions) ? user.permissions.includes('can_accept_reject') : false,
+      canSendForReview: Array.isArray(user.permissions) ? user.permissions.includes('can_send_for_review') : false,
+      canUseQuickAnalysis: Array.isArray(user.permissions) ? user.permissions.includes('can_use_quick_analysis') : getDefaultQuickAnalysisAccessForRoleKey(roleKey),
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editUser) return;
+    setEditSaving(true);
+    try {
+      await usersApi.updateUser({
+        userId: editUser.id,
+        name: editForm.name.trim() || undefined,
+        roleKey: editForm.roleKey,
+        status: editForm.status,
+        allowedSections: editForm.allowedSections,
+        canAcceptReject: editForm.canAcceptReject,
+        canSendForReview: editForm.canSendForReview,
+        canUseQuickAnalysis: editForm.canUseQuickAnalysis,
+      });
+      toast.success(lang === 'ar' ? 'تم تحديث المستخدم' : 'User updated');
+      setEditUser(null);
+      await loadUsers();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to update user');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (user: UserListItem) => {
+    const newStatus = user.status === 'active' ? 'disabled' : 'active';
+    try {
+      await usersApi.updateUser({ userId: user.id, status: newStatus });
+      toast.success(newStatus === 'disabled' ? (lang === 'ar' ? 'تم تعطيل المستخدم' : 'User deactivated') : (lang === 'ar' ? 'تم تفعيل المستخدم' : 'User activated'));
+      await loadUsers();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to update status');
+    }
+  };
+
+  const handleDeleteClick = async (user: UserListItem) => {
+    const msg = lang === 'ar'
+      ? `هل أنت متأكد من حذف المستخدم "${user.name}"؟ لا يمكن التراجع.`
+      : `Are you sure you want to delete "${user.name}"? This cannot be undone.`;
+    if (!window.confirm(msg)) return;
+    try {
+      await usersApi.deleteUser({ userId: user.id });
+      toast.success(lang === 'ar' ? 'تم حذف المستخدم' : 'User deleted');
+      await loadUsers();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to delete user');
+    }
+  };
+
+  const handleDownloadPerformanceReport = async (user: UserListItem) => {
+    const role = String(user.roleKey ?? '').toLowerCase();
+    if (role === 'beneficiary') {
+      toast.error(lang === 'ar' ? 'هذا التقرير مخصص للمستخدمين الداخليين' : 'This report is for internal users');
+      return;
+    }
+    if (downloadingPerformanceReportUserId) return;
+    setDownloadingPerformanceReportUserId(user.id);
+    try {
+      const data = await reportsApi.getRegulatorPerformance(user.id);
+      await downloadRegulatorPerformancePdf({
+        data,
+        lang: lang === 'ar' ? 'ar' : 'en',
+        dateFormat: undefined,
+      });
+      toast.success(lang === 'ar' ? 'تم تنزيل تقرير الأداء' : 'Performance report downloaded');
+    } catch (err: any) {
+      toast.error(err?.message ?? (lang === 'ar' ? 'تعذر تنزيل تقرير الأداء' : 'Failed to download performance report'));
+    } finally {
+      setDownloadingPerformanceReportUserId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text-main">{t('accessControl')}</h1>
+          <p className="text-text-muted mt-1">{t('accessControlSubtitle')}</p>
+        </div>
+
+        <Button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2">
+          <Plus className="w-4 h-4" />
+          {t('addUser')}
+        </Button>
+      </div>
+
+      {accessDenied && (
+        <Card className="border-error/20 bg-error/5">
+          <CardContent className="py-8 text-center">
+            <p className="text-text-main font-medium">{t('accessDenied')}</p>
+            <p className="text-text-muted text-sm mt-1">{lang === 'ar' ? 'ليس لديك صلاحية لعرض هذه الصفحة.' : 'You do not have access to view this section.'}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 bg-background/50 rounded-t-[var(--radius)]">
+          <CardTitle className="text-base font-medium flex items-center gap-2">
+            <UserCog className="w-5 h-5 text-primary" />
+            {t('users')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 border-b border-border">
+          <AdminTableFilters
+            className="shadow-none border-0 p-0"
+            onReset={() => {
+              setSearch('');
+              setRoleFilter('all');
+              setStatusFilter('all');
+            }}
+            resetLabel={lang === 'ar' ? 'إعادة ضبط الفلاتر' : 'Reset Filters'}
+          >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+              <Input
+                placeholder={t('search')}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-9"
+              />
+            </div>
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-text-main"
+            >
+              <option value="all">{lang === 'ar' ? 'كل الأدوار' : 'All roles'}</option>
+              {ROLE_OPTIONS.map((role) => (
+                <option key={role.value} value={role.value}>{role.value}</option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-text-main"
+            >
+              <option value="all">{lang === 'ar' ? 'كل الحالات' : 'All statuses'}</option>
+              <option value="active">{lang === 'ar' ? 'نشط' : 'Active'}</option>
+              <option value="disabled">{lang === 'ar' ? 'معطل' : 'Disabled'}</option>
+            </select>
+          </div>
+          </AdminTableFilters>
+        </CardContent>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            {usersLoading ? (
+              <div className="py-12 text-center text-text-muted">Loading...</div>
+            ) : (
+              <table className="w-full text-sm text-left rtl:text-right">
+                <thead className="text-xs text-text-muted uppercase bg-background border-b border-border">
+                  <tr>
+                    <th className="px-6 py-4 font-medium">{t('name')}</th>
+                    <th className="px-6 py-4 font-medium">{t('role')}</th>
+                    <th className="px-6 py-4 font-medium">{t('status')}</th>
+                    <th className="px-6 py-4 font-medium text-end">{t('actions')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedUsers.map((user) => (
+                    <tr
+                      key={user.id}
+                      className="bg-surface border-b border-border hover:bg-background/50 transition-colors"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-text-main">{user.name}</span>
+                          <span className="text-text-muted text-xs">{user.email}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5">
+                          <Shield className="w-3.5 h-3.5 text-info" />
+                          <span>{user.roleKey ?? '—'}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Badge variant={user.status === 'active' ? 'success' : 'default'}>
+                          {user.status === 'active' ? t('active') : t('disabled')}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewUser(user)}
+                            className="p-1.5 rounded-md text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                            title={lang === 'ar' ? 'عرض' : 'View'}
+                            aria-label={lang === 'ar' ? 'عرض' : 'View'}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(user)}
+                            className="p-1.5 rounded-md text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                            title={lang === 'ar' ? 'تعديل' : 'Edit'}
+                            aria-label={lang === 'ar' ? 'تعديل' : 'Edit'}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          {user.status === 'active' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStatus(user)}
+                              className="p-1.5 rounded-md text-text-muted hover:text-amber-600 hover:bg-amber-500/10 transition-colors"
+                              title={lang === 'ar' ? 'تعطيل' : 'Deactivate'}
+                              aria-label={lang === 'ar' ? 'تعطيل' : 'Deactivate'}
+                            >
+                              <UserX className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStatus(user)}
+                              className="p-1.5 rounded-md text-text-muted hover:text-green-600 hover:bg-green-500/10 transition-colors"
+                              title={lang === 'ar' ? 'تفعيل' : 'Activate'}
+                              aria-label={lang === 'ar' ? 'تفعيل' : 'Activate'}
+                            >
+                              <UserCheck className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteClick(user)}
+                            className="p-1.5 rounded-md text-text-muted hover:text-red-600 hover:bg-red-500/10 transition-colors"
+                            title={lang === 'ar' ? 'حذف' : 'Delete'}
+                            aria-label={lang === 'ar' ? 'حذف' : 'Delete'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredUsers.length === 0 && !usersLoading && (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-12 text-center text-text-muted">
+                        No users found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+          {filteredUsers.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between border-t border-border px-6 py-4 text-sm">
+              <span className="text-text-muted">{filteredUsers.length} {lang === 'ar' ? 'نتيجة' : 'results'}</span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" disabled={currentPage <= 1} onClick={() => setPage((v) => Math.max(1, v - 1))}>
+                  {lang === 'ar' ? 'السابق' : 'Previous'}
+                </Button>
+                <span className="text-text-muted">{currentPage} / {pageCount}</span>
+                <Button size="sm" variant="outline" disabled={currentPage >= pageCount} onClick={() => setPage((v) => Math.min(pageCount, v + 1))}>
+                  {lang === 'ar' ? 'التالي' : 'Next'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* View User Modal */}
+      <Modal isOpen={!!viewUser} onClose={() => setViewUser(null)} title={lang === 'ar' ? 'تفاصيل المستخدم' : 'User details'}>
+        {viewUser && (
+          <div className="space-y-4">
+            <div>
+              <span className="text-xs text-text-muted uppercase">{t('name')}</span>
+              <p className="text-text-main font-medium">{viewUser.name}</p>
+            </div>
+            <div>
+              <span className="text-xs text-text-muted uppercase">Email</span>
+              <p className="text-text-main font-medium" dir="ltr">{viewUser.email}</p>
+            </div>
+            <div>
+              <span className="text-xs text-text-muted uppercase">{t('role')}</span>
+              <p className="text-text-main font-medium">{viewUser.roleKey ?? '—'}</p>
+            </div>
+            <div>
+              <span className="text-xs text-text-muted uppercase">can_accept_reject</span>
+              <p className="text-text-main font-medium">
+                {Array.isArray(viewUser.permissions) && viewUser.permissions.includes('can_accept_reject')
+                  ? (lang === 'ar' ? 'مفعّل' : 'Enabled')
+                  : (lang === 'ar' ? 'غير مفعّل' : 'Disabled')}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs text-text-muted uppercase">can_send_for_review</span>
+              <p className="text-text-main font-medium">
+                {Array.isArray(viewUser.permissions) && viewUser.permissions.includes('can_send_for_review')
+                  ? (lang === 'ar' ? 'مفعّل' : 'Enabled')
+                  : (lang === 'ar' ? 'غير مفعّل' : 'Disabled')}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs text-text-muted uppercase">can_use_quick_analysis</span>
+              <p className="text-text-main font-medium">
+                {Array.isArray(viewUser.permissions) && viewUser.permissions.includes('can_use_quick_analysis')
+                  ? (lang === 'ar' ? 'مفعّل' : 'Enabled')
+                  : (lang === 'ar' ? 'غير مفعّل' : 'Disabled')}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs text-text-muted uppercase">{t('status')}</span>
+              <div className="text-text-main font-medium mt-1">
+                <Badge variant={viewUser.status === 'active' ? 'success' : 'default'}>
+                  {viewUser.status === 'active' ? t('active') : t('disabled')}
+                </Badge>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <div className="flex items-center gap-2">
+                {viewUser && String(viewUser.roleKey ?? '').toLowerCase() !== 'beneficiary' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleDownloadPerformanceReport(viewUser)}
+                    disabled={downloadingPerformanceReportUserId === viewUser.id}
+                  >
+                    {downloadingPerformanceReportUserId === viewUser.id
+                      ? (lang === 'ar' ? 'جاري التنزيل…' : 'Downloading…')
+                      : (lang === 'ar' ? 'تقرير الأداء' : 'Performance report')}
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setViewUser(null)}>{t('cancel')}</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit User Modal */}
+      <Modal isOpen={!!editUser} onClose={() => setEditUser(null)} title={lang === 'ar' ? 'تعديل المستخدم' : 'Edit user'}>
+        {editUser && (
+          <div className="space-y-4">
+            <Input
+              label={t('name')}
+              value={editForm.name}
+              onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Display name"
+            />
+            <UserPermissionBlock
+              roleKey={editForm.roleKey}
+              allowedSections={editForm.allowedSections}
+              canAcceptReject={editForm.canAcceptReject}
+              canSendForReview={editForm.canSendForReview}
+              canUseQuickAnalysis={editForm.canUseQuickAnalysis}
+              onRoleKeyChange={(roleKey) => {
+                setEditForm((f) => ({
+                  ...f,
+                  roleKey,
+                  allowedSections: getDefaultSectionsForRoleKey(roleKey),
+                  canAcceptReject: isRegulatorRoleKey(roleKey) ? f.canAcceptReject : false,
+                  canSendForReview: isRegulatorRoleKey(roleKey) ? f.canSendForReview : false,
+                  canUseQuickAnalysis: getDefaultQuickAnalysisAccessForRoleKey(roleKey),
+                }));
+              }}
+              onAllowedSectionsChange={(sections) => setEditForm((f) => ({ ...f, allowedSections: sections }))}
+              onCanAcceptRejectChange={(value) => setEditForm((f) => ({ ...f, canAcceptReject: value }))}
+              onCanSendForReviewChange={(value) => setEditForm((f) => ({ ...f, canSendForReview: value }))}
+              onCanUseQuickAnalysisChange={(value) => setEditForm((f) => ({ ...f, canUseQuickAnalysis: value }))}
+              t={t}
+              lang={lang}
+              roleHelpText={lang === 'ar' ? 'يحدد صلاحيات المستخدم في النظام' : 'Defines backend permissions.'}
+            />
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-text-main">{t('status')}</label>
+              <select
+                className="flex h-10 w-full rounded-[var(--radius)] border border-border bg-surface px-3 py-2 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
+                value={editForm.status}
+                onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value as 'active' | 'disabled' }))}
+              >
+                <option value="active">{t('active')}</option>
+                <option value="disabled">{t('disabled')}</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-border">
+              <Button variant="outline" onClick={() => setEditUser(null)}>{t('cancel')}</Button>
+              <Button onClick={handleEditSave} disabled={editSaving}>
+                {editSaving ? (lang === 'ar' ? 'جاري الحفظ…' : 'Saving…') : (lang === 'ar' ? 'حفظ' : 'Save')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Add User Modal */}
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('addUser')}>
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label={t('name')}
+              placeholder="e.g. John Doe"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
+            <Input
+              label={t('email')}
+              type="email"
+              placeholder="john@example.com"
+              dir="ltr"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            />
+          </div>
+            <UserPermissionBlock
+              roleKey={form.roleKey}
+              allowedSections={form.allowedSections}
+              canAcceptReject={form.canAcceptReject}
+              canSendForReview={form.canSendForReview}
+              canUseQuickAnalysis={form.canUseQuickAnalysis}
+              onRoleKeyChange={(roleKey) => {
+                setForm((f) => ({
+                  ...f,
+                  roleKey,
+                  allowedSections: getDefaultSectionsForRoleKey(roleKey),
+                  canAcceptReject: isRegulatorRoleKey(roleKey) ? f.canAcceptReject : false,
+                  canSendForReview: isRegulatorRoleKey(roleKey) ? f.canSendForReview : false,
+                  canUseQuickAnalysis: getDefaultQuickAnalysisAccessForRoleKey(roleKey),
+                }));
+              }}
+              onAllowedSectionsChange={(sections) => setForm((f) => ({ ...f, allowedSections: sections }))}
+              onCanAcceptRejectChange={(value) => setForm((f) => ({ ...f, canAcceptReject: value }))}
+              onCanSendForReviewChange={(value) => setForm((f) => ({ ...f, canSendForReview: value }))}
+              onCanUseQuickAnalysisChange={(value) => setForm((f) => ({ ...f, canUseQuickAnalysis: value }))}
+              t={t}
+              lang={lang}
+              roleHelpText={lang === 'ar' ? 'يحدد صلاحيات المستخدم وما يظهر له في القائمة' : 'Defines what they can do and which dashboard sections they see.'}
+            />
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-border">
+            <Button variant="outline" onClick={() => setIsModalOpen(false)}>
+              {t('cancel')}
+            </Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting ? (lang === 'ar' ? 'جاري الإرسال…' : 'Sending…') : (lang === 'ar' ? 'إرسال الدعوة' : 'Send Invite')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}

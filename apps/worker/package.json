@@ -1,0 +1,37 @@
+{
+  "name": "worker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts dev",
+    "once": "tsx src/index.ts once",
+    "worker:dev": "tsx src/index.ts dev",
+    "worker:once": "tsx src/index.ts once",
+    "compare:v2": "tsx src/pipelineV2.compare.ts",
+    "test:aggregation": "tsx src/aggregation.test.ts",
+    "test:atom-enforcement": "tsx src/pipeline.atom-enforcement.test.ts",
+    "test:audit": "tsx src/audit.test.ts",
+    "test:atom-precision": "tsx src/atomPrecision.test.ts",
+    "test:lexicon": "tsx src/lexiconCache.test.ts",
+    "test:pass-gating": "tsx src/passGating.test.ts",
+    "test:auditor-v3": "tsx src/methodology-v3/auditorV3.test.ts",
+    "test:auditor-v4": "tsx src/methodology-v3/auditorV4.test.ts",
+    "test:review-consistency": "tsx src/reviewFindingConsistency.test.ts",
+    "test:severity": "tsx src/severityRulebook.test.ts && tsx src/methodology-v3/decisionPolicy.test.ts",
+    "test:text-normalize": "tsx src/textDetectionNormalize.test.ts",
+    "test:offset-page": "tsx src/offsetToPage.test.ts",
+    "test": "tsx src/aggregation.test.ts && tsx src/pipeline.atom-enforcement.test.ts && tsx src/audit.test.ts && tsx src/lexiconCache.test.ts && tsx src/passGating.test.ts && tsx src/methodology-v3/auditorV3.test.ts && tsx src/methodology-v3/auditorV4.test.ts && tsx src/reviewFindingConsistency.test.ts && tsx src/severityRulebook.test.ts && tsx src/methodology-v3/decisionPolicy.test.ts && tsx src/textDetectionNormalize.test.ts && tsx src/offsetToPage.test.ts && tsx src/scriptSummary.test.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "dotenv": "^16.4.5",
+    "openai": "^4.73.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.0"
+  }
+}
