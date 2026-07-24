@@ -55,6 +55,7 @@ export interface LexiconTerm {
 
 export interface PassDefinition {
   name: string;
+  displayLabel?: string;
   articleIds: number[];
   buildPrompt: (articles: GCAMArticle[], lexiconTerms?: LexiconTerm[]) => string;
   model?: string; // Optional: override model for this pass
@@ -1601,6 +1602,7 @@ const ACTIVE_SUBJECT_PASSES: PassDefinition[] = [
 function buildV5DetectionPasses(): PassDefinition[] {
   return getV5ReviewerDefinitions().map((reviewer) => ({
     name: reviewer.name,
+    displayLabel: reviewer.displayLabel,
     articleIds: reviewer.articleIds,
     buildPrompt: () => reviewer.markdown,
     model: config.OPENAI_JUDGE_MODEL,
@@ -1880,6 +1882,7 @@ async function runSinglePass(
       logger.info("V5 reviewer prompt prepared", {
         chunkId: diagnosticContext?.chunkId ?? null,
         reviewer: pass.name,
+        reviewerLabel: pass.displayLabel ?? pass.sourceFileName ?? null,
         markdownFile: pass.sourceFileName ?? null,
         promptCharacters: promptBase.length,
       });
@@ -1914,7 +1917,11 @@ async function runSinglePass(
     // Call OpenAI with specialized prompt
     const model = pass.model || "gpt-4.1";
     if (diagnosticContext?.chunkId) {
-      await setChunkCurrentPass(diagnosticContext.chunkId, pass.name, pass.sourceFileName ?? pass.name);
+      await setChunkCurrentPass(
+        diagnosticContext.chunkId,
+        pass.name,
+        pass.displayLabel ?? pass.sourceFileName ?? pass.name
+      );
     }
     const judgeCall = await callJudgeRaw(
       chunkText,
@@ -2278,6 +2285,31 @@ export async function runMultiPassDetection(
       )
     )
   );
+  if (config.VIOLATION_SYSTEM_VERSION === "v5") {
+    const missingResults = plan.activePasses.filter(
+      (pass) => !activeResultsRaw.some((result) => result.passName === pass.name)
+    );
+    const failedResults = activeResultsRaw.filter((result) => result.error || result.skipped);
+    if (missingResults.length > 0 || failedResults.length > 0) {
+      logger.error("V5 strict execution failed", {
+        missingPasses: missingResults.map((pass) => ({
+          passName: pass.name,
+          reviewerLabel: pass.displayLabel ?? pass.sourceFileName ?? null,
+        })),
+        failedPasses: failedResults.map((result) => ({
+          passName: result.passName,
+          error: result.error ?? null,
+          reason: result.reason ?? null,
+          skipped: result.skipped ?? false,
+        })),
+        expectedPasses: totalPasses,
+        receivedResults: activeResultsRaw.length,
+      });
+      throw new Error(
+        `V5 strict execution failed: ${missingResults.length} missing pass(es), ${failedResults.length} failed/skipped pass(es)`
+      );
+    }
+  }
   const activeResults = activeResultsRaw.map((result) => {
     const early = applyEarlyPassFilters(result.passName, result.findings);
     if (early.dropped > 0) {

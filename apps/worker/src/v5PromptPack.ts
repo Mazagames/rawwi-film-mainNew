@@ -1,9 +1,11 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { logger } from "./logger.js";
+import { getPolicyArticle } from "./policyMap.js";
 
 export type V5ReviewerDefinition = {
   name: string;
+  displayLabel: string;
   fileName: string;
   filePath: string;
   articleIds: number[];
@@ -45,6 +47,27 @@ function extractArticleIds(fileName: string, fallbackIndex: number): number[] {
   return [fallbackIndex + 1];
 }
 
+function buildReviewerDisplayLabel(articleIds: number[], fileName: string): string {
+  const labels = articleIds
+    .map((articleId) => {
+      const article = getPolicyArticle(articleId);
+      if (!article?.title_ar?.trim()) return null;
+      return `المادة ${articleId}: ${article.title_ar.trim()}`;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  if (labels.length > 0) {
+    return labels.join(" • ");
+  }
+
+  const fallbackArticle = articleIds[0];
+  if (typeof fallbackArticle === "number" && Number.isFinite(fallbackArticle)) {
+    return `المادة ${fallbackArticle}`;
+  }
+
+  return fileName.replace(/\.md$/i, "");
+}
+
 function loadReviewerPack(): LoadedV5Pack {
   const reviewerDirectory = resolveReviewerDirectory();
   const reviewerFiles: string[] = readdirSync(reviewerDirectory, { withFileTypes: true })
@@ -59,6 +82,7 @@ function loadReviewerPack(): LoadedV5Pack {
     const articleIds = extractArticleIds(fileName, index);
     return {
       name: fileName.replace(/\.md$/i, ""),
+      displayLabel: buildReviewerDisplayLabel(articleIds, fileName),
       fileName,
       filePath,
       articleIds,
@@ -66,10 +90,15 @@ function loadReviewerPack(): LoadedV5Pack {
     };
   });
 
+  if (reviewerDefinitions.length === 0) {
+    throw new Error(`No V5 reviewer markdown files were found in ${reviewerDirectory}`);
+  }
+
   logger.info("Violation Prompt System: V5", {
     reviewerDirectory,
     reviewerCount: reviewerDefinitions.length,
     reviewerFilesLoaded: reviewerDefinitions.map((reviewer) => reviewer.fileName),
+    reviewerLabelsLoaded: reviewerDefinitions.map((reviewer) => reviewer.displayLabel),
   });
 
   return {

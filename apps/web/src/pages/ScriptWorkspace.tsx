@@ -7780,25 +7780,25 @@ export function ScriptWorkspace() {
                 onClick={() => setDebugOpen(d => !d)}
               >
                 {debugOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                Debug Info
+                {lang === 'ar' ? 'معلومات التشخيص' : 'Debug Info'}
               </button>
               {debugOpen && analysisJob && (
                 <div className="mt-2 space-y-2 text-xs font-mono bg-background p-3 rounded-lg border border-border max-h-60 overflow-y-auto">
                   <div className="grid grid-cols-2 gap-1">
-                    <span className="text-text-muted">jobId:</span>
+                    <span className="text-text-muted">{lang === 'ar' ? 'معرّف المهمة:' : 'jobId:'}</span>
                     <span className="text-text-main truncate">{analysisJob.id}</span>
-                    <span className="text-text-muted">status:</span>
+                    <span className="text-text-muted">{lang === 'ar' ? 'الحالة:' : 'status:'}</span>
                     <span className="text-text-main">{analysisJob.status}</span>
-                    <span className="text-text-muted">progress:</span>
+                    <span className="text-text-muted">{lang === 'ar' ? 'التقدم:' : 'progress:'}</span>
                     <span className="text-text-main"><span dir="ltr">{progressDisplayDone}/{progressDisplayTotal}</span> ({analysisJob.progressPercent}%)</span>
-                    <span className="text-text-muted">created:</span>
+                    <span className="text-text-muted">{lang === 'ar' ? 'أُنشئت:' : 'created:'}</span>
                     <span className="text-text-main">{formatOptionalTimeValue(analysisJob.createdAt)}</span>
-                    <span className="text-text-muted">started:</span>
+                    <span className="text-text-muted">{lang === 'ar' ? 'بدأت:' : 'started:'}</span>
                     <span className="text-text-main">{formatOptionalTimeValue(analysisJob.startedAt)}</span>
-                    <span className="text-text-muted">completed:</span>
+                    <span className="text-text-muted">{lang === 'ar' ? 'اكتملت:' : 'completed:'}</span>
                     <span className="text-text-main">{formatOptionalTimeValue(analysisJob.completedAt)}</span>
                   </div>
-                  <div className="text-text-muted pt-1 border-t border-border/50">Chunks:</div>
+                  <div className="text-text-muted pt-1 border-t border-border/50">{lang === 'ar' ? 'القطع:' : 'Chunks:'}</div>
                   {chunkStatuses.length > 0 ? (
                     <div className="space-y-0.5">
                       {chunkStatuses.map(c => (
@@ -7816,7 +7816,15 @@ export function ScriptWorkspace() {
                                 c.status === 'judging' ? 'bg-warning/10 text-warning' :
                                   'bg-background text-text-muted'
                           )}>
-                            {c.status}
+                            {lang === 'ar'
+                              ? c.status === 'done'
+                                ? 'مكتملة'
+                                : c.status === 'failed'
+                                  ? 'فشلت'
+                                  : c.status === 'judging'
+                                    ? 'قيد المراجعة'
+                                    : c.status
+                              : c.status}
                           </span>
                           {c.processingPhase && (
                             <span className="text-[10px] text-text-muted">{c.processingPhase}</span>

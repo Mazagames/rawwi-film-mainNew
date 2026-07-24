@@ -23,10 +23,6 @@ import { runMultiPassDetection, DETECTION_PASSES, planDetectionPassExecution, ty
 import { PASS_GATING_VERSION } from "./passGating.js";
 import { normalizeFindingTitleAgainstRationale, normalizeMisusedGlossaryPassTitle } from "./findingTitleNormalize.js";
 import { persistJudgeDiagnostic } from "./judgeDiagnostics.js";
-import { runHybridContextPipeline } from "./methodology-v3/index.js";
-import { runSceneAnalyzer } from "./policyV1/sceneAnalyzer.js";
-import { runPolicyEngine } from "./policyV1/policyEngine.js";
-import { adaptPolicyDecisionsToFindings } from "./policyV1/policyDecisionAdapter.js";
 import { upsertFindingPolicyLinks } from "./policyLinks.js";
 import { calculateSeverity } from "./severityRulebook.js";
 import { getPrimaryGcamForCanonicalAtom, getPrimaryCanonicalAtomForGcam } from "./canonicalAtomMapping.js";
@@ -60,9 +56,7 @@ export type FindingWithGlobal = JudgeFinding & {
   secondary_pillar_ids?: string[];
 };
 
-type AnalysisEngineMode = "v2" | "hybrid" | "policy_v1";
-type HybridRunMode = "off" | "shadow" | "enforce";
-type PolicyV1RunMode = "shadow" | "enforce";
+type AnalysisEngineMode = "v2";
 
 const MAX_EVIDENCE_SPAN = 280;
 const PIPELINE_LOGIC_VERSION = "v2.10";
@@ -486,43 +480,7 @@ function resolveAnalysisEngineForJob(
   jobConfig: Record<string, unknown>,
   pipelineVersion: "v1" | "v2",
 ): AnalysisEngineMode {
-  if (pipelineVersion === "v2") {
-    const requested = jobConfig.analysis_engine;
-    if (requested === "hybrid") return "hybrid";
-    if (requested === "policy_v1") return "policy_v1";
-    if (requested === "v2") return "v2";
-  }
-  return config.ANALYSIS_ENGINE;
-}
-
-function resolveHybridModeForJob(
-  jobConfig: Record<string, unknown>,
-  pipelineVersion: "v1" | "v2",
-  analysisEngine: AnalysisEngineMode,
-): HybridRunMode {
-  if (analysisEngine !== "hybrid") return "off";
-  if (pipelineVersion === "v2") {
-    const requested = jobConfig.hybrid_mode;
-    if (requested === "enforce" || requested === "shadow" || requested === "off") {
-      return requested;
-    }
-  }
-  return config.ANALYSIS_HYBRID_MODE;
-}
-
-function resolvePolicyV1ModeForJob(
-  jobConfig: Record<string, unknown>,
-  pipelineVersion: "v1" | "v2",
-  analysisEngine: AnalysisEngineMode,
-): PolicyV1RunMode {
-  if (analysisEngine !== "policy_v1") return "shadow";
-  if (pipelineVersion === "v2") {
-    const requested = jobConfig.policy_v1_mode;
-    if (requested === "enforce" || requested === "shadow") {
-      return requested;
-    }
-  }
-  return config.ANALYSIS_POLICY_V1_MODE;
+  return "v2";
 }
 
 function compareFindingPreference(a: FindingWithGlobal, b: FindingWithGlobal): number {
@@ -1366,8 +1324,6 @@ export async function processChunkJudge(
       : "balanced";
   const pipelineVersion = jobConfig.pipeline_version === "v2" ? "v2" : "v1";
   const analysisEngine = resolveAnalysisEngineForJob(jobConfig, pipelineVersion);
-  const hybridMode = resolveHybridModeForJob(jobConfig, pipelineVersion, analysisEngine);
-  const policyV1Mode = resolvePolicyV1ModeForJob(jobConfig, pipelineVersion, analysisEngine);
   const chunkText = chunk.text;
   const chunkStart = chunk.start_offset;
   const chunkEnd = chunk.end_offset;
@@ -1431,7 +1387,6 @@ export async function processChunkJudge(
   if (isDev) logger.info("Lexicon cache health check", { chunkId: chunk.id, lexiconCount, cacheStatus: "checked" });
 
   const { mandatoryFindings } = analyzeLexiconMatches(chunkText, supabase);
-  const deferredLexiconCandidates: FindingWithGlobal[] = [];
   for (const m of mandatoryFindings) {
     const hash = lexiconEvidenceHash(jobId, m.articleId, m.term.term, m.line_start);
     const startGlobal = chunkStart + m.match.startIndex;
@@ -1517,58 +1472,27 @@ export async function processChunkJudge(
         documentContent: normalizedText,
       }),
     };
-    if (analysisEngine === "hybrid") {
-      deferredLexiconCandidates.push({
-        source: "lexicon_mandatory",
-        article_id: lexRow.article_id,
-        atom_id: lexRow.atom_id,
-        title_ar: lexRow.title_ar,
-        description_ar: lexRow.description_ar,
-        severity: lexRow.severity as FindingWithGlobal["severity"],
-        confidence: 1,
-        is_interpretive: false,
-        evidence_snippet: lexRow.evidence_snippet,
-        location: {
-          ...location,
-          context_window_id: `ctx-${startGlobal}-${endGlobal}`,
-          detection_pass: "glossary",
-        } as unknown as JudgeFinding["location"] & Record<string, unknown>,
-        depiction_type: "mention",
-        speaker_role: "unknown",
-        context_window_id: `ctx-${startGlobal}-${endGlobal}`,
-        context_confidence: 0.6,
-        lexical_confidence: 1,
-        policy_confidence: null,
-        rationale_ar: rationaleAr,
-        final_ruling: null,
-        narrative_consequence: "unknown",
-        detection_pass: "glossary",
-        start_offset_global: startGlobal,
-        end_offset_global: endGlobal,
-      });
+    const { data: lexData, error: lexErr } = await supabase
+      .from("analysis_findings")
+      .upsert(lexRow, { onConflict: "job_id,evidence_hash", ignoreDuplicates: true })
+      .select("id,article_id,atom_id,confidence");
+    logger.info("Lexicon finding upsert result", {
+      jobId, chunkId: chunk.id, hash,
+      inserted: lexData?.length ?? 0,
+      error: lexErr ?? null,
+      rowKeys: Object.keys(lexRow),
+    });
+    if (lexErr) {
+      logger.error("Lexicon finding upsert FAILED", { jobId, chunkId: chunk.id, error: lexErr });
     } else {
-      const { data: lexData, error: lexErr } = await supabase
-        .from("analysis_findings")
-        .upsert(lexRow, { onConflict: "job_id,evidence_hash", ignoreDuplicates: true })
-        .select("id,article_id,atom_id,confidence");
-      logger.info("Lexicon finding upsert result", {
-        jobId, chunkId: chunk.id, hash,
-        inserted: lexData?.length ?? 0,
-        error: lexErr ?? null,
-        rowKeys: Object.keys(lexRow),
-      });
-      if (lexErr) {
-        logger.error("Lexicon finding upsert FAILED", { jobId, chunkId: chunk.id, error: lexErr });
-      } else {
-        await upsertFindingPolicyLinks(
-          (lexData ?? []).map((r) => ({
-            id: (r as { id: string }).id,
-            article_id: (r as { article_id: number }).article_id,
-            atom_id: (r as { atom_id: string | null }).atom_id,
-            confidence: (r as { confidence?: number | null }).confidence ?? 1,
-          }))
-        );
-      }
+      await upsertFindingPolicyLinks(
+        (lexData ?? []).map((r) => ({
+          id: (r as { id: string }).id,
+          article_id: (r as { article_id: number }).article_id,
+          atom_id: (r as { atom_id: string | null }).atom_id,
+          confidence: (r as { confidence?: number | null }).confidence ?? 1,
+        }))
+      );
     }
   }
 
@@ -1633,53 +1557,22 @@ export async function processChunkJudge(
         }),
       };
 
-      if (analysisEngine === "hybrid") {
-        deferredLexiconCandidates.push({
-          source: "lexicon_mandatory",
-          article_id: fallbackRow.article_id,
-          atom_id: fallbackRow.atom_id,
-          title_ar: fallbackRow.title_ar,
-          description_ar: fallbackRow.description_ar,
-          severity: fallbackRow.severity as FindingWithGlobal["severity"],
-          confidence: 1,
-          is_interpretive: false,
-          evidence_snippet: fallbackRow.evidence_snippet,
-          location: {
-            ...fallbackRow.location,
-            context_window_id: `ctx-${startGlobal}-${endGlobal}`,
-            detection_pass: "hard_fallback_insults",
-          } as unknown as JudgeFinding["location"] & Record<string, unknown>,
-          depiction_type: "mention",
-          speaker_role: "unknown",
-          context_window_id: `ctx-${startGlobal}-${endGlobal}`,
-          context_confidence: 0.65,
-          lexical_confidence: 1,
-          policy_confidence: null,
-          rationale_ar: rationaleAr,
-          final_ruling: null,
-          narrative_consequence: "unknown",
-          detection_pass: "hard_fallback_insults",
-          start_offset_global: startGlobal,
-          end_offset_global: endGlobal,
-        });
+      const { data: fbData, error: fbErr } = await supabase
+        .from("analysis_findings")
+        .upsert(fallbackRow, { onConflict: "job_id,evidence_hash", ignoreDuplicates: true })
+        .select("id,article_id,atom_id,confidence");
+      if (fbErr) {
+        logger.error("Hard fallback insult upsert FAILED", { jobId, chunkId: chunk.id, term: rule.term, error: fbErr });
       } else {
-        const { data: fbData, error: fbErr } = await supabase
-          .from("analysis_findings")
-          .upsert(fallbackRow, { onConflict: "job_id,evidence_hash", ignoreDuplicates: true })
-          .select("id,article_id,atom_id,confidence");
-        if (fbErr) {
-          logger.error("Hard fallback insult upsert FAILED", { jobId, chunkId: chunk.id, term: rule.term, error: fbErr });
-        } else {
-          hardFallbackInserted += fbData?.length ?? 0;
-          await upsertFindingPolicyLinks(
-            (fbData ?? []).map((r) => ({
-              id: (r as { id: string }).id,
-              article_id: (r as { article_id: number }).article_id,
-              atom_id: (r as { atom_id: string | null }).atom_id,
-              confidence: (r as { confidence?: number | null }).confidence ?? 1,
-            }))
-          );
-        }
+        hardFallbackInserted += fbData?.length ?? 0;
+        await upsertFindingPolicyLinks(
+          (fbData ?? []).map((r) => ({
+            id: (r as { id: string }).id,
+            article_id: (r as { article_id: number }).article_id,
+            atom_id: (r as { atom_id: string | null }).atom_id,
+            confidence: (r as { confidence?: number | null }).confidence ?? 1,
+          }))
+        );
       }
     }
   }
@@ -1691,7 +1584,6 @@ export async function processChunkJudge(
     chunkId: chunk.id,
     mandatoryFindings: mandatoryFindings.length,
     hardFallbackInserted,
-    deferredLexiconCandidates: deferredLexiconCandidates.length,
   });
 
   // 1b) Idempotency Check & Config Setup
@@ -1707,7 +1599,7 @@ export async function processChunkJudge(
   const deepAuditorEnabled =
     typeof jobConfig.deep_auditor_enabled === "boolean" ? jobConfig.deep_auditor_enabled : config.ANALYSIS_DEEP_AUDITOR;
   const rationaleModel = config.OPENAI_RATIONALE_MODEL;
-  const logicVersion = `pipeline:${PIPELINE_LOGIC_VERSION}|version:${pipelineVersion}${v2FeatureSignature}|evidenceGrounding:${PIPELINE_EVIDENCE_GROUNDING_VERSION}|profile:${analysisProfile}|engine:${analysisEngine}|mode:${hybridMode}|deepAuditor:${deepAuditorEnabled}|auditorLayer:${config.AUDITOR_LAYER_VERSION}|rationaleModel:${rationaleModel}|router:${PROMPT_VERSIONS.router}|judge:${PROMPT_VERSIONS.judge}|violationSystem:${PROMPT_VERSIONS.violation_system}|auditor:${PROMPT_VERSIONS.auditor}|schema:${PROMPT_VERSIONS.schema}|passes:${passSignature}|passGating:${config.ANALYSIS_PASS_GATING_ENABLED ? PASS_GATING_VERSION : "off"}`;
+  const logicVersion = `pipeline:${PIPELINE_LOGIC_VERSION}|version:${pipelineVersion}${v2FeatureSignature}|evidenceGrounding:${PIPELINE_EVIDENCE_GROUNDING_VERSION}|profile:${analysisProfile}|engine:${analysisEngine}|deepAuditor:${deepAuditorEnabled}|auditorLayer:${config.AUDITOR_LAYER_VERSION}|rationaleModel:${rationaleModel}|router:${PROMPT_VERSIONS.router}|judge:${PROMPT_VERSIONS.judge}|violationSystem:${PROMPT_VERSIONS.violation_system}|auditor:${PROMPT_VERSIONS.auditor}|schema:${PROMPT_VERSIONS.schema}|passes:${passSignature}|passGating:${config.ANALYSIS_PASS_GATING_ENABLED ? PASS_GATING_VERSION : "off"}`;
   const forceFresh = jobConfig.force_fresh === true;
   const routerModel = typeof jobConfig.router_model === "string" && jobConfig.router_model.trim().length > 0
     ? jobConfig.router_model
@@ -1778,7 +1670,7 @@ export async function processChunkJudge(
     chunk_size: analysisSignatureConfig?.chunk_size ?? 12_000,
     overlap_size: analysisSignatureConfig?.overlap_size ?? 800,
     total_chunks: analysisSignatureConfig?.total_chunks ?? Math.max(0, job.progress_total - 1),
-    total_detection_passes: analysisSignatureConfig?.total_detection_passes ?? (analysisEngine === "policy_v1" ? 1 : DETECTION_PASSES.length),
+    total_detection_passes: analysisSignatureConfig?.total_detection_passes ?? DETECTION_PASSES.length,
     diagnostics_enabled: config.ENABLE_AI_DIAGNOSTICS,
     lineage_enabled: config.ENABLE_FINDING_LINEAGE,
   } as const;
@@ -2334,266 +2226,27 @@ export async function processChunkJudge(
     }
   }
 
-  // 6) Hybrid context arbitration and instrumentation hooks.
-  const baselineFindings = sortFindingsStable([...allFindings, ...deferredLexiconCandidates]);
+  // 6) Baseline multi-pass findings only.
+  const baselineFindings = sortFindingsStable([...allFindings]);
   const baselineMetrics = computeContradictionMetrics(baselineFindings);
-  let persistedFindings: FindingWithGlobal[] = baselineFindings;
-  let hybridMetrics: Record<string, unknown> | null = null;
-  let policyV1Metrics: Record<string, unknown> | null = null;
+  const persistedFindings: FindingWithGlobal[] = baselineFindings;
+  const legacyMetrics: Record<string, unknown> | null = null;
+  const policyV1Metrics: Record<string, unknown> | null = null;
   const partialFinalizeRequested = await isPartialFinalizeRequested(jobId);
-  const truthValidationEnabled = config.AUDITOR_LAYER_VERSION === "v4";
-  const shouldRunValidatedTruthPipeline = truthValidationEnabled || (analysisEngine === "hybrid" && hybridMode !== "off");
-  throwIfAborted(signal);
   if (partialFinalizeRequested) {
-    logger.info("Partial finalize requested; skipping hybrid context pipeline for current chunk", {
+    logger.info("Partial finalize requested; keeping baseline multi-pass findings", {
       jobId,
       chunkId: chunk.id,
       baselineFindings: baselineFindings.length,
     });
-    hybridMetrics = { skipped_reason: "partial_finalize_requested" };
-  } else if (analysisEngine === "policy_v1") {
-    await setChunkPhase(chunk.id, "policy_v1");
-    const policyStartedAt = Date.now();
-    try {
-      const sceneResult = await runSceneAnalyzer({
-        chunkText,
-        chunkStart,
-        chunkEnd,
-        jobId,
-        chunkId: chunk.id,
-        routerCandidates: routerOutputJson,
-        analysis_signature_context: analysisSignatureBase,
-        signal,
-      });
-      throwIfAborted(signal);
-      const policyDecisions = runPolicyEngine(sceneResult);
-      const policyFindings = sortFindingsStable(adaptPolicyDecisionsToFindings({
-        decisions: policyDecisions,
-        chunkStart,
-        chunkEnd,
-        chunkText,
-      }));
-      const persistPolicyFindings = policyV1Mode === "enforce";
-      if (persistPolicyFindings) {
-        persistedFindings = policyFindings;
-      } else {
-        persistedFindings = baselineFindings;
-      }
-      const violationDecisions = policyDecisions.filter((d) => d.status === "violation");
-      const reviewDecisions = policyDecisions.filter((d) => d.status === "needs_review");
-      const rejectedDecisions = policyDecisions.filter((d) => d.status === "rejected");
-      policyV1Metrics = {
-        engine: "policy_v1",
-        mode: policyV1Mode,
-        scene_events: sceneResult.events.length,
-        decisions_total: policyDecisions.length,
-        violations: violationDecisions.length,
-        needs_review: reviewDecisions.length,
-        rejected: rejectedDecisions.length,
-        adapted_findings_total: policyFindings.length,
-        persisted_findings_total: persistedFindings.length,
-        duration_ms: Date.now() - policyStartedAt,
-      };
-      logger.info("Policy-v1 scene triage completed (shadow)", {
-        jobId,
-        chunkId: chunk.id,
-        runKey,
-        ...policyV1Metrics,
-      });
-      try {
-        await withOperationTimeout(
-          "Persist policy_v1 analysis_chunk_run meta",
-          NON_CRITICAL_DB_TIMEOUT_MS,
-          supabase.from("analysis_chunk_runs").update({
-            truth_layer_meta: {
-              architecture: "policy_v1_legal_triage",
-              advisory_count: baselineFindings.length,
-              persisted_source: persistPolicyFindings ? "policy_v1_enforced" : "baseline_shadow",
-              policy_v1: policyV1Metrics,
-              policy_v1_findings_preview: policyFindings.slice(0, 15),
-            },
-          }).eq("run_key", runKey)
-        );
-      } catch (error) {
-        logger.warn("Failed to persist policy_v1 shadow metadata", {
-          jobId,
-          chunkId: chunk.id,
-          runKey,
-          error: error instanceof Error ? error.message : String(error),
-          timeoutMs: NON_CRITICAL_DB_TIMEOUT_MS,
-        });
-      }
-    } catch (error) {
-      if (
-        (error instanceof Error && (error.name === "AbortError" || error.name === "ChunkTimeoutError")) ||
-        signal?.aborted
-      ) {
-        throwIfAborted(signal);
-        throw error;
-      }
-      policyV1Metrics = {
-        engine: "policy_v1",
-        skipped_reason: "policy_pipeline_failed",
-        error: error instanceof Error ? error.message : String(error),
-      };
-      logger.warn("Policy-v1 scene triage failed; baseline findings remain persisted", {
-        jobId,
-        chunkId: chunk.id,
-        runKey,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  } else if (shouldRunValidatedTruthPipeline) {
-    await setChunkPhase(chunk.id, "hybrid");
-    const hybridStartedAt = Date.now();
-    let hybridTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
-    logger.info("Hybrid context pipeline starting", {
-      jobId,
-      chunkId: chunk.id,
-      runKey,
-      baselineFindings: baselineFindings.length,
-      deepAuditorEnabled,
-      hybridMode,
-      truthValidationEnabled,
-      hardTimeoutMs: config.HYBRID_HARD_TIMEOUT_MS,
-    });
-    try {
-      const hybrid = await Promise.race([
-        runHybridContextPipeline({
-          findings: baselineFindings.map((f) => ({
-            ...f,
-            severity: f.severity ?? "medium",
-            primary_article_id: f.primary_article_id ?? undefined,
-            canonical_finding_id: f.canonical_finding_id ?? undefined,
-            pillar_id: f.pillar_id ?? undefined,
-          })),
-          fullText: normalizedText,
-          deepAuditorEnabled,
-          auditorContext: pipelineVersion === "v2" ? v2PromptContext : null,
-          signal,
-        }),
-        new Promise<never>((_, reject) => {
-          hybridTimeoutHandle = setTimeout(() => {
-            const error = new Error("Hybrid context pipeline hard timeout");
-            error.name = "HybridTimeoutError";
-            reject(error);
-          }, config.HYBRID_HARD_TIMEOUT_MS);
-        }),
-      ]);
-      if (hybridTimeoutHandle) clearTimeout(hybridTimeoutHandle);
-      throwIfAborted(signal);
-      hybridMetrics = hybrid.metrics;
-      const persistValidatedFindings = hybridMode === "enforce";
-      if (persistValidatedFindings) {
-        persistedFindings = sortFindingsStable(hybrid.findings as FindingWithGlobal[]);
-      } else {
-        // True shadow mode: evaluate validator output, but persist baseline findings.
-        // The validator metrics remain available for tuning without erasing AI detections.
-        persistedFindings = baselineFindings;
-      }
-      const persistedSource = persistValidatedFindings ? "validated_hybrid" : "baseline_shadow";
-      logger.info("Hybrid context pipeline completed", {
-        jobId,
-        chunkId: chunk.id,
-        runKey,
-        hybridDurationMs: Date.now() - hybridStartedAt,
-        baselineCount: baselineFindings.length,
-        hybridCount: hybrid.findings.length,
-        persistedCount: persistedFindings.length,
-        persistedSource,
-      });
-      try {
-        await withOperationTimeout(
-          "Persist validated analysis_chunk_run",
-          NON_CRITICAL_DB_TIMEOUT_MS,
-          supabase.from("analysis_chunk_runs").update({
-            ai_findings: persistedFindings,
-            validated_ai_findings: persistedFindings,
-            truth_layer_meta: {
-              architecture: "advisory_model_plus_validator",
-              stage: "validated",
-              advisory_count: baselineFindings.length,
-              validated_count: hybrid.findings.length,
-              auditor_layer_version: config.AUDITOR_LAYER_VERSION,
-              persisted_source: persistedSource,
-            },
-          }).eq("run_key", runKey)
-        );
-      } catch (error) {
-        logger.warn("Failed to persist validated analysis_chunk_run", {
-          jobId,
-          chunkId: chunk.id,
-          runKey,
-          error: error instanceof Error ? error.message : String(error),
-          timeoutMs: NON_CRITICAL_DB_TIMEOUT_MS,
-        });
-      }
-      if (config.ANALYSIS_EVAL_LOG) {
-        const evalPayload = {
-          job_id: jobId,
-          chunk_id: chunk.id,
-          run_key: runKey,
-          engine: analysisEngine,
-          mode: hybridMode,
-          baseline_count: baselineFindings.length,
-          hybrid_count: hybrid.findings.length,
-          baseline_contradictions: baselineMetrics.contradictionGroups,
-          baseline_severe_disagreements: baselineMetrics.severeDisagreementGroups,
-          hybrid_context_ok: hybrid.metrics.contextOkCount,
-          hybrid_needs_review: hybrid.metrics.needsReviewCount,
-          hybrid_violation: hybrid.metrics.violationCount,
-        };
-        try {
-          await withOperationTimeout(
-            "Persist analysis_engine_evaluation",
-            NON_CRITICAL_DB_TIMEOUT_MS,
-            supabase.from("analysis_engine_evaluations").insert(evalPayload)
-          );
-        } catch (error) {
-          logger.warn("Failed to persist analysis engine evaluation", {
-            jobId,
-            chunkId: chunk.id,
-            runKey,
-            error: error instanceof Error ? error.message : String(error),
-            timeoutMs: NON_CRITICAL_DB_TIMEOUT_MS,
-          });
-        }
-      }
-    } catch (error) {
-      if (
-        (error instanceof Error && (error.name === "AbortError" || error.name === "ChunkTimeoutError")) ||
-        signal?.aborted
-      ) {
-        throwIfAborted(signal);
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn("Hybrid context pipeline failed or timed out; falling back to baseline findings", {
-        jobId,
-        chunkId: chunk.id,
-        error: message,
-        baselineFindings: baselineFindings.length,
-        hybridDurationMs: Date.now() - hybridStartedAt,
-        hybridHardTimeoutMs: config.HYBRID_HARD_TIMEOUT_MS,
-      });
-      hybridMetrics = {
-        skipped_reason: error instanceof Error && error.name === "HybridTimeoutError" ? "hard_timeout" : "hybrid_failed",
-        error: message,
-        fallback_to_baseline: true,
-      };
-      persistedFindings = baselineFindings;
-    } finally {
-      if (hybridTimeoutHandle) clearTimeout(hybridTimeoutHandle);
-    }
   }
-  logger.info("[DEBUG] Hybrid/validation stage complete", {
+  throwIfAborted(signal);
+  logger.info("[DEBUG] Validation stage complete", {
     jobId,
     chunkId: chunk.id,
     runKey,
     persistedFindingsCount: persistedFindings.length,
     analysisEngine,
-    hybridMode,
-    policyV1Mode,
   });
   validatedFindingCount = persistedFindings.length;
   const persistedLineage = new Set(
@@ -2650,11 +2303,10 @@ export async function processChunkJudge(
     chunkId: chunk.id,
     runKey,
     baselineMetrics,
-    hybridMetrics,
+    legacyMetrics,
     policyV1Metrics,
     persistedCount: persistedFindings.length,
     engine: analysisEngine,
-    hybridMode,
   });
 
   throwIfAborted(signal);

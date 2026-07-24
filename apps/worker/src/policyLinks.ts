@@ -71,7 +71,7 @@ export async function upsertFindingPolicyLinks(rows: FindingRowForLinks[]): Prom
           link_role: "primary",
           confidence: row.confidence ?? 0,
           rationale_ar: "Auto-linked during worker insert",
-          created_by_model: "hybrid-v3",
+          created_by_model: "worker_auto",
         },
         { onConflict: "finding_id,article_id,atom_concept_id" }
       );

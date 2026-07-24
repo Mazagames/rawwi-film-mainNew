@@ -22,7 +22,7 @@ type JobMeta = {
     pipeline_version?: string;
     analysis_profile?: string;
     analysis_engine?: string;
-    hybrid_mode?: string;
+    analysis_mode?: string;
   } | null;
 };
 
@@ -153,7 +153,7 @@ function summarizeJob(
     pipelineVersion: job.config_snapshot?.pipeline_version ?? "unknown",
     analysisProfile: job.config_snapshot?.analysis_profile ?? "unknown",
     analysisEngine: job.config_snapshot?.analysis_engine ?? "unknown",
-    hybridMode: job.config_snapshot?.hybrid_mode ?? "unknown",
+    analysisMode: job.config_snapshot?.analysis_mode ?? "unknown",
     rawFindingCount: rawFindings.length,
     reviewFindingCount: reviewFindings.length,
     rawByArticle,
@@ -200,9 +200,9 @@ function printHumanSummary(report: {
   const lines = [
     "Pipeline comparison summary",
     "",
-    `A: ${report.left.jobId} | pipeline=${report.left.pipelineVersion} | profile=${report.left.analysisProfile} | engine=${report.left.analysisEngine} | hybrid=${report.left.hybridMode}`,
+    `A: ${report.left.jobId} | pipeline=${report.left.pipelineVersion} | profile=${report.left.analysisProfile} | engine=${report.left.analysisEngine} | mode=${report.left.analysisMode}`,
     `   raw=${report.left.rawFindingCount} | review=${report.left.reviewFindingCount}`,
-    `B: ${report.right.jobId} | pipeline=${report.right.pipelineVersion} | profile=${report.right.analysisProfile} | engine=${report.right.analysisEngine} | hybrid=${report.right.hybridMode}`,
+    `B: ${report.right.jobId} | pipeline=${report.right.pipelineVersion} | profile=${report.right.analysisProfile} | engine=${report.right.analysisEngine} | mode=${report.right.analysisMode}`,
     `   raw=${report.right.rawFindingCount} | review=${report.right.reviewFindingCount}`,
     "",
     `Raw overlap: shared=${report.overlap.raw.shared} | onlyA=${report.overlap.raw.onlyLeft.length} | onlyB=${report.overlap.raw.onlyRight.length}`,
