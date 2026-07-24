@@ -10,7 +10,7 @@ import {
   atomIdNumeric,
   OUT_OF_SCOPE_ARTICLE_ID,
 } from "./policyMap.js";
-import { clusterByOverlap, clusterCanonicalKey } from "./methodology-v3/canonicalClustering.js";
+import { clusterByOverlap, clusterCanonicalKey } from "./canonicalClustering.js";
 import { generateScriptSummary } from "./scriptSummary.js";
 import { callRevisitSpotter } from "./openai.js";
 import { clearCachedJobResources } from "./jobAnalysisCache.js";
@@ -27,7 +27,7 @@ export type SummaryJson = {
   analysis_meta?: {
     auditor_layer_version: "v2" | "v3" | "v4";
     violation_system_version: "v2" | "v3" | "v4";
-    analysis_engine: "v2" | "hybrid" | "policy_v1";
+    analysis_engine: "v2";
     analysis_pipeline_version: "v1" | "v2";
     deep_auditor_enabled: boolean;
     generated_by: "worker";
@@ -200,9 +200,7 @@ type JobConfigMeta = {
   deep_auditor_enabled?: boolean;
 };
 
-function pickAnalysisEngine(value: unknown): "v2" | "hybrid" | "policy_v1" {
-  if (value === "hybrid") return "hybrid";
-  if (value === "policy_v1") return "policy_v1";
+function pickAnalysisEngine(value: unknown): "v2" {
   return "v2";
 }
 
@@ -2152,16 +2150,73 @@ export async function runAggregation(jobId: string): Promise<void> {
   const j = job as { created_by?: string | null };
   if (j.created_by != null) reportRow.created_by = j.created_by;
 
-  const { data: savedReport, error: reportErr } = await supabase
-    .from("analysis_reports")
-    .upsert(reportRow, { onConflict: "job_id" })
-    .select("id")
-    .single();
+  logger.info("Aggregation: report upsert starting", {
+    jobId,
+    reportRow,
+  });
+
+  let savedReport: unknown = null;
+  let reportErr: unknown = null;
+  let reportCount: number | null = null;
+  try {
+    const result = await supabase
+      .from("analysis_reports")
+      .upsert(reportRow, { onConflict: "job_id" })
+      .select("id, review_status", { count: "exact" })
+      .single();
+
+    savedReport = result.data;
+    reportErr = result.error;
+    reportCount = result.count ?? null;
+  } catch (upsertException) {
+    logger.error("Aggregation: report upsert EXCEPTION", {
+      jobId,
+      error: upsertException,
+      stack: upsertException instanceof Error ? upsertException.stack ?? null : null,
+      name: upsertException instanceof Error ? upsertException.name ?? null : null,
+      message: upsertException instanceof Error ? upsertException.message ?? null : null,
+    });
+    throw upsertException;
+  }
+
+  const reportId = (savedReport as { id?: string } | null)?.id ?? null;
+  const reportStatus = (savedReport as { review_status?: string | null } | null)?.review_status ?? null;
+
+  logger.info("Aggregation: report upsert completed", {
+    jobId,
+    data: savedReport,
+    error: reportErr,
+    count: reportCount,
+    status: reportStatus,
+    reportId,
+  });
 
   if (reportErr) {
-    logger.error("Aggregation: report upsert FAILED", { jobId, error: reportErr });
+    logger.error("Aggregation: report upsert FAILED", {
+      jobId,
+      error: reportErr,
+      count: reportCount,
+      status: reportStatus,
+      reportId,
+    });
   }
-  const reportId = (savedReport as { id?: string } | null)?.id ?? null;
+
+  if (!savedReport || !reportId) {
+    logger.error("Aggregation: report upsert returned no usable row", {
+      jobId,
+      reason: reportErr
+        ? "upsert returned an error"
+        : savedReport == null
+          ? "upsert returned no data"
+          : "upsert returned a row without an id",
+      data: savedReport,
+      error: reportErr,
+      count: reportCount,
+      status: reportStatus,
+      reportId,
+    });
+  }
+
   if (reportId) {
     await persistLineageEvents(
       list.map((finding) =>
