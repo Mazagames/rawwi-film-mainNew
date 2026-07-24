@@ -7661,15 +7661,18 @@ export function ScriptWorkspace() {
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-text-muted">{lang === 'ar' ? 'المراجع الحالي' : 'Current reviewer'}</span>
-                    <span className="text-end">
+                    <Badge variant="outline" className="max-w-full whitespace-normal text-center text-[11px]">
                       {currentReviewerLabel ?? (lang === 'ar' ? 'قيد الانتظار' : 'Waiting')}
-                    </span>
+                    </Badge>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-text-muted">{lang === 'ar' ? 'المخالفات الحالية' : 'Current findings'}</span>
-                    <span className="text-end">
+                    <Badge
+                      variant={currentFindingsCount && currentFindingsCount > 0 ? 'default' : 'outline'}
+                      className="min-w-[3rem] justify-center text-[11px]"
+                    >
                       {currentFindingsCount ?? 0}
-                    </span>
+                    </Badge>
                   </div>
                 </div>
               </div>
@@ -7819,9 +7822,9 @@ export function ScriptWorkspace() {
                             <span className="text-[10px] text-text-muted">{c.processingPhase}</span>
                           )}
                           {c.status === 'judging' && (c.currentPassLabel || c.currentPassName) && (
-                            <span className="text-[10px] text-text-muted">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                               {lang === 'ar' ? 'المراجع' : 'reviewer'} {c.currentPassLabel ?? c.currentPassName}
-                            </span>
+                            </Badge>
                           )}
                           {c.status === 'judging' && c.passesTotal != null && c.passesTotal > 0 && (
                             <span className="text-[10px] text-text-muted">
@@ -7829,11 +7832,14 @@ export function ScriptWorkspace() {
                             </span>
                           )}
                           {c.status === 'judging' && (
-                            <span className="text-[10px] text-text-muted">
+                            <Badge
+                              variant={(c.currentFindingsCount ?? 0) > 0 ? 'default' : 'outline'}
+                              className="text-[10px] px-1.5 py-0"
+                            >
                               {lang === 'ar'
-                                ? `المخالفات الحالية ${c.currentFindingsCount ?? 0}`
-                                : `current findings ${c.currentFindingsCount ?? 0}`}
-                            </span>
+                                ? `المخالفات ${c.currentFindingsCount ?? 0}`
+                                : `findings ${c.currentFindingsCount ?? 0}`}
+                            </Badge>
                           )}
                           {c.status === 'judging' && c.judgingStartedAt && (
                             <span className="text-[10px] text-text-muted">
