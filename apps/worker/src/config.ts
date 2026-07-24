@@ -23,10 +23,6 @@ export const config = {
     parseInt(process.env.CHUNK_HARD_TIMEOUT_MS ?? "300000", 10) || 300000,
     parseInt(process.env.PASS_HARD_TIMEOUT_MS ?? "180000", 10) || 180000
   ),
-  HYBRID_HARD_TIMEOUT_MS: Math.max(
-    parseInt(process.env.HYBRID_HARD_TIMEOUT_MS ?? "240000", 10) || 240000,
-    parseInt(process.env.JUDGE_TIMEOUT_MS ?? "120000", 10) || 120000
-  ),
   CHUNK_HARD_TIMEOUT_MAX_RETRIES: Math.max(
     1,
     parseInt(process.env.CHUNK_HARD_TIMEOUT_MAX_RETRIES ?? "1", 10) || 1
@@ -65,27 +61,22 @@ export const config = {
    */
   DETERMINISTIC_MODE: (process.env.DETERMINISTIC_MODE ?? "true").toLowerCase() !== "false",
   /**
-   * Analysis engine:
-   * - v2: existing detector-only behavior
-   * - hybrid: detector + context arbiter + policy reasoner
-   * - policy_v1: scene-event extraction + deterministic legal policy mapping
+   * Worker analysis engine.
+   * We keep the original multi-pass detector pipeline only.
    */
-  ANALYSIS_ENGINE: ((): "v2" | "hybrid" | "policy_v1" => {
-    const value = (process.env.ANALYSIS_ENGINE ?? "v2").toLowerCase();
-    if (value === "hybrid") return "hybrid";
-    if (value === "policy_v1") return "policy_v1";
-    return "v2";
-  })(),
+  ANALYSIS_ENGINE: "v2" as const,
   /**
    * Violation prompt pack:
    * - v2: current live prompts
    * - v3: new policy-driven prompt overlay built from the updated violation handbook
    * - v4: film-commission regulation pack (new regulation.md)
+   * - v5: markdown reviewers loaded from apps/worker/V5
    */
-  VIOLATION_SYSTEM_VERSION: ((): "v2" | "v3" | "v4" => {
+  VIOLATION_SYSTEM_VERSION: ((): "v2" | "v3" | "v4" | "v5" => {
     const value = (process.env.VIOLATION_SYSTEM_VERSION ?? "v3").toLowerCase();
     if (value === "v2") return "v2";
     if (value === "v4") return "v4";
+    if (value === "v5") return "v5";
     return "v3";
   })(),
   /**
@@ -95,24 +86,12 @@ export const config = {
    */
   ANALYSIS_PIPELINE_VERSION: ((process.env.ANALYSIS_PIPELINE_VERSION ?? "v1").toLowerCase() === "v2" ? "v2" : "v1") as "v1" | "v2",
   /**
-   * Hybrid run mode:
-   * - enforce: hybrid output is persisted
-   * - shadow: run hybrid for evaluation, persist baseline v2 output
-   */
-  ANALYSIS_HYBRID_MODE: ((process.env.ANALYSIS_HYBRID_MODE ?? "shadow").toLowerCase() === "enforce" ? "enforce" : "shadow") as "shadow" | "enforce",
-  /**
-   * Policy-v1 run mode:
-   * - shadow: evaluate policy_v1 and keep baseline persisted findings
-   * - enforce: persist policy_v1 adapted findings as final findings
-   */
-  ANALYSIS_POLICY_V1_MODE: ((process.env.ANALYSIS_POLICY_V1_MODE ?? "shadow").toLowerCase() === "enforce" ? "enforce" : "shadow") as "shadow" | "enforce",
-  /**
-   * Persist evaluation comparison rows for hybrid rollout KPIs.
+   * Persist evaluation comparison rows for analysis KPIs.
    */
   ANALYSIS_EVAL_LOG: (process.env.ANALYSIS_EVAL_LOG ?? "true").toLowerCase() !== "false",
   /**
    * Enable deep GPT auditor pass for canonical findings.
-   * Runs inside hybrid flow; safe default enabled.
+   * Kept for legacy evaluation jobs and report generation.
    */
   ANALYSIS_DEEP_AUDITOR: (process.env.ANALYSIS_DEEP_AUDITOR ?? "true").toLowerCase() !== "false",
   /**

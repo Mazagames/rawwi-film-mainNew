@@ -13,7 +13,7 @@
  * Each pass runs in parallel with a focused, simple prompt.
  */
 
-import type { GCAMArticle } from "./gcam.js";
+import { getScriptStandardArticle, type GCAMArticle } from "./gcam.js";
 import type { JudgeFinding } from "./schemas.js";
 import { callJudgeRaw, parseJudgeWithRepair } from "./openai.js";
 import { extractRawFindingCount, persistJudgeDiagnostic } from "./judgeDiagnostics.js";
@@ -36,6 +36,7 @@ import {
   V4_SUBJECT_DEFINITIONS,
   type V4SubjectDefinition,
 } from "./v4PromptPack.js";
+import { getV5ReviewerDefinitions } from "./v5PromptPack.js";
 import type { AnalysisExecutionSignatureInput } from "./executionSignature.js";
 
 export interface LexiconTerm {
@@ -51,6 +52,7 @@ export interface PassDefinition {
   articleIds: number[];
   buildPrompt: (articles: GCAMArticle[], lexiconTerms?: LexiconTerm[]) => string;
   model?: string; // Optional: override model for this pass
+  sourceFileName?: string;
 }
 
 export interface PlannedPassSkip {
@@ -180,6 +182,7 @@ const STRUCTURED_RATIONALE_INSTRUCTIONS = `قواعد الشرح الإلزام�
 12. كلمة "النظام" لا تعني تلقائياً نظام الحكم: إذا كان السياق مدرسي/انضباطي (معلم، طلاب، فصل، مدرسة) فلا تصنفها سياسياً إلا بوجود قرينة سياسية صريحة.`;
 
 function applyViolationSystemOverlay(prompt: string, passName: string): string {
+  if (passName.startsWith("v5_")) return prompt;
   if (passName.startsWith("v3_") || passName.startsWith("v4_")) return prompt;
   if (config.VIOLATION_SYSTEM_VERSION === "v3") {
     const overlay = buildV3PromptOverlay(passName);
@@ -1589,12 +1592,25 @@ const ACTIVE_SUBJECT_PASSES: PassDefinition[] = [
   })),
 ];
 
-const SUBJECT_MODE_ENABLED =
-  config.VIOLATION_SYSTEM_VERSION === "v3" || config.VIOLATION_SYSTEM_VERSION === "v4";
+function buildV5DetectionPasses(): PassDefinition[] {
+  return getV5ReviewerDefinitions().map((reviewer) => ({
+    name: reviewer.name,
+    articleIds: reviewer.articleIds,
+    buildPrompt: () => reviewer.markdown,
+    model: config.OPENAI_JUDGE_MODEL,
+    sourceFileName: reviewer.fileName,
+  }));
+}
 
-export const DETECTION_PASSES: PassDefinition[] = SUBJECT_MODE_ENABLED
-  ? ACTIVE_SUBJECT_PASSES
-  : LEGACY_DETECTION_PASSES;
+export const DETECTION_PASSES: PassDefinition[] = (() => {
+  if (config.VIOLATION_SYSTEM_VERSION === "v5") {
+    return buildV5DetectionPasses();
+  }
+  if (config.VIOLATION_SYSTEM_VERSION === "v3" || config.VIOLATION_SYSTEM_VERSION === "v4") {
+    return ACTIVE_SUBJECT_PASSES;
+  }
+  return LEGACY_DETECTION_PASSES;
+})();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // EXECUTION ENGINE
@@ -1763,6 +1779,13 @@ export function planDetectionPassExecution(
   allArticles: GCAMArticle[],
   lexiconTerms: LexiconTerm[]
 ): DetectionPassExecutionPlan {
+  if (config.VIOLATION_SYSTEM_VERSION === "v5") {
+    return {
+      activePasses: DETECTION_PASSES,
+      skippedPasses: [],
+    };
+  }
+
   const activePasses: PassDefinition[] = [];
   const skippedPasses: PlannedPassSkip[] = [];
 
@@ -1822,16 +1845,19 @@ async function runSinglePass(
       // For glossary pass, use articles from lexicon terms
       articleIds = [...new Set(lexiconTerms.map(t => t.gcam_article_id))];
     }
-    
-    const articles = allArticles.filter(a => articleIds.includes(a.id));
-    
-    if (articles.length === 0 && pass.name !== "glossary") {
+
+    const isV5Reviewer = config.VIOLATION_SYSTEM_VERSION === "v5" || pass.name.startsWith("v5_");
+    const articles = isV5Reviewer
+      ? articleIds.map((articleId) => getScriptStandardArticle(articleId))
+      : allArticles.filter((a) => articleIds.includes(a.id));
+
+    if (!isV5Reviewer && articles.length === 0 && pass.name !== "glossary") {
       logger.warn(`[DEBUG] Pass skipped: no articles`, { passName: pass.name, articleIds, allArticleIds: allArticles.map(a => a.id) });
       return { passName: pass.name, findings: [], duration: 0, skipped: true, reason: "no_articles", model: pass.model };
     }
 
     // Skip glossary pass if no lexicon terms
-    if (pass.name === "glossary" && lexiconTerms.length === 0) {
+    if (!isV5Reviewer && pass.name === "glossary" && lexiconTerms.length === 0) {
       logger.info("Skipping glossary pass (no lexicon terms)");
       return { passName: pass.name, findings: [], duration: 0, skipped: true, reason: "no_lexicon_terms", model: pass.model };
     }
@@ -1839,11 +1865,25 @@ async function runSinglePass(
     // Build specialized prompt
     const promptBase = pass.buildPrompt(articles, lexiconTerms);
     const promptVersioned = applyViolationSystemOverlay(promptBase, pass.name);
-    const prompt = promptContext && promptContext.trim().length > 0
-      ? `${promptVersioned}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nسياق إضافي للمراجعة (Pipeline V2)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${promptContext.trim()}`
-      : promptVersioned;
+    const prompt = isV5Reviewer
+      ? promptVersioned
+      : promptContext && promptContext.trim().length > 0
+        ? `${promptVersioned}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nسياق إضافي للمراجعة (Pipeline V2)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${promptContext.trim()}`
+        : promptVersioned;
+    if (isV5Reviewer) {
+      logger.info("V5 reviewer prompt prepared", {
+        chunkId: diagnosticContext?.chunkId ?? null,
+        reviewer: pass.name,
+        markdownFile: pass.sourceFileName ?? null,
+        promptCharacters: promptBase.length,
+      });
+    }
     const userPromptAddition =
-      pass.name === "insults"
+      isV5Reviewer
+        ? promptContext && promptContext.trim().length > 0
+          ? promptContext.trim()
+          : null
+        : pass.name === "insults"
         ? buildInsultsUserPromptAddition()
         : pass.name === "violence"
           ? buildViolenceUserPromptAddition()

@@ -26,7 +26,7 @@ export type SummaryJson = {
   generated_at: string;
   analysis_meta?: {
     auditor_layer_version: "v2" | "v3" | "v4";
-    violation_system_version: "v2" | "v3" | "v4";
+    violation_system_version: "v2" | "v3" | "v4" | "v5";
     analysis_engine: "v2";
     analysis_pipeline_version: "v1" | "v2";
     deep_auditor_enabled: boolean;
@@ -208,9 +208,10 @@ function pickPipelineVersion(value: unknown): "v1" | "v2" {
   return value === "v2" ? "v2" : "v1";
 }
 
-function pickViolationSystemVersion(value: unknown): "v2" | "v3" | "v4" {
+function pickViolationSystemVersion(value: unknown): "v2" | "v3" | "v4" | "v5" {
   if (value === "v2") return "v2";
   if (value === "v4") return "v4";
+  if (value === "v5") return "v5";
   return "v3";
 }
 
