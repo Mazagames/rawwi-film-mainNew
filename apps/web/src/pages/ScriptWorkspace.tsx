@@ -441,7 +441,7 @@ const IS_DEV = (import.meta as any).env?.DEV ?? false;
 const PROCESSING_PHASE_LABELS: Record<string, { ar: string; en: string }> = {
   router: { ar: 'اختيار المواد المرشحة', en: 'Routing (candidate articles)' },
   multipass: { ar: 'كشف متعدد بالتوازي', en: 'Parallel multi-pass detection' },
-  hybrid: { ar: 'مراجعة سياقية', en: 'Hybrid context pass' },
+  context: { ar: 'مراجعة سياقية', en: 'Context pass' },
   aggregating: { ar: 'تجميع النتائج', en: 'Writing findings' },
   cached: { ar: 'نتائج مخزنة', en: 'Cached AI results' },
 };
@@ -3517,6 +3517,16 @@ export function ScriptWorkspace() {
       : `Detectors finished: ${d} of ${t} (parallel; completion order varies)`;
   }, [activeChunk, lang]);
 
+  const currentReviewerLabel = useMemo(() => {
+    if (activeChunk?.status !== 'judging') return null;
+    return activeChunk.currentPassLabel ?? activeChunk.currentPassName ?? null;
+  }, [activeChunk?.currentPassLabel, activeChunk?.currentPassName, activeChunk?.status]);
+
+  const currentFindingsCount = useMemo(() => {
+    if (activeChunk?.status !== 'judging') return null;
+    return activeChunk.currentFindingsCount ?? 0;
+  }, [activeChunk?.currentFindingsCount, activeChunk?.status]);
+
   const [analysisTimerNow, setAnalysisTimerNow] = useState(() => Date.now());
   useEffect(() => {
     const shouldTick =
@@ -3571,6 +3581,9 @@ export function ScriptWorkspace() {
             activeChunk.processingPhase ?? '',
             activeChunk.passesCompleted ?? '',
             activeChunk.passesTotal ?? '',
+            activeChunk.currentPassName ?? '',
+            activeChunk.currentPassLabel ?? '',
+            activeChunk.currentFindingsCount ?? '',
             activeChunk.pageNumberMin ?? '',
             activeChunk.pageNumberMax ?? '',
             activeChunk.lastError ?? '',
@@ -7646,6 +7659,18 @@ export function ScriptWorkspace() {
                       {activePhaseLabel ?? (lang === 'ar' ? 'قيد الانتظار' : 'Waiting')}
                     </span>
                   </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-text-muted">{lang === 'ar' ? 'المراجع الحالي' : 'Current reviewer'}</span>
+                    <span className="text-end">
+                      {currentReviewerLabel ?? (lang === 'ar' ? 'قيد الانتظار' : 'Waiting')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-text-muted">{lang === 'ar' ? 'المخالفات الحالية' : 'Current findings'}</span>
+                    <span className="text-end">
+                      {currentFindingsCount ?? 0}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -7793,9 +7818,21 @@ export function ScriptWorkspace() {
                           {c.processingPhase && (
                             <span className="text-[10px] text-text-muted">{c.processingPhase}</span>
                           )}
+                          {c.status === 'judging' && (c.currentPassLabel || c.currentPassName) && (
+                            <span className="text-[10px] text-text-muted">
+                              {lang === 'ar' ? 'المراجع' : 'reviewer'} {c.currentPassLabel ?? c.currentPassName}
+                            </span>
+                          )}
                           {c.status === 'judging' && c.passesTotal != null && c.passesTotal > 0 && (
                             <span className="text-[10px] text-text-muted">
                               {c.passesCompleted ?? 0}/{c.passesTotal}
+                            </span>
+                          )}
+                          {c.status === 'judging' && (
+                            <span className="text-[10px] text-text-muted">
+                              {lang === 'ar'
+                                ? `المخالفات الحالية ${c.currentFindingsCount ?? 0}`
+                                : `current findings ${c.currentFindingsCount ?? 0}`}
                             </span>
                           )}
                           {c.status === 'judging' && c.judgingStartedAt && (

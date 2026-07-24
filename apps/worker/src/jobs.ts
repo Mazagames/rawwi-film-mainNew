@@ -475,6 +475,21 @@ export function setChunkMultipassStart(chunkId: string, totalPasses: number): Pr
         processing_phase: "multipass",
         passes_completed: 0,
         passes_total: totalPasses,
+        current_pass_name: null,
+        current_pass_label: null,
+        current_findings_count: 0,
+      })
+      .eq("id", chunkId)
+  );
+}
+
+export function setChunkCurrentPass(chunkId: string, passName: string, passLabel?: string | null): Promise<void> {
+  return queueChunkStateUpdate(chunkId, "setChunkCurrentPass", () =>
+    supabase
+      .from("analysis_chunks")
+      .update({
+        current_pass_name: passName,
+        current_pass_label: passLabel ?? passName,
       })
       .eq("id", chunkId)
   );
@@ -496,6 +511,24 @@ export function reportChunkPassProgressDebounced(chunkId: string, completed: num
   passProgressDebounceTimers.set(chunkId, t);
 }
 
+/** Debounced live finding counter for the active chunk. */
+const chunkFindingsDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function reportChunkFindingsCountDebounced(chunkId: string, count: number): void {
+  const prev = chunkFindingsDebounceTimers.get(chunkId);
+  if (prev) clearTimeout(prev);
+  const t = setTimeout(() => {
+    chunkFindingsDebounceTimers.delete(chunkId);
+    void queueChunkStateUpdate(chunkId, "reportChunkFindingsCount", () =>
+      supabase
+        .from("analysis_chunks")
+        .update({ current_findings_count: count })
+        .eq("id", chunkId)
+    );
+  }, 220);
+  chunkFindingsDebounceTimers.set(chunkId, t);
+}
+
 /** Final flush so UI shows 10/10 before chunk completes. */
 export function flushChunkPassProgress(chunkId: string, completed: number, total: number): Promise<void> {
   const prev = passProgressDebounceTimers.get(chunkId);
@@ -505,6 +538,18 @@ export function flushChunkPassProgress(chunkId: string, completed: number, total
     supabase
       .from("analysis_chunks")
       .update({ passes_completed: completed, passes_total: total })
+      .eq("id", chunkId)
+  );
+}
+
+export function flushChunkFindingsCount(chunkId: string, count: number): Promise<void> {
+  const prev = chunkFindingsDebounceTimers.get(chunkId);
+  if (prev) clearTimeout(prev);
+  chunkFindingsDebounceTimers.delete(chunkId);
+  return queueChunkStateUpdate(chunkId, "flushChunkFindingsCount", () =>
+    supabase
+      .from("analysis_chunks")
+      .update({ current_findings_count: count })
       .eq("id", chunkId)
   );
 }

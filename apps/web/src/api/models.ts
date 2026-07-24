@@ -25,8 +25,7 @@ export enum OverrideEventType {
 
 export type AnalysisModeProfile = 'quality' | 'balanced' | 'turbo';
 export type AnalysisPipelineVersion = 'v1' | 'v2';
-export type AnalysisEngine = 'v2' | 'hybrid';
-export type AnalysisHybridMode = 'off' | 'shadow' | 'enforce';
+export type AnalysisEngine = 'v2';
 
 export interface User {
   id: string;
@@ -153,7 +152,6 @@ export interface AnalysisJob {
   analysisMode?: AnalysisModeProfile | null;
   pipelineVersion?: AnalysisPipelineVersion | null;
   analysisEngine?: AnalysisEngine | null;
-  hybridMode?: AnalysisHybridMode | null;
   manualReviewContextCount?: number;
   progressTotal: number;
   progressDone: number;
@@ -178,10 +176,13 @@ export interface ChunkStatus {
   judgingStartedAt?: string | null;
   pageNumberMin?: number | null;
   pageNumberMax?: number | null;
-  /** Coarse worker stage: router, multipass, hybrid, aggregating, cached */
+  /** Coarse worker stage: router, multipass, context, aggregating, cached */
   processingPhase?: string | null;
   passesCompleted?: number | null;
   passesTotal?: number | null;
+  currentPassName?: string | null;
+  currentPassLabel?: string | null;
+  currentFindingsCount?: number | null;
   /** Short excerpt; prefer when status is judging */
   textPreview?: string | null;
 }
@@ -310,7 +311,7 @@ export interface Report {
     analysis_meta?: {
       auditor_layer_version: 'v2' | 'v3' | 'v4';
       violation_system_version: 'v2' | 'v3' | 'v4';
-      analysis_engine: 'v2' | 'hybrid';
+      analysis_engine: 'v2';
       analysis_pipeline_version: 'v1' | 'v2';
       deep_auditor_enabled: boolean;
       generated_by: 'worker';

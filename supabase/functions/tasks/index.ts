@@ -55,9 +55,7 @@ type JobRow = {
   config_snapshot?: {
     pipeline_version?: "v1" | "v2";
     analysis_profile?: "quality" | "balanced" | "turbo";
-    analysis_engine?: "v2" | "hybrid" | "policy_v1";
-    hybrid_mode?: "off" | "shadow" | "enforce";
-    policy_v1_mode?: "shadow" | "enforce";
+    analysis_engine?: "v2";
     analysis_signature?: {
       chunk_size?: number;
       overlap_size?: number;
@@ -296,8 +294,6 @@ function toCamel(job: JobRow) {
     analysisMemoryMode: job.config_snapshot?.analysis_memory_mode ?? "memory1",
     pipelineVersion: job.config_snapshot?.pipeline_version ?? "v1",
     analysisEngine: job.config_snapshot?.analysis_engine ?? null,
-    hybridMode: job.config_snapshot?.hybrid_mode ?? null,
-    policyV1Mode: job.config_snapshot?.policy_v1_mode ?? null,
     progressTotal: job.progress_total,
     progressDone: job.progress_done,
     progressPercent: job.progress_percent,
@@ -411,7 +407,7 @@ Deno.serve(async (req: Request) => {
       const { data: chunkRows, error: chunkErr } = await supabase
         .from("analysis_chunks")
         .select(
-          "chunk_index, status, last_error, page_number_min, page_number_max, processing_phase, passes_completed, passes_total, text_preview, judging_started_at"
+          "chunk_index, status, last_error, page_number_min, page_number_max, processing_phase, passes_completed, passes_total, current_pass_name, current_pass_label, current_findings_count, text_preview, judging_started_at"
         )
         .eq("job_id", jobId)
         .order("chunk_index", { ascending: true });
@@ -429,6 +425,9 @@ Deno.serve(async (req: Request) => {
           processingPhase: c.processing_phase ?? null,
           passesCompleted: c.passes_completed ?? null,
           passesTotal: c.passes_total ?? null,
+          currentPassName: c.current_pass_name ?? null,
+          currentPassLabel: c.current_pass_label ?? null,
+          currentFindingsCount: c.current_findings_count ?? 0,
           judgingStartedAt: c.judging_started_at ?? null,
           textPreview:
             c.status === "judging" && c.text_preview != null && String(c.text_preview).trim() !== ""
@@ -656,33 +655,9 @@ Deno.serve(async (req: Request) => {
   const versionId = body?.versionId;
   const forceFresh = body?.forceFresh === true;
   const analysisMemoryMode = await loadAnalysisMemoryMode(supabase);
-  const envDefaultEngine = (() => {
-    const raw = String(Deno.env.get("ANALYSIS_ENGINE") ?? "v2").toLowerCase();
-    if (raw === "policy_v1") return "policy_v1" as const;
-    if (raw === "hybrid") return "hybrid" as const;
-    return "v2" as const;
-  })();
-  const requestedAnalysisEngine = (() => {
-    const raw = String(body?.analysisEngine ?? envDefaultEngine).toLowerCase();
-    if (raw === "policy_v1") return "policy_v1" as const;
-    if (raw === "hybrid") return "hybrid" as const;
-    return "v2" as const;
-  })();
-  const requestedPolicyV1Mode = (() => {
-    const envMode = String(Deno.env.get("ANALYSIS_POLICY_V1_MODE") ?? "shadow").toLowerCase();
-    const raw = String(body?.policyV1Mode ?? envMode).toLowerCase();
-    return raw === "enforce" ? "enforce" as const : "shadow" as const;
-  })();
-  const requestedHybridMode = (() => {
-    const envMode = String(Deno.env.get("ANALYSIS_HYBRID_MODE") ?? "shadow").toLowerCase();
-    const raw = String(body?.hybridMode ?? envMode).toLowerCase();
-    if (raw === "enforce") return "enforce" as const;
-    if (raw === "off") return "off" as const;
-    return "shadow" as const;
-  })();
-  const envDefaultPipelineVersion = (Deno.env.get("ANALYSIS_PIPELINE_VERSION") ?? "v2").toLowerCase() === "v1" ? "v1" : "v2";
-  const engineDefaultPipelineVersion = requestedAnalysisEngine === "policy_v1" ? "v1" : envDefaultPipelineVersion;
-  const defaultPipelineVersion = analysisMemoryMode === "memory2" ? "v2" : engineDefaultPipelineVersion;
+  const defaultPipelineVersion = analysisMemoryMode === "memory2"
+    ? "v2"
+    : ((Deno.env.get("ANALYSIS_PIPELINE_VERSION") ?? "v2").toLowerCase() === "v1" ? "v1" : "v2");
   const requestedPipelineVersion = body?.pipelineVersion === "v2" || body?.pipelineVersion === "v1"
     ? body.pipelineVersion
     : defaultPipelineVersion;
@@ -814,7 +789,7 @@ Deno.serve(async (req: Request) => {
   const manualReviewSnapshot = await loadManualReviewSnapshot(supabase, scriptId, versionId.trim());
   const chunkSize = 12_000;
   const overlapSize = usePageChunks ? 0 : 800;
-  const totalDetectionPasses = requestedAnalysisEngine === "policy_v1" ? 1 : 11;
+  const totalDetectionPasses = 11;
 
   const { data: job, error: jobErr } = await supabase
     .from("analysis_jobs")
@@ -835,9 +810,7 @@ Deno.serve(async (req: Request) => {
         pipeline_version: requestedPipelineVersion,
         force_fresh: forceFresh,
         analysis_profile: analysisProfilePreset.analysisProfile,
-        analysis_engine: requestedAnalysisEngine,
-        ...(requestedAnalysisEngine === "hybrid" ? { hybrid_mode: requestedHybridMode } : {}),
-        ...(requestedAnalysisEngine === "policy_v1" ? { policy_v1_mode: requestedPolicyV1Mode } : {}),
+        analysis_engine: "v2",
         max_router_candidates: analysisProfilePreset.maxRouterCandidates,
         deep_auditor_enabled: analysisProfilePreset.deepAuditorEnabled,
         router_prompt_version: PROMPT_VERSIONS.router,

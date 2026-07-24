@@ -20,7 +20,13 @@ import { extractRawFindingCount, persistJudgeDiagnostic } from "./judgeDiagnosti
 import { logger } from "./logger.js";
 import { buildLineageEvent, ensureFindingLineageId, persistLineageEvents } from "./findingLineage.js";
 import { getFrameworkPromptSection } from "./canonicalAtomFramework.js";
-import { flushChunkPassProgress, reportChunkPassProgressDebounced } from "./jobs.js";
+import {
+  flushChunkFindingsCount,
+  flushChunkPassProgress,
+  reportChunkFindingsCountDebounced,
+  reportChunkPassProgressDebounced,
+  setChunkCurrentPass,
+} from "./jobs.js";
 import { evaluatePassGating } from "./passGating.js";
 import { getGcamRefsForCanonicalAtom } from "./canonicalAtomMapping.js";
 import { config } from "./config.js";
@@ -1907,6 +1913,9 @@ async function runSinglePass(
     
     // Call OpenAI with specialized prompt
     const model = pass.model || "gpt-4.1";
+    if (diagnosticContext?.chunkId) {
+      await setChunkCurrentPass(diagnosticContext.chunkId, pass.name, pass.sourceFileName ?? pass.name);
+    }
     const judgeCall = await callJudgeRaw(
       chunkText,
       articles,
@@ -2242,6 +2251,7 @@ export async function runMultiPassDetection(
 
   // Run planned passes in parallel (completion order is arbitrary; UI shows debounced count)
   let completed = 0;
+  let findingsCount = 0;
   const activeResultsRaw = await Promise.all(
     plan.activePasses.map((pass) =>
       runSinglePassWithHardTimeout(
@@ -2258,8 +2268,10 @@ export async function runMultiPassDetection(
       ).then(
         (result) => {
           completed++;
+          findingsCount += result.findings.length;
           if (progressOpts?.chunkId) {
             reportChunkPassProgressDebounced(progressOpts.chunkId, completed, totalPasses);
+            reportChunkFindingsCountDebounced(progressOpts.chunkId, findingsCount);
           }
           return result;
         }
@@ -2285,6 +2297,7 @@ export async function runMultiPassDetection(
 
   if (progressOpts?.chunkId) {
     await flushChunkPassProgress(progressOpts.chunkId, totalPasses, totalPasses);
+    await flushChunkFindingsCount(progressOpts.chunkId, findingsCount);
   }
 
   const passResults = sortPassResultsStable([
