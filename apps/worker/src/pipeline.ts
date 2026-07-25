@@ -599,6 +599,91 @@ function hasUngroundedRationaleQuotes(rationale: string, localWindow: string): b
   return quotes.some((quote) => !localWindow.includes(quote));
 }
 
+function tokenizeArabicRationale(value: string | null | undefined): string[] {
+  const text = compactNormalizedEvidence(value);
+  if (!text) return [];
+  const stopwords = new Set([
+    "هذا",
+    "هذه",
+    "ذلك",
+    "تلك",
+    "هنا",
+    "هناك",
+    "على",
+    "عن",
+    "إلى",
+    "الى",
+    "من",
+    "في",
+    "و",
+    "أو",
+    "ثم",
+    "كما",
+    "لأن",
+    "لان",
+    "قد",
+    "تم",
+    "يتم",
+    "كان",
+    "تكون",
+    "يكون",
+    "ليس",
+    "ما",
+    "لا",
+    "لم",
+    "لن",
+    "إن",
+    "ان",
+    "أن",
+    "اي",
+    "أي",
+    "مع",
+    "كل",
+    "أيضاً",
+    "ايضا",
+  ]);
+  const tokens = text
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .flatMap((token) => {
+      const variants = new Set<string>();
+      const normalized = token.normalize("NFC");
+      if (normalized.length >= 3 && !stopwords.has(normalized)) variants.add(normalized);
+      if (normalized.startsWith("ال") && normalized.length > 4) {
+        const stripped = normalized.slice(2);
+        if (stripped.length >= 3 && !stopwords.has(stripped)) variants.add(stripped);
+      }
+      return [...variants];
+    });
+  return [...new Set(tokens)];
+}
+
+export function hasRationaleLocalSupport(rationale: string, localWindow: string): boolean {
+  const rationaleTokens = tokenizeArabicRationale(rationale);
+  if (rationaleTokens.length === 0) return true;
+  const normalizedLocal = compactNormalizedEvidence(localWindow);
+  if (!normalizedLocal) return false;
+  return rationaleTokens.some((token) => normalizedLocal.includes(token));
+}
+
+export function hasDriftProneArticleAnchor(articleId: number, localWindow: string): boolean {
+  switch (articleId) {
+    case 12:
+      return /(?:طفل|الطفل|الطفلة|الطفل\s+يتعرض|أطفال|قاصر|القاصر|يعنف|عنف\s+ضد\s+طفل|ضرب\s+طفل|الاعتداء\s+على\s+طفل)/u.test(localWindow);
+    case 15:
+      return /(?:فوضى|الفوضى|شغب|الشغب|اضطراب|اضطرابات|تحريض|يحرض|إخلال\s+بالنظام|النظام\s+العام|صراخ|تجمهر|اشتباك)/u.test(localWindow);
+    case 19:
+      return /(?:اقتصاد|الاقتصاد|اقتصادي|الاقتصادي|أسعار|السوق|مالية|المالية|عملة|البنك|التضخم|الديون|تجارة)/u.test(localWindow);
+    case 21:
+      return /(?:وثيقة|الوثيقة|مستند|ملف|الملف|تسريب|مسرب|مسربة|سري|سرية|معلومات\s+سرية|وثائق)/u.test(localWindow);
+    case 23:
+      return /(?:عري|عريان|مكشوف|ملابس|الملابس|لباس|لبس|زي|حجاب|قميص|سروال|فستان|جسد|المظهر|الهيئة)/u.test(localWindow);
+    default:
+      return true;
+  }
+}
+
 type Memory2GuardRejection = {
   reason:
     | "missing_political_anchor"
@@ -606,6 +691,8 @@ type Memory2GuardRejection = {
     | "school_system_word_not_governance"
     | "ungrounded_political_rationale"
     | "missing_sexual_anchor"
+    | "unsupported_rationale"
+    | "ownership_drift"
     | "rationale_local_mismatch";
   article: number;
   title: string | null | undefined;
@@ -613,7 +700,7 @@ type Memory2GuardRejection = {
   rationale: string;
 };
 
-function applyMemory2SanityGuards(
+export function applyMemory2SanityGuards(
   findings: FindingWithGlobal[],
   normalizedText: string | null,
   chunkText: string,
@@ -713,6 +800,23 @@ function applyMemory2SanityGuards(
       continue;
     }
 
+    if (rationale && !hasRationaleLocalSupport(rationale, combinedLocal)) {
+      rejected.push({
+        reason: "unsupported_rationale",
+        article: finding.article_id,
+        title: finding.title_ar,
+        evidence: (finding.evidence_snippet ?? "").slice(0, 220),
+        rationale: rationale.slice(0, 260),
+      });
+      logger.warn("Memory2 sanity guard dropped finding due to unsupported local rationale", {
+        article: finding.article_id,
+        title: finding.title_ar,
+        rationale: rationale.slice(0, 180),
+        evidence: (finding.evidence_snippet ?? "").slice(0, 120),
+      });
+      continue;
+    }
+
     // Sexual category must be grounded by explicit sexual anchors in local context.
     // This blocks child-abuse or bullying snippets from leaking into article 10.
     if (isSexualFinding(finding) && !hasSexualAnchorContext(combinedLocal)) {
@@ -724,6 +828,26 @@ function applyMemory2SanityGuards(
         rationale: rationale.slice(0, 260),
       });
       logger.warn("Memory2 sanity guard dropped sexual finding without sexual anchors", {
+        article: finding.article_id,
+        title: finding.title_ar,
+        evidence: (finding.evidence_snippet ?? "").slice(0, 120),
+      });
+      continue;
+    }
+
+    if (
+      finding.article_id != null &&
+      [12, 15, 19, 21, 23].includes(finding.article_id) &&
+      !hasDriftProneArticleAnchor(finding.article_id, combinedLocal)
+    ) {
+      rejected.push({
+        reason: "ownership_drift",
+        article: finding.article_id,
+        title: finding.title_ar,
+        evidence: (finding.evidence_snippet ?? "").slice(0, 220),
+        rationale: rationale.slice(0, 260),
+      });
+      logger.warn("Memory2 sanity guard dropped drift-prone finding without article anchor", {
         article: finding.article_id,
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
@@ -864,7 +988,7 @@ function getSceneContextAtOffset(sceneIndex: SceneIndexEntry[], fullText: string
   return fullText.slice(scene.startOffset, scene.endOffset);
 }
 
-function getPassSpecificEvidenceIssue(
+export function getPassSpecificEvidenceIssue(
   finding: FindingWithGlobal,
   excerpt: string,
   fullText?: string | null,
@@ -874,6 +998,7 @@ function getPassSpecificEvidenceIssue(
   const atom = String(finding.canonical_atom ?? "").trim().toUpperCase();
   const articleId = finding.article_id ?? 0;
   const source = String(finding.source ?? "ai").trim().toLowerCase();
+  const rationale = String(finding.rationale_ar ?? "");
   if (source === "lexicon_mandatory" || source === "manual") return null;
 
   if (pass.startsWith("v3_")) {
@@ -884,27 +1009,37 @@ function getPassSpecificEvidenceIssue(
   }
 
   const sceneContext = getSceneContextAtOffset(sceneIndex, fullText ?? null, finding.start_offset_global ?? null);
-  if ((pass === "women" || articleId === 7 || atom === "WOMEN") && !hasWomenSpecificEvidence(`${sceneContext}\n${excerpt}`)) {
+  const localContext = `${sceneContext}\n${excerpt}`;
+
+  if (rationale && !hasRationaleLocalSupport(rationale, localContext)) {
+    return "unsupported_rationale";
+  }
+
+  if ([12, 15, 19, 21, 23].includes(articleId) && !hasDriftProneArticleAnchor(articleId, localContext)) {
+    return "ownership_drift";
+  }
+
+  if ((pass === "women" || articleId === 7 || atom === "WOMEN") && !hasWomenSpecificEvidence(localContext)) {
     return "women_not_self_proving";
   }
 
   if (
     (pass === "v3_03_national_security" || pass === "national_security" || articleId === 3 || atom === "NATIONAL_SECURITY") &&
-    !hasPoliticalAnchorForClassification(`${sceneContext}\n${excerpt}`)
+    !hasPoliticalAnchorForClassification(localContext)
   ) {
     return "security_not_self_proving";
   }
 
   if (
     (pass === "v3_02_political_leadership" || pass === "political_leadership" || articleId === 2 || atom === "POLITICAL_LEADERSHIP") &&
-    !hasPoliticalAnchorForClassification(`${sceneContext}\n${excerpt}`)
+    !hasPoliticalAnchorForClassification(localContext)
   ) {
     return "political_not_self_proving";
   }
 
   if (
     (pass === "v3_10_explicit_sex" || articleId === 10 || atom === "EXPLICIT_SEX") &&
-    !hasSexualAnchorContext(`${sceneContext}\n${excerpt}`)
+    !hasSexualAnchorContext(localContext)
   ) {
     return "sexual_not_self_proving";
   }
