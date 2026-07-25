@@ -1,7 +1,7 @@
 import type { AnalysisChunk, AnalysisJob } from "./jobs.js";
 import { logger } from "./logger.js";
 import { processChunkJudge as processChunkJudgeV1 } from "./pipeline.js";
-import { processChunkJudge as processChunkJudgeV2 } from "./pipelineV2.js";
+import { processChunkJudgeV2 } from "./pipelineV2.js";
 
 function getJobPipelineVersion(job: AnalysisJob): "v1" | "v2" {
   const pipelineVersion = (job.config_snapshot as { pipeline_version?: string } | null | undefined)?.pipeline_version;
