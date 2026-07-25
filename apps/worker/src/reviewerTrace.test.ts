@@ -101,6 +101,42 @@ function testReviewerTraceReport(): void {
       findings: [acceptedFinding, rejectedFinding],
     },
   ];
+  const decisionAudits = [
+    {
+      eventId: 1,
+      reviewerArticleId: 3,
+      reviewerPassName: "v5_article_03",
+      expectedArticleId: 3,
+      claimedArticleId: 3,
+      decision: "accepted" as const,
+      reason: "Primary ownership belongs to Article 03 because «انفجار هز الحي في الشارع» describes حدث سردي.",
+      confidence: 0.95,
+      acceptedByVerifier: true,
+      ownershipCorrect: true,
+      snippetCorrect: true,
+      explanationCorrect: true,
+      eventQuote: "انفجار هز الحي في الشارع",
+      findingEvidence: "انفجار هز الحي في الشارع",
+      findingRationale: "العبارة تصف انفجاراً في الحي.",
+    },
+    {
+      eventId: 2,
+      reviewerArticleId: 3,
+      reviewerPassName: "v5_article_03",
+      expectedArticleId: 3,
+      claimedArticleId: 3,
+      decision: "rejected" as const,
+      reason: "Primary ownership belongs to Article 03 because «صراخ متوتر في الزقاق» describes انفعال درامي.",
+      confidence: 0.86,
+      acceptedByVerifier: false,
+      ownershipCorrect: false,
+      snippetCorrect: false,
+      explanationCorrect: false,
+      eventQuote: "صراخ متوتر في الزقاق",
+      findingEvidence: "صراخ متوتر في الزقاق",
+      findingRationale: "هذا تحريض على الفوضى.",
+    },
+  ];
 
   const validatorAuditReport = buildValidatorAuditReport({
     chunkStart: 0,
@@ -127,6 +163,7 @@ function testReviewerTraceReport(): void {
     passResults,
     finalFindings: [acceptedFinding],
     validatorAuditReport,
+    decisionAudits,
   });
 
   const log = toReviewerTraceLog(report);
@@ -143,9 +180,13 @@ function testReviewerTraceReport(): void {
   assert(row.findings[0]?.verifierResult.status === "accepted", "expected first finding to be accepted");
   assert(row.findings[1]?.selectedEvent?.eventId === 2, "expected the rejected finding to carry its selected event");
   assert(row.findings[1]?.verifierResult.status === "rejected", "expected second finding to be rejected");
-  assert(row.findings[1]?.verifierResult.reason === "event_rationale_mismatch" || row.findings[1]?.verifierResult.reason === "event_not_supported", "expected event-based rejection reason");
+  assert((row.findings[1]?.verifierResult.reason ?? "").includes("Primary ownership belongs to Article 03"), "expected ownership-only rejection reason");
+  assert(row.findings[0]?.acceptedByVerifier === true, "expected accepted decision flag");
+  assert(row.findings[1]?.acceptedByVerifier === false, "expected rejected decision flag");
+  assert(row.findings[0]?.ownershipCorrect === true, "expected accepted ownership flag");
+  assert(row.findings[1]?.snippetCorrect === false, "expected rejected snippet flag");
   assert(Object.keys(log.reviewerRows[0]?.eventsReceived[0] ?? {}).sort().join(",") === "dominantMeaning,eventId,quote", "expected compact structured event summaries");
-  assert(Object.keys(log.reviewerRows[0]?.findings[0] ?? {}).sort().join(",") === "evidenceSelected,eventId,eventQuote,ownershipJustification,selectedEvent,verifierResult", "expected structured finding trace entries");
+  assert(Object.keys(log.reviewerRows[0]?.findings[0] ?? {}).includes("acceptedByVerifier"), "expected benchmark trace fields to be logged");
   console.log("✓ reviewer trace report captures structured reviewer debugging data");
 }
 

@@ -41,6 +41,7 @@ export type ReviewerBenchmarkReviewerRow = {
   passName: string;
   eventsReceived: number;
   eventsAccepted: number;
+  eventsRejected: number;
   eventsIgnored: number;
   findingsEmitted: number;
   verifierAccepted: number;
@@ -50,8 +51,27 @@ export type ReviewerBenchmarkReviewerRow = {
   ownershipAccuracy: number;
   snippetAccuracy: number;
   explanationAccuracy: number;
+  averageConfidence: number;
   acceptedEventIds: number[];
   ignoredEventIds: number[];
+};
+
+export type ReviewerDecisionAudit = {
+  eventId: number;
+  reviewerArticleId: number;
+  reviewerPassName: string;
+  expectedArticleId: number;
+  claimedArticleId: number | null;
+  decision: "accepted" | "rejected";
+  reason: string;
+  confidence: number;
+  acceptedByVerifier: boolean;
+  ownershipCorrect: boolean;
+  snippetCorrect: boolean;
+  explanationCorrect: boolean;
+  eventQuote: string;
+  findingEvidence: string;
+  findingRationale: string | null;
 };
 
 export type ReviewerBenchmarkReport = {
@@ -60,6 +80,8 @@ export type ReviewerBenchmarkReport = {
   chunkEnd: number;
   eventCount: number;
   reviewerRows: ReviewerBenchmarkReviewerRow[];
+  reviewerRanking: ReviewerBenchmarkReviewerRow[];
+  decisionAudits: ReviewerDecisionAudit[];
   falsePositives: ReviewerBenchmarkIssue[];
   falseNegatives: ReviewerBenchmarkMiss[];
   summary: {
@@ -73,6 +95,7 @@ export type ReviewerBenchmarkReport = {
     averageOwnershipAccuracy: number;
     averageSnippetAccuracy: number;
     averageExplanationAccuracy: number;
+    averageConfidence: number;
   };
 };
 
@@ -261,6 +284,156 @@ function uniqueSortedNumbers(values: number[]): number[] {
   return [...new Set(values)].sort((a, b) => a - b);
 }
 
+function combineReviewerText(reviewer: V5ReviewerDefinition): string {
+  return [reviewer.articleTitle, reviewer.displayLabel, reviewer.prompt].filter(Boolean).join(" ");
+}
+
+function scoreEventAgainstReviewer(event: StructuredEvent, reviewer: V5ReviewerDefinition): number {
+  const eventText = normalizeText(combineEventText(event));
+  const reviewerText = normalizeText(combineReviewerText(reviewer));
+  if (!eventText || !reviewerText) return 0;
+
+  const eventTokens = tokenSet(eventText);
+  const reviewerTokens = tokenSet(reviewerText);
+  let overlap = 0;
+  for (const token of eventTokens) {
+    if (reviewerTokens.has(token)) overlap++;
+  }
+
+  let score = 0;
+  if (eventTokens.size > 0 && overlap > 0) {
+    score += (overlap / eventTokens.size) * 50;
+    score += (overlap / reviewerTokens.size) * 20;
+  }
+
+  const quote = normalizeText(event.quote);
+  if (quote && reviewerText.includes(quote)) score += 30;
+  const dominantMeaning = normalizeText(event.dominant_meaning);
+  if (dominantMeaning && reviewerText.includes(dominantMeaning)) score += 18;
+  const action = normalizeText(event.action);
+  if (action && reviewerText.includes(action)) score += 12;
+  const actor = normalizeText(event.actor);
+  if (actor && reviewerText.includes(actor)) score += 6;
+  const target = normalizeText(event.target);
+  if (target && reviewerText.includes(target)) score += 6;
+
+  return score;
+}
+
+function selectExpectedReviewerForEvent(
+  event: StructuredEvent,
+  reviewers: V5ReviewerDefinition[],
+): { reviewer: V5ReviewerDefinition; score: number } {
+  let bestReviewer = reviewers[0] ?? null;
+  let bestScore = -1;
+
+  for (const reviewer of reviewers) {
+    const score = scoreEventAgainstReviewer(event, reviewer);
+    if (score > bestScore) {
+      bestScore = score;
+      bestReviewer = reviewer;
+    }
+  }
+
+  if (!bestReviewer) {
+    throw new Error("Reviewer pack is empty");
+  }
+
+  return { reviewer: bestReviewer, score: bestScore };
+}
+
+function findBestFindingForEvent(
+  findings: ReviewerBenchmarkFindingLike[],
+  event: StructuredEvent,
+): ReviewerBenchmarkFindingLike | null {
+  let best: ReviewerBenchmarkFindingLike | null = null;
+  let bestScore = 0;
+  for (const finding of findings) {
+    const score = scoreFindingAgainstEvent(finding, event);
+    if (score > bestScore) {
+      bestScore = score;
+      best = finding;
+    }
+  }
+  return bestScore >= 40 ? best : null;
+}
+
+function buildOwnershipReason(
+  expectedReviewer: V5ReviewerDefinition,
+  event: StructuredEvent,
+  finding: ReviewerBenchmarkFindingLike | null,
+  acceptedByVerifier: boolean,
+): string {
+  const articleLabel = `Article ${String(expectedReviewer.articleNumber).padStart(2, "0")}`;
+  const quote = event.quote ? `«${event.quote}»` : "the structured event";
+  if (acceptedByVerifier) {
+    return `Primary ownership belongs to ${articleLabel} because ${quote} describes ${event.dominant_meaning}.`;
+  }
+
+  if (finding && finding.article_id != null && finding.article_id !== expectedReviewer.articleNumber) {
+    return `Primary ownership belongs to ${articleLabel}, not Article ${String(finding.article_id).padStart(2, "0")}, because ${quote} describes ${event.dominant_meaning}.`;
+  }
+
+  return `Primary ownership belongs to ${articleLabel} because ${quote} describes ${event.dominant_meaning}, but this reviewer did not emit a surviving finding.`;
+}
+
+function buildReviewerDecisionAudits(args: {
+  eventUnderstanding: EventUnderstandingPassResult | null;
+  passResults: PassResult[];
+  finalFindings: ReviewerBenchmarkFindingLike[];
+  reviewers: V5ReviewerDefinition[];
+}): ReviewerDecisionAudit[] {
+  const events = args.eventUnderstanding?.events ?? [];
+  const audits: ReviewerDecisionAudit[] = [];
+
+  for (const passResult of args.passResults) {
+    const reviewerArticleId = parsePassArticleNumber(passResult.passName);
+    if (reviewerArticleId == null) continue;
+    const reviewer = args.reviewers.find((item) => item.articleNumber === reviewerArticleId) ?? args.reviewers[0];
+    if (!reviewer) continue;
+
+    const reviewerFindings = passResult.findings;
+    const acceptedFindings = args.finalFindings.filter((finding) => finding.detection_pass === passResult.passName);
+
+    for (const event of events) {
+      const expected = selectExpectedReviewerForEvent(event, args.reviewers);
+      const expectedArticleId = expected.reviewer.articleNumber;
+      const rawFinding = findBestFindingForEvent(reviewerFindings, event);
+      const acceptedFinding = findBestFindingForEvent(acceptedFindings, event);
+      const acceptedByVerifier = acceptedFinding != null;
+      const claimArticleId = rawFinding?.article_id ?? reviewerArticleId;
+      const decision: "accepted" | "rejected" = acceptedByVerifier ? "accepted" : "rejected";
+      const confidence = Number(Math.max(0.05, Math.min(0.99, expected.score / 100)).toFixed(2));
+      const ownershipCorrect =
+        reviewerArticleId === expectedArticleId
+          ? acceptedByVerifier
+          : !acceptedByVerifier;
+      const snippetCorrect = Boolean(rawFinding && isSnippetSupportedByEvent(rawFinding, event));
+      const explanationCorrect = Boolean(rawFinding && isExplanationSupportedByEvent(rawFinding, event));
+
+      audits.push({
+        eventId: event.event_id,
+        reviewerArticleId,
+        reviewerPassName: passResult.passName,
+        expectedArticleId,
+        claimedArticleId,
+        decision,
+        reason: buildOwnershipReason(expected.reviewer, event, rawFinding, acceptedByVerifier),
+        confidence,
+        acceptedByVerifier,
+        ownershipCorrect,
+        snippetCorrect,
+        explanationCorrect,
+        eventQuote: event.quote,
+        findingEvidence: String(rawFinding?.evidence_snippet ?? ""),
+        findingRationale: rawFinding?.rationale_ar ?? null,
+      });
+    }
+  }
+
+  return audits;
+}
+
 export function buildReviewerBenchmarkReport(args: {
   chunkStart: number;
   chunkEnd: number;
@@ -274,6 +447,12 @@ export function buildReviewerBenchmarkReport(args: {
   );
   const events = args.eventUnderstanding?.events ?? [];
   const eventCount = events.length;
+  const decisionAudits = buildReviewerDecisionAudits({
+    eventUnderstanding: args.eventUnderstanding,
+    passResults: args.passResults,
+    finalFindings: args.finalFindings,
+    reviewers: Array.from(reviewerLookup.values()),
+  });
 
   const rawMatches: MatchedFinding[] = [];
   for (const passResult of args.passResults) {
@@ -319,29 +498,6 @@ export function buildReviewerBenchmarkReport(args: {
     bucket.get(match.event.event_id)!.push(match);
   }
 
-  const eventOwnership = new Map<number, MatchedFinding | null>();
-  for (const event of events) {
-    const accepted = acceptedByEvent.get(event.event_id) ?? [];
-    const raw = rawByEvent.get(event.event_id) ?? [];
-    const candidates = [...accepted, ...raw];
-    let best: MatchedFinding | null = null;
-    let bestScore = -1;
-
-    for (const candidate of candidates) {
-      const findingArticleId = candidate.finding.article_id ?? candidate.passArticleId;
-      const sameArticleBonus = findingArticleId === candidate.passArticleId ? 15 : 0;
-      const confidenceBonus = (candidate.finding.confidence ?? 0) * 10;
-      const acceptanceBonus = candidate.kind === "accepted" ? 25 : 0;
-      const score = candidate.score + sameArticleBonus + confidenceBonus + acceptanceBonus;
-      if (score > bestScore) {
-        bestScore = score;
-        best = candidate;
-      }
-    }
-
-    eventOwnership.set(event.event_id, best);
-  }
-
   const reviewerRows: ReviewerBenchmarkReviewerRow[] = [];
   const falsePositives: ReviewerBenchmarkIssue[] = [];
   const falseNegatives: ReviewerBenchmarkMiss[] = [];
@@ -351,35 +507,19 @@ export function buildReviewerBenchmarkReport(args: {
     const articleNumber = parsePassArticleNumber(passResult.passName);
     if (articleNumber == null) continue;
     const meta = resolveReviewerMeta(articleNumber, reviewerLookup);
-    const acceptedMatchesForReviewer = acceptedMatches.filter((match) => match.passArticleId === articleNumber);
+    const reviewerAudits = decisionAudits.filter((audit) => audit.reviewerArticleId === articleNumber);
+    const acceptedDecisionAudits = reviewerAudits.filter((audit) => audit.decision === "accepted");
+    const rejectedDecisionAudits = reviewerAudits.filter((audit) => audit.decision === "rejected");
+    const acceptedEventIds = uniqueSortedNumbers(acceptedDecisionAudits.map((audit) => audit.eventId));
+    const ignoredEventIds = uniqueSortedNumbers(rejectedDecisionAudits.map((audit) => audit.eventId));
 
-    const acceptedEventIds = uniqueSortedNumbers(
-      acceptedMatchesForReviewer
-        .filter((match) => match.event != null)
-        .filter((match) => (match.event ? (eventOwnership.get(match.event.event_id)?.passArticleId ?? null) === articleNumber : false))
-        .map((match) => match.event!.event_id),
-    );
-    const ignoredEventIds = uniqueSortedNumbers(
-      events
-        .map((event) => event.event_id)
-        .filter((eventId) => !acceptedEventIds.includes(eventId)),
-    );
-
-    const verifierAccepted = acceptedMatchesForReviewer.length;
+    const verifierAccepted = acceptedDecisionAudits.length;
     const findingsEmitted = passResult.findings.length;
-    const verifierRejected = Math.max(0, findingsEmitted - verifierAccepted);
-    const ownershipAccuracy =
-      verifierAccepted > 0
-        ? acceptedMatchesForReviewer.filter((match) => (match.finding.article_id ?? articleNumber) === articleNumber).length / verifierAccepted
-        : 0;
-    const snippetAccuracy =
-      verifierAccepted > 0
-        ? acceptedMatchesForReviewer.filter((match) => match.event != null && isSnippetSupportedByEvent(match.finding, match.event)).length / verifierAccepted
-        : 0;
-    const explanationAccuracy =
-      verifierAccepted > 0
-        ? acceptedMatchesForReviewer.filter((match) => match.event != null && isExplanationSupportedByEvent(match.finding, match.event)).length / verifierAccepted
-        : 0;
+    const verifierRejected = rejectedDecisionAudits.length;
+    const ownershipAccuracy = average(reviewerAudits.map((audit) => (audit.ownershipCorrect ? 1 : 0)));
+    const snippetAccuracy = average(reviewerAudits.map((audit) => (audit.snippetCorrect ? 1 : 0)));
+    const explanationAccuracy = average(reviewerAudits.map((audit) => (audit.explanationCorrect ? 1 : 0)));
+    const averageConfidence = average(reviewerAudits.map((audit) => audit.confidence));
 
     reviewerRows.push({
       articleNumber,
@@ -387,7 +527,8 @@ export function buildReviewerBenchmarkReport(args: {
       passName: passResult.passName,
       eventsReceived: eventCount,
       eventsAccepted: acceptedEventIds.length,
-      eventsIgnored: Math.max(0, eventCount - acceptedEventIds.length),
+      eventsRejected: rejectedDecisionAudits.length,
+      eventsIgnored: rejectedDecisionAudits.length,
       findingsEmitted,
       verifierAccepted,
       verifierRejected,
@@ -396,58 +537,55 @@ export function buildReviewerBenchmarkReport(args: {
       ownershipAccuracy,
       snippetAccuracy,
       explanationAccuracy,
+      averageConfidence,
       acceptedEventIds,
       ignoredEventIds,
     });
   }
 
-  for (const match of allMatches) {
-    if (!match.event) continue;
-    const owner = eventOwnership.get(match.event.event_id);
-    const ownerArticleId = owner?.finding.article_id ?? owner?.passArticleId ?? null;
-    const claimArticleId = match.finding.article_id ?? match.passArticleId;
-    if (ownerArticleId == null || claimArticleId === ownerArticleId) continue;
-    const falsePositiveKey = [
-      match.passName,
-      match.event.event_id,
-      ownerArticleId,
-      claimArticleId,
-      normalizeText(String(match.finding.evidence_snippet ?? "")),
-    ].join("|");
-    if (falsePositiveKeys.has(falsePositiveKey)) continue;
-    falsePositiveKeys.add(falsePositiveKey);
-    falsePositives.push({
-      eventId: match.event.event_id,
-      eventQuote: match.event.quote,
-      ownerArticleId,
-      reviewerArticleId: match.passArticleId,
-      reviewerPassName: match.passName,
-      claimArticleId,
-      evidenceSnippet: String(match.finding.evidence_snippet ?? ""),
-      rationaleAr: match.finding.rationale_ar ?? null,
-      verifierStatus: match.kind === "accepted" ? "accepted" : "rejected",
-    });
+  for (const audit of decisionAudits) {
+    if (audit.decision === "accepted" && audit.expectedArticleId !== audit.reviewerArticleId) {
+      const falsePositiveKey = [
+        audit.reviewerPassName,
+        audit.eventId,
+        audit.expectedArticleId,
+        audit.claimedArticleId ?? audit.reviewerArticleId,
+        normalizeText(audit.findingEvidence),
+      ].join("|");
+      if (falsePositiveKeys.has(falsePositiveKey)) continue;
+      falsePositiveKeys.add(falsePositiveKey);
+      falsePositives.push({
+        eventId: audit.eventId,
+        eventQuote: audit.eventQuote,
+        ownerArticleId: audit.expectedArticleId,
+        reviewerArticleId: audit.reviewerArticleId,
+        reviewerPassName: audit.reviewerPassName,
+        claimArticleId: audit.claimedArticleId,
+        evidenceSnippet: audit.findingEvidence,
+        rationaleAr: audit.findingRationale,
+        verifierStatus: audit.acceptedByVerifier ? "accepted" : "rejected",
+      });
+    }
+
+    if (audit.reviewerArticleId === audit.expectedArticleId && audit.decision === "rejected") {
+      falseNegatives.push({
+        eventId: audit.eventId,
+        eventQuote: audit.eventQuote,
+        ownerArticleId: audit.expectedArticleId,
+        reason: audit.findingEvidence.trim().length > 0 ? "ownership rejected" : "no finding returned",
+      });
+    }
   }
 
-  for (const event of events) {
-    const owner = eventOwnership.get(event.event_id);
-    const ownerArticleId = owner?.finding.article_id ?? owner?.passArticleId ?? null;
-    if (ownerArticleId == null) continue;
-    const acceptedForOwner = acceptedMatches.filter(
-      (match) => match.event?.event_id === event.event_id && (match.finding.article_id ?? match.passArticleId) === ownerArticleId,
-    );
-    if (acceptedForOwner.length > 0) continue;
-
-    const rawForOwner = rawMatches.filter(
-      (match) => match.event?.event_id === event.event_id && (match.finding.article_id ?? match.passArticleId) === ownerArticleId,
-    );
-    falseNegatives.push({
-      eventId: event.event_id,
-      eventQuote: event.quote,
-      ownerArticleId,
-      reason: rawForOwner.length > 0 ? "ownership rejected" : "no finding returned",
-    });
-  }
+  const reviewerRanking = [...reviewerRows].sort((a, b) => {
+    const ownershipDiff = a.ownershipAccuracy - b.ownershipAccuracy;
+    if (ownershipDiff !== 0) return ownershipDiff;
+    const precisionDiff = a.precision - b.precision;
+    if (precisionDiff !== 0) return precisionDiff;
+    const recallDiff = a.recall - b.recall;
+    if (recallDiff !== 0) return recallDiff;
+    return a.articleNumber - b.articleNumber;
+  });
 
   const summary = {
     totalReviewers: reviewerRows.length,
@@ -460,6 +598,7 @@ export function buildReviewerBenchmarkReport(args: {
     averageOwnershipAccuracy: average(reviewerRows.map((row) => row.ownershipAccuracy)),
     averageSnippetAccuracy: average(reviewerRows.map((row) => row.snippetAccuracy)),
     averageExplanationAccuracy: average(reviewerRows.map((row) => row.explanationAccuracy)),
+    averageConfidence: average(reviewerRows.map((row) => row.averageConfidence)),
   };
 
   return {
@@ -468,6 +607,8 @@ export function buildReviewerBenchmarkReport(args: {
     chunkEnd: args.chunkEnd,
     eventCount,
     reviewerRows,
+    reviewerRanking,
+    decisionAudits,
     falsePositives,
     falseNegatives,
     summary,
@@ -486,6 +627,7 @@ export function toReviewerBenchmarkLog(report: ReviewerBenchmarkReport): Record<
       passName: row.passName,
       eventsReceived: row.eventsReceived,
       eventsAccepted: row.eventsAccepted,
+      eventsRejected: row.eventsRejected,
       eventsIgnored: row.eventsIgnored,
       findingsEmitted: row.findingsEmitted,
       verifierAccepted: row.verifierAccepted,
@@ -495,9 +637,20 @@ export function toReviewerBenchmarkLog(report: ReviewerBenchmarkReport): Record<
       ownershipAccuracy: row.ownershipAccuracy,
       snippetAccuracy: row.snippetAccuracy,
       explanationAccuracy: row.explanationAccuracy,
+      averageConfidence: row.averageConfidence,
       acceptedEventIds: row.acceptedEventIds,
       ignoredEventIds: row.ignoredEventIds,
     })),
+    reviewerRanking: report.reviewerRanking.map((row) => ({
+      articleNumber: row.articleNumber,
+      articleTitle: row.articleTitle,
+      passName: row.passName,
+      precision: row.precision,
+      recall: row.recall,
+      ownershipAccuracy: row.ownershipAccuracy,
+      averageConfidence: row.averageConfidence,
+    })),
+    decisionAudits: report.decisionAudits.slice(0, 120),
     falsePositives: report.falsePositives.slice(0, 20),
     falseNegatives: report.falseNegatives.slice(0, 20),
   };
@@ -539,6 +692,7 @@ function renderReviewerRows(rows: ReviewerBenchmarkReviewerRow[]): string {
         <td>${escapeHtml(row.passName)}</td>
         <td>${formatInteger(row.eventsReceived)}</td>
         <td>${formatInteger(row.eventsAccepted)}</td>
+        <td>${formatInteger(row.eventsRejected)}</td>
         <td>${formatInteger(row.eventsIgnored)}</td>
         <td>${formatInteger(row.findingsEmitted)}</td>
         <td>${formatInteger(row.verifierAccepted)}</td>
@@ -548,6 +702,45 @@ function renderReviewerRows(rows: ReviewerBenchmarkReviewerRow[]): string {
         <td>${escapeHtml(formatPercent(row.ownershipAccuracy))}</td>
         <td>${escapeHtml(formatPercent(row.snippetAccuracy))}</td>
         <td>${escapeHtml(formatPercent(row.explanationAccuracy))}</td>
+        <td>${escapeHtml(formatPercent(row.averageConfidence))}</td>
+      </tr>
+    `)
+    .join("");
+}
+
+function renderReviewerRankingRows(rows: ReviewerBenchmarkReviewerRow[]): string {
+  return rows
+    .map((row, index) => `
+      <tr>
+        <td>${formatInteger(index + 1)}</td>
+        <td>${escapeHtml(String(row.articleNumber).padStart(2, "0"))}</td>
+        <td>${escapeHtml(row.articleTitle)}</td>
+        <td>${escapeHtml(row.passName)}</td>
+        <td>${escapeHtml(formatPercent(row.ownershipAccuracy))}</td>
+        <td>${escapeHtml(formatPercent(row.precision))}</td>
+        <td>${escapeHtml(formatPercent(row.recall))}</td>
+        <td>${escapeHtml(formatPercent(row.averageConfidence))}</td>
+      </tr>
+    `)
+    .join("");
+}
+
+function renderDecisionRows(rows: ReviewerDecisionAudit[], accepted: boolean): string {
+  const filtered = rows.filter((row) => row.decision === (accepted ? "accepted" : "rejected"));
+  if (filtered.length === 0) {
+    return `<tr><td colspan="7" class="empty-state">No ${accepted ? "accepted" : "rejected"} events recorded.</td></tr>`;
+  }
+
+  return filtered
+    .map((row) => `
+      <tr>
+        <td>${formatInteger(row.eventId)}</td>
+        <td>${escapeHtml(String(row.reviewerArticleId).padStart(2, "0"))}</td>
+        <td>${escapeHtml(String(row.expectedArticleId).padStart(2, "0"))}</td>
+        <td>${escapeHtml(String(row.claimedArticleId ?? "n/a"))}</td>
+        <td>${escapeHtml(row.eventQuote)}</td>
+        <td>${escapeHtml(row.reason)}</td>
+        <td>${escapeHtml(row.findingEvidence)}</td>
       </tr>
     `)
     .join("");
@@ -555,7 +748,7 @@ function renderReviewerRows(rows: ReviewerBenchmarkReviewerRow[]): string {
 
 function renderFalsePositiveRows(rows: ReviewerBenchmarkIssue[]): string {
   if (rows.length === 0) {
-    return `<tr><td colspan="6" class="empty-state">No false positives recorded.</td></tr>`;
+    return `<tr><td colspan="9" class="empty-state">No false positives recorded.</td></tr>`;
   }
 
   return rows
@@ -651,7 +844,7 @@ export function buildReviewerBenchmarkHtml(report: ReviewerBenchmarkReport): str
     }
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 14px;
       margin-bottom: 18px;
     }
@@ -786,9 +979,30 @@ export function buildReviewerBenchmarkHtml(report: ReviewerBenchmarkReport): str
       ${renderMetricCard("Ownership accuracy", formatPercent(summary.averageOwnershipAccuracy), "Claimed article matches event owner")}
       ${renderMetricCard("Snippet accuracy", formatPercent(summary.averageSnippetAccuracy), "Evidence quote is locally supported")}
       ${renderMetricCard("Explanation accuracy", formatPercent(summary.averageExplanationAccuracy), "Rationale is event-grounded")}
+      ${renderMetricCard("Average confidence", formatPercent(summary.averageConfidence), "Confidence across reviewer decisions")}
     </section>
 
     <section class="panels">
+      <div class="panel">
+        <h2>Reviewer Improvement Ranking</h2>
+        <p class="subtitle">Reviewers are sorted from weakest to strongest so benchmark work can focus on the largest ownership gaps first.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Article</th>
+              <th>Title</th>
+              <th>Pass</th>
+              <th>Ownership</th>
+              <th>Precision</th>
+              <th>Recall</th>
+              <th>Avg Confidence</th>
+            </tr>
+          </thead>
+          <tbody>${renderReviewerRankingRows(report.reviewerRanking)}</tbody>
+        </table>
+      </div>
+
       <div class="panel">
         <h2>Reviewer Rows</h2>
         <p class="subtitle">Per reviewer, one row per V5 article pass. Precision and recall are computed against the structured event layer.</p>
@@ -800,6 +1014,7 @@ export function buildReviewerBenchmarkHtml(report: ReviewerBenchmarkReport): str
               <th>Pass</th>
               <th>Received</th>
               <th>Accepted</th>
+              <th>Rejected</th>
               <th>Ignored</th>
               <th>Emitted</th>
               <th>Verifier OK</th>
@@ -809,9 +1024,48 @@ export function buildReviewerBenchmarkHtml(report: ReviewerBenchmarkReport): str
               <th>Ownership</th>
               <th>Snippet</th>
               <th>Explanation</th>
+              <th>Avg Confidence</th>
             </tr>
           </thead>
           <tbody>${renderReviewerRows(reviewerRows)}</tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Accepted Events</h2>
+        <p class="subtitle">Each accepted event records the reviewer article, the expected owner, and the ownership-only decision reason.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Reviewer</th>
+              <th>Expected</th>
+              <th>Claim</th>
+              <th>Event Quote</th>
+              <th>Decision Reason</th>
+              <th>Finding</th>
+            </tr>
+          </thead>
+          <tbody>${renderDecisionRows(report.decisionAudits, true)}</tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Rejected Events</h2>
+        <p class="subtitle">Each rejected event records why the reviewer pass did not survive, using ownership-only diagnostics.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Reviewer</th>
+              <th>Expected</th>
+              <th>Claim</th>
+              <th>Event Quote</th>
+              <th>Reason for Rejection</th>
+              <th>Finding</th>
+            </tr>
+          </thead>
+          <tbody>${renderDecisionRows(report.decisionAudits, false)}</tbody>
         </table>
       </div>
 

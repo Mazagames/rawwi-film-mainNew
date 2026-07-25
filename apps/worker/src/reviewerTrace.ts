@@ -3,6 +3,7 @@ import { findBestEventMatch } from "./eventConsistency.js";
 import type { PassResult } from "./multiPassJudge.js";
 import type { JudgeFinding } from "./schemas.js";
 import type { ValidatorAuditReport } from "./validatorAudit.js";
+import type { ReviewerDecisionAudit } from "./reviewerBenchmark.js";
 import { getV5ReviewerDefinitions, type V5ReviewerDefinition } from "./v5PromptPack.js";
 
 export type ReviewerTraceEventSummary = {
@@ -17,6 +18,14 @@ export type ReviewerTraceFindingEntry = {
   eventQuote: string;
   evidenceSelected: string;
   ownershipJustification: string;
+  reviewerArticleId: number;
+  expectedArticleId: number | null;
+  claimedArticleId: number | null;
+  acceptedByVerifier: boolean;
+  ownershipCorrect: boolean;
+  snippetCorrect: boolean;
+  explanationCorrect: boolean;
+  confidence: number;
   verifierResult: {
     status: "accepted" | "rejected";
     validationStage: string | null;
@@ -98,6 +107,40 @@ function buildRejectedJustification(articleNumber: number, reason: string): stri
   return `هذا الحدث لا يُسند إلى المادة ${String(articleNumber).padStart(2, "0")} لأن ${reasonText}.`;
 }
 
+function buildFindingEntryFromAudit(
+  articleNumber: number,
+  events: StructuredEvent[],
+  audit: ReviewerDecisionAudit,
+): ReviewerTraceFindingEntry {
+  const matchedEvent = events.find((event) => event.event_id === audit.eventId) ?? null;
+  return {
+    selectedEvent: matchedEvent
+      ? {
+          eventId: matchedEvent.event_id,
+          quote: matchedEvent.quote,
+          dominantMeaning: matchedEvent.dominant_meaning,
+        }
+      : null,
+    eventId: audit.eventId,
+    eventQuote: audit.eventQuote,
+    evidenceSelected: audit.findingEvidence,
+    ownershipJustification: buildOwnershipJustification(articleNumber, matchedEvent),
+    reviewerArticleId: audit.reviewerArticleId,
+    expectedArticleId: audit.expectedArticleId,
+    claimedArticleId: audit.claimedArticleId,
+    acceptedByVerifier: audit.acceptedByVerifier,
+    ownershipCorrect: audit.ownershipCorrect,
+    snippetCorrect: audit.snippetCorrect,
+    explanationCorrect: audit.explanationCorrect,
+    confidence: audit.confidence,
+    verifierResult: {
+      status: audit.decision,
+      validationStage: null,
+      reason: audit.decision === "accepted" ? null : audit.reason,
+    },
+  };
+}
+
 function buildAcceptedFindingEntries(
   passName: string,
   articleNumber: number,
@@ -105,21 +148,29 @@ function buildAcceptedFindingEntries(
   finalFindings: FindingLike[],
 ): ReviewerTraceFindingEntry[] {
   return finalFindings
-      .filter((finding) => finding.detection_pass === passName)
-      .map((finding) => {
-        const match = findBestEventMatch(finding, events);
-        return {
-          selectedEvent: match.matchedEvent
-            ? {
-                eventId: match.matchedEvent.event_id,
-                quote: match.matchedEvent.quote,
-                dominantMeaning: match.matchedEvent.dominant_meaning,
-              }
-            : null,
-          eventId: match.matchedEvent?.event_id ?? null,
-          eventQuote: match.matchedEvent?.quote ?? "",
-          evidenceSelected: String(finding.evidence_snippet ?? ""),
-          ownershipJustification: buildOwnershipJustification(articleNumber, match.matchedEvent),
+    .filter((finding) => finding.detection_pass === passName)
+    .map((finding) => {
+      const match = findBestEventMatch(finding, events);
+      return {
+        selectedEvent: match.matchedEvent
+          ? {
+              eventId: match.matchedEvent.event_id,
+              quote: match.matchedEvent.quote,
+              dominantMeaning: match.matchedEvent.dominant_meaning,
+            }
+          : null,
+        eventId: match.matchedEvent?.event_id ?? null,
+        eventQuote: match.matchedEvent?.quote ?? "",
+        evidenceSelected: String(finding.evidence_snippet ?? ""),
+        ownershipJustification: buildOwnershipJustification(articleNumber, match.matchedEvent),
+        reviewerArticleId: articleNumber,
+        expectedArticleId: articleNumber,
+        claimedArticleId: finding.article_id ?? null,
+        acceptedByVerifier: true,
+        ownershipCorrect: true,
+        snippetCorrect: true,
+        explanationCorrect: true,
+        confidence: 1,
         verifierResult: {
           status: "accepted",
           validationStage: null,
@@ -148,6 +199,14 @@ function buildRejectedFindingEntries(
       eventQuote: row.eventQuote,
       evidenceSelected: row.evidenceSnippet,
       ownershipJustification: buildRejectedJustification(articleNumber, row.rejectionReason),
+      reviewerArticleId: articleNumber,
+      expectedArticleId: row.eventId == null ? null : articleNumber,
+      claimedArticleId: articleNumber,
+      acceptedByVerifier: false,
+      ownershipCorrect: false,
+      snippetCorrect: false,
+      explanationCorrect: false,
+      confidence: 0,
       verifierResult: {
         status: "rejected",
         validationStage: row.validationStage,
@@ -182,6 +241,7 @@ export function buildReviewerTraceReport(args: {
   passResults: PassResult[];
   finalFindings: FindingLike[];
   validatorAuditReport: ValidatorAuditReport;
+  decisionAudits?: ReviewerDecisionAudit[] | null;
   reviewers?: V5ReviewerDefinition[];
 }): ReviewerTraceReport {
   const reviewers = args.reviewers ?? getV5ReviewerDefinitions();
@@ -194,18 +254,26 @@ export function buildReviewerTraceReport(args: {
     if (articleNumber == null) continue;
 
     const meta = resolveReviewerMeta(articleNumber, reviewers);
+    const reviewerDecisionAudits = (args.decisionAudits ?? []).filter((audit) => audit.reviewerArticleId === articleNumber);
+    const useDecisionAudits = reviewerDecisionAudits.length > 0;
     const acceptedFindings = args.finalFindings.filter((finding) => finding.detection_pass === passResult.passName);
     const acceptedEventIds = [...new Set(
-      acceptedFindings
-        .map((finding) => findBestEventMatch(finding, events).matchedEvent?.event_id ?? null)
-        .filter((value): value is number => typeof value === "number"),
+      useDecisionAudits
+        ? reviewerDecisionAudits.filter((audit) => audit.decision === "accepted").map((audit) => audit.eventId)
+        : acceptedFindings
+            .map((finding) => findBestEventMatch(finding, events).matchedEvent?.event_id ?? null)
+            .filter((value): value is number => typeof value === "number"),
     )].sort((a, b) => a - b);
     const rejectedRows = args.validatorAuditReport.rejectionRows.filter((row) => row.reviewerPassName === passResult.passName);
 
-    const findings = dedupeEvents([
-      ...buildAcceptedFindingEntries(passResult.passName, articleNumber, events, acceptedFindings),
-      ...buildRejectedFindingEntries(articleNumber, events, rejectedRows),
-    ]);
+    const findings = dedupeEvents(
+      useDecisionAudits
+        ? reviewerDecisionAudits.map((audit) => buildFindingEntryFromAudit(articleNumber, events, audit))
+        : [
+            ...buildAcceptedFindingEntries(passResult.passName, articleNumber, events, acceptedFindings),
+            ...buildRejectedFindingEntries(articleNumber, events, rejectedRows),
+          ],
+    );
 
     reviewerRows.push({
       articleNumber,
@@ -219,9 +287,13 @@ export function buildReviewerTraceReport(args: {
       eventsIgnoredIds: summaryEvents
         .map((event) => event.eventId)
         .filter((eventId) => !acceptedEventIds.includes(eventId)),
-      findingsEmitted: passResult.findings.length,
-      verifierAccepted: acceptedFindings.length,
-      verifierRejected: rejectedRows.length,
+      findingsEmitted: useDecisionAudits ? reviewerDecisionAudits.length : passResult.findings.length,
+      verifierAccepted: useDecisionAudits
+        ? reviewerDecisionAudits.filter((audit) => audit.decision === "accepted").length
+        : acceptedFindings.length,
+      verifierRejected: useDecisionAudits
+        ? reviewerDecisionAudits.filter((audit) => audit.decision === "rejected").length
+        : rejectedRows.length,
       findings,
     });
   }
@@ -266,6 +338,14 @@ export function toReviewerTraceLog(report: ReviewerTraceReport): Record<string, 
         eventQuote: finding.eventQuote,
         evidenceSelected: finding.evidenceSelected,
         ownershipJustification: finding.ownershipJustification,
+        reviewerArticleId: finding.reviewerArticleId,
+        expectedArticleId: finding.expectedArticleId,
+        claimedArticleId: finding.claimedArticleId,
+        acceptedByVerifier: finding.acceptedByVerifier,
+        ownershipCorrect: finding.ownershipCorrect,
+        snippetCorrect: finding.snippetCorrect,
+        explanationCorrect: finding.explanationCorrect,
+        confidence: finding.confidence,
         verifierResult: finding.verifierResult,
       })),
     })),

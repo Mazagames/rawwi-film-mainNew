@@ -171,6 +171,9 @@ function testReviewerBenchmarkReport(): void {
   assert(row12?.verifierRejected === 1, `expected article 12 to have one verifier-rejected finding, got ${row12?.verifierRejected ?? "missing"}`);
   assert(row12?.precision === 0.5, `expected article 12 precision 0.5, got ${row12?.precision ?? "missing"}`);
   assert(row12?.ownershipAccuracy === 1, `expected article 12 ownership accuracy 1, got ${row12?.ownershipAccuracy ?? "missing"}`);
+  assert(report.decisionAudits.length === 9, `expected nine decision audits, got ${report.decisionAudits.length}`);
+  assert(report.reviewerRanking.length === 3, `expected three ranking rows, got ${report.reviewerRanking.length}`);
+  assert(report.summary.averageConfidence > 0, "expected average confidence to be populated");
   assert(report.falsePositives.some((issue) => issue.reviewerArticleId === 12 && issue.ownerArticleId === 7), "expected article 12 false positive against article 7");
   assert(report.falseNegatives.some((miss) => miss.ownerArticleId === 15 && miss.reason === "ownership rejected"), "expected article 15 false negative for ownership rejection");
   assert(row15?.eventsAccepted === 0, `expected article 15 to accept zero events, got ${row15?.eventsAccepted ?? "missing"}`);
@@ -196,6 +199,9 @@ function testReviewerBenchmarkHtml(): void {
   const html = buildReviewerBenchmarkHtml(report);
   assert(html.includes("Reviewer Benchmark Dashboard"), "dashboard should have a title");
   assert(html.includes("Reviewer Rows"), "dashboard should include reviewer rows table");
+  assert(html.includes("Reviewer Improvement Ranking"), "dashboard should include reviewer ranking section");
+  assert(html.includes("Accepted Events"), "dashboard should include accepted events section");
+  assert(html.includes("Rejected Events"), "dashboard should include rejected events section");
   assert(html.includes("False Positives"), "dashboard should include false positive section");
   assert(html.includes("False Negatives"), "dashboard should include false negative section");
   assert(html.includes("12.0%") || html.includes("50.0%"), "dashboard should render percentages");

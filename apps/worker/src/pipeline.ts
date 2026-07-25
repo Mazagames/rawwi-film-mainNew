@@ -1977,6 +1977,9 @@ export async function processChunkJudge(
     // 3) Multi-Pass Detection (specialized scanners running in parallel)
     allFindings = [];
     let multiPassResult: MultiPassDetectionResult | null = null;
+    let multiPassEventUnderstanding: MultiPassDetectionResult["eventUnderstanding"] = null;
+    let multiPassPassResults: MultiPassDetectionResult["passResults"] = [];
+    let reviewerBenchmarkReport: ReturnType<typeof buildReviewerBenchmarkReport> | null = null;
     try {
       const passExecutionPlan = planDetectionPassExecution(chunkText, selectedArticles, terms);
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
@@ -2255,8 +2258,8 @@ export async function processChunkJudge(
         return;
       }
 
-      const multiPassEventUnderstanding = multiPassResult.eventUnderstanding;
-      const multiPassPassResults = multiPassResult.passResults;
+      multiPassEventUnderstanding = multiPassResult.eventUnderstanding;
+      multiPassPassResults = multiPassResult.passResults;
 
     // 4) Micro-windows (DISABLED for multi-pass - full chunk coverage is sufficient)
     // Multi-pass already provides comprehensive coverage, micro-windows add redundancy
@@ -2293,9 +2296,9 @@ export async function processChunkJudge(
         finalAiFindings: afterArticleFourCollapseCount,
         lexiconFindings: mandatoryFindings.length,
       });
-        if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
-          if (config.ANALYSIS_EVAL_LOG) {
-            await persistJudgeDiagnostic({
+      if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
+        if (config.ANALYSIS_EVAL_LOG) {
+          await persistJudgeDiagnostic({
               diagnostic_kind: "understanding_snapshot",
               job_id: job.id,
               chunk_id: chunk.id,
@@ -2315,29 +2318,29 @@ export async function processChunkJudge(
               openai_response_id: null,
               raw_response_timestamp: new Date().toISOString(),
             });
-            logger.info("Understanding snapshot persisted", {
+          logger.info("Understanding snapshot persisted", {
               chunkId: chunk.id,
               eventCount: multiPassEventUnderstanding.event_count,
             });
           }
 
-          const reviewerBenchmarkReport = buildReviewerBenchmarkReport({
+          reviewerBenchmarkReport = buildReviewerBenchmarkReport({
             chunkStart,
             chunkEnd,
             eventUnderstanding: multiPassEventUnderstanding,
             passResults: multiPassPassResults,
-          finalFindings: allFindings,
-        });
-        const reviewerBenchmarkHtml = buildReviewerBenchmarkHtml(reviewerBenchmarkReport);
-        logger.info("Reviewer benchmark report", toReviewerBenchmarkLog(reviewerBenchmarkReport));
-        logger.info("Reviewer benchmark dashboard generated", {
-          chunkId: chunk.id,
-          htmlLength: reviewerBenchmarkHtml.length,
-          reviewerCount: reviewerBenchmarkReport.summary.totalReviewers,
-          eventCount: reviewerBenchmarkReport.eventCount,
-          falsePositiveCount: reviewerBenchmarkReport.falsePositives.length,
-          falseNegativeCount: reviewerBenchmarkReport.falseNegatives.length,
-        });
+            finalFindings: allFindings,
+          });
+          const reviewerBenchmarkHtml = buildReviewerBenchmarkHtml(reviewerBenchmarkReport);
+          logger.info("Reviewer benchmark report", toReviewerBenchmarkLog(reviewerBenchmarkReport));
+          logger.info("Reviewer benchmark dashboard generated", {
+            chunkId: chunk.id,
+            htmlLength: reviewerBenchmarkHtml.length,
+            reviewerCount: reviewerBenchmarkReport.summary.totalReviewers,
+            eventCount: reviewerBenchmarkReport.eventCount,
+            falsePositiveCount: reviewerBenchmarkReport.falsePositives.length,
+            falseNegativeCount: reviewerBenchmarkReport.falseNegatives.length,
+          });
       }
       const canonicalizationKept = new Set(
         allFindings.map((finding) => ensureFindingLineageId(finding, {
@@ -2624,6 +2627,7 @@ export async function processChunkJudge(
         passResults: multiPassPassResults,
         finalFindings: resolvedFindings,
         validatorAuditReport,
+        decisionAudits: reviewerBenchmarkReport?.decisionAudits ?? null,
       });
       logger.info("Reviewer trace report", toReviewerTraceLog(reviewerTraceReport));
       logger.info("Reviewer trace enabled", {
