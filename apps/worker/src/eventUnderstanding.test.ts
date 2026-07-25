@@ -23,6 +23,9 @@ function testPromptContract(): void {
   assert(prompt.includes("The action must always be the central observable action"), "user prompt should define action clearly");
   assert(prompt.includes("dominant_meaning must be a short objective description"), "user prompt should constrain dominant meaning");
   assert(prompt.includes("If two reasonable readers could describe the same event differently"), "user prompt should require objective descriptions");
+  assert(prompt.includes("Identify only meaningful narrative events."), "user prompt should prefer meaningful events over micro-beats");
+  assert(prompt.includes("A conversation, confrontation, argument, interrogation, negotiation, or other continuous interaction normally constitutes one event unless the objective clearly changes."), "user prompt should merge continuous interactions");
+  assert(prompt.includes("Dialogue turns, looks, pauses, reactions, or back-and-forth lines that stay within the same continuous interaction should usually stay in the same event."), "user prompt should prevent dialogue micro-splitting");
   assert(!prompt.includes("chunk_start:"), "user prompt should not ask the model to regenerate chunk_start");
   assert(!prompt.includes("chunk_end:"), "user prompt should not ask the model to regenerate chunk_end");
   console.log("✓ event understanding prompt contract");

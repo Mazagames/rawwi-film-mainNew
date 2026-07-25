@@ -62,6 +62,8 @@ const EVENT_UNDERSTANDING_OUTPUT_SCHEMA = z.object({
   events: z.array(EVENT_UNDERSTANDING_EVENT_SCHEMA),
 });
 
+const SOFT_EVENT_COUNT_WARNING_THRESHOLD = 20;
+
 function toNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -83,9 +85,13 @@ Do not begin extracting events while reading.
 First understand the complete sequence of actions and interactions.
 
 Only after understanding the entire chunk, identify every independent narrative event.
-
 If two reasonable readers could describe the same event differently, choose the most objective observable description rather than the most specific interpretation.
 Always describe what is explicitly happening before describing why it is happening.
+
+Identify only meaningful narrative events.
+Do not create separate events for small actions that are part of the same continuous interaction.
+A conversation, confrontation, argument, interrogation, negotiation, or other continuous interaction normally constitutes one event unless the objective clearly changes.
+Dialogue turns, looks, pauses, reactions, or back-and-forth lines that stay within the same continuous interaction should usually stay in the same event.
 
 An event is a continuous action involving:
 
@@ -263,7 +269,17 @@ export async function buildEventUnderstandingPass(
 ): Promise<EventUnderstandingPassResult> {
   try {
     const raw = await callEventUnderstandingOpenAI(chunkText, chunkStart, chunkEnd);
-    return parseEventUnderstandingOutput(raw, chunkStart, chunkEnd);
+    const parsed = parseEventUnderstandingOutput(raw, chunkStart, chunkEnd);
+    if (parsed.event_count > SOFT_EVENT_COUNT_WARNING_THRESHOLD) {
+      logger.warn("Event understanding produced a high event count", {
+        chunkStart,
+        chunkEnd,
+        chunkLength: chunkText.length,
+        eventCount: parsed.event_count,
+        softThreshold: SOFT_EVENT_COUNT_WARNING_THRESHOLD,
+      });
+    }
+    return parsed;
   } catch (error) {
     logger.error("Event understanding pass failed", {
       chunkStart,
