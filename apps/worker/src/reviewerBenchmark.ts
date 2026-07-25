@@ -401,7 +401,7 @@ function buildReviewerDecisionAudits(args: {
       const rawFinding = findBestFindingForEvent(reviewerFindings, event);
       const acceptedFinding = findBestFindingForEvent(acceptedFindings, event);
       const acceptedByVerifier = acceptedFinding != null;
-      const claimArticleId = rawFinding?.article_id ?? reviewerArticleId;
+      const claimedArticleId = rawFinding?.article_id ?? reviewerArticleId;
       const decision: "accepted" | "rejected" = acceptedByVerifier ? "accepted" : "rejected";
       const confidence = Number(Math.max(0.05, Math.min(0.99, expected.score / 100)).toFixed(2));
       const ownershipCorrect =
