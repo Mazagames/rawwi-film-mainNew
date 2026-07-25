@@ -26,6 +26,7 @@ import { persistJudgeDiagnostic } from "./judgeDiagnostics.js";
 import { buildReviewerBenchmarkHtml, buildReviewerBenchmarkReport, toReviewerBenchmarkLog } from "./reviewerBenchmark.js";
 import { buildValidatorAuditHtml, buildValidatorAuditReport, toValidatorAuditLog } from "./validatorAudit.js";
 import { buildReviewerTraceReport, toReviewerTraceLog } from "./reviewerTrace.js";
+import { traceFindingPipelineStage, traceFindingPipelineSummary, type FindingPipelineTraceSnapshot } from "./findingPipelineTrace.js";
 import { upsertFindingPolicyLinks } from "./policyLinks.js";
 import { calculateSeverity } from "./severityRulebook.js";
 import { getPrimaryCanonicalAtomForGcam } from "./canonicalAtomMapping.js";
@@ -78,6 +79,92 @@ type BenchmarkInstrumentationArgs = {
 };
 
 type AnalysisEngineMode = "v2";
+
+function buildTraceSnapshotFromFinding(
+  finding: FindingWithGlobal,
+  args: {
+    traceId: string;
+    reviewerArticleId: number | null;
+    passName: string | null;
+    eventId?: number | null;
+    validatorDecision?: string | null;
+    dropReason?: string | null;
+    bypassReason?: string | null;
+    insertedFindingId?: string | null;
+    canonicalFindingId?: string | null;
+  },
+): FindingPipelineTraceSnapshot {
+  return {
+    traceId: args.traceId,
+    reviewerArticleId: args.reviewerArticleId,
+    passName: args.passName,
+    eventId: args.eventId ?? null,
+    title_ar: finding.title_ar ?? null,
+    description_ar: finding.description_ar ?? null,
+    rationale_ar: finding.rationale_ar ?? null,
+    canonical_atom: finding.canonical_atom ?? null,
+    article_id: finding.article_id ?? null,
+    claimedArticleId: finding.article_id ?? null,
+    severity: finding.severity ?? null,
+    confidence: finding.confidence ?? null,
+    evidence_snippet: finding.evidence_snippet ?? null,
+    quote: finding.evidence_snippet ?? null,
+    start_offset: finding.start_offset_global ?? null,
+    end_offset: finding.end_offset_global ?? null,
+    validatorDecision: args.validatorDecision ?? null,
+    dropReason: args.dropReason ?? null,
+    bypassReason: args.bypassReason ?? null,
+    insertedFindingId: args.insertedFindingId ?? null,
+    canonicalFindingId: args.canonicalFindingId ?? null,
+  };
+}
+
+function buildTraceSnapshotFromRow(
+  row: Record<string, unknown>,
+  args: {
+    traceId: string;
+    reviewerArticleId: number | null;
+    passName: string | null;
+    eventId?: number | null;
+    validatorDecision?: string | null;
+    dropReason?: string | null;
+    bypassReason?: string | null;
+    insertedFindingId?: string | null;
+    canonicalFindingId?: string | null;
+  },
+): FindingPipelineTraceSnapshot {
+  return {
+    traceId: args.traceId,
+    reviewerArticleId: args.reviewerArticleId,
+    passName: args.passName,
+    eventId: args.eventId ?? null,
+    title_ar: typeof row.title_ar === "string" ? row.title_ar : null,
+    description_ar: typeof row.description_ar === "string" ? row.description_ar : null,
+    rationale_ar: typeof row.rationale_ar === "string" ? row.rationale_ar : null,
+    canonical_atom: typeof row.canonical_atom === "string" ? row.canonical_atom : null,
+    article_id: typeof row.article_id === "number" ? row.article_id : null,
+    claimedArticleId: typeof row.article_id === "number" ? row.article_id : null,
+    severity: typeof row.severity === "string" ? row.severity : null,
+    confidence: typeof row.confidence === "number" ? row.confidence : null,
+    evidence_snippet: typeof row.evidence_snippet === "string" ? row.evidence_snippet : null,
+    quote: typeof row.evidence_snippet === "string" ? row.evidence_snippet : null,
+    start_offset: typeof row.start_offset_global === "number" ? row.start_offset_global : null,
+    end_offset: typeof row.end_offset_global === "number" ? row.end_offset_global : null,
+    validatorDecision: args.validatorDecision ?? null,
+    dropReason: args.dropReason ?? null,
+    bypassReason: args.bypassReason ?? null,
+    insertedFindingId: args.insertedFindingId ?? null,
+    canonicalFindingId: args.canonicalFindingId ?? null,
+  };
+}
+
+function parseReviewerArticleId(passName: string | null | undefined, fallback: number | null = null): number | null {
+  if (!passName) return fallback;
+  const match = /^v5_article_(\d{2})$/i.exec(passName.trim());
+  if (!match) return fallback;
+  const value = Number.parseInt(match[1] ?? "", 10);
+  return Number.isInteger(value) ? value : fallback;
+}
 
 const MAX_EVIDENCE_SPAN = 280;
 const PIPELINE_LOGIC_VERSION = "v2.10";
@@ -2227,6 +2314,32 @@ export async function processChunkJudge(
         executedPassCount: multiPassResult.executedPassCount,
         skippedPassCount: multiPassResult.skippedPassCount,
       });
+      if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+        traceFindingPipelineStage({
+          jobId,
+          chunkId: chunk.id,
+          stageName: "After multi-pass refinement",
+          functionName: "runMultiPassDetection",
+          snapshots: multiPassResult.findings.slice(0, 5).map((finding) => ({
+            traceId: (finding as { lineage_id?: string | null }).lineage_id ?? "",
+            reviewerArticleId: parseReviewerArticleId((finding as { detection_pass?: string | null }).detection_pass ?? null, finding.article_id ?? null),
+            passName: (finding as { detection_pass?: string | null }).detection_pass ?? null,
+            eventId: null,
+            title_ar: finding.title_ar ?? null,
+            description_ar: finding.description_ar ?? null,
+            rationale_ar: finding.rationale_ar ?? null,
+            canonical_atom: finding.canonical_atom ?? null,
+            article_id: finding.article_id ?? null,
+            claimedArticleId: finding.article_id ?? null,
+            severity: finding.severity ?? null,
+            confidence: finding.confidence ?? null,
+            evidence_snippet: finding.evidence_snippet ?? null,
+            quote: finding.evidence_snippet ?? null,
+            start_offset: finding.start_offset_global ?? null,
+            end_offset: finding.end_offset_global ?? null,
+          })),
+        });
+      }
       
       // Enforce atom_ids and prefer literal local evidence from chunk offsets.
       const enforced = multiPassResult.findings.map(f => enforceAtomIds([f])[0]);
@@ -2742,6 +2855,11 @@ export async function processChunkJudge(
         const context_impact = (f as { context_impact?: number | null }).context_impact ?? null;
         const legal_sensitivity = (f as { legal_sensitivity?: number | null }).legal_sensitivity ?? null;
         const audience_risk = (f as { audience_risk?: number | null }).audience_risk ?? null;
+        const reviewerArticleId = parseReviewerArticleId((f as { detection_pass?: string | null }).detection_pass ?? null, article_id);
+        const traceId = (f as { lineage_id?: string | null }).lineage_id ?? "";
+        const validatorBypassReasons: string[] = [];
+        let validatorDecision: "accepted" | "rejected" = "accepted";
+        let validatorDropReason: string | null = null;
 
         if (!(typeof article_id === "number" && Number.isInteger(article_id) && article_id >= 1)) {
           ownershipRejectedFindings.push({
@@ -2806,6 +2924,33 @@ export async function processChunkJudge(
       beforeCount: beforeGuard,
       acceptedCount: resolvedFindings.length,
       rejected: guardResult.rejected,
+    });
+  }
+
+  if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+    traceFindingPipelineStage({
+      jobId,
+      chunkId: chunk.id,
+      stageName: "Before analysis_findings row build",
+      functionName: "resolvedFindings.flatMap",
+      snapshots: resolvedFindings.slice(0, 5).map((finding) => ({
+        traceId: (finding as { lineage_id?: string | null }).lineage_id ?? "",
+        reviewerArticleId: parseReviewerArticleId((finding as { detection_pass?: string | null }).detection_pass ?? null, finding.article_id ?? null),
+        passName: finding.detection_pass ?? null,
+        eventId: null,
+        title_ar: finding.title_ar ?? null,
+        description_ar: finding.description_ar ?? null,
+        rationale_ar: finding.rationale_ar ?? null,
+        canonical_atom: finding.canonical_atom ?? null,
+        article_id: finding.article_id ?? null,
+        claimedArticleId: finding.article_id ?? null,
+        severity: finding.severity ?? null,
+        confidence: finding.confidence ?? null,
+        evidence_snippet: finding.evidence_snippet ?? null,
+        quote: finding.evidence_snippet ?? null,
+        start_offset: finding.start_offset_global ?? null,
+        end_offset: finding.end_offset_global ?? null,
+      })),
     });
   }
 
@@ -2886,6 +3031,24 @@ export async function processChunkJudge(
           canonicalSnippet: canonicalSnippet.slice(0, 80),
         });
         if (objectiveEvidenceIssues.has(finalEvidenceIssue) && !isValidatorAdvisoryIssue(finalEvidenceIssue)) {
+          validatorDecision = "rejected";
+          validatorDropReason = finalEvidenceIssue;
+          if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+            traceFindingPipelineStage({
+              jobId,
+              chunkId: chunk.id,
+              stageName: "After validator",
+              functionName: "getStoredEvidenceQualityIssue",
+              snapshots: [buildTraceSnapshotFromFinding(f, {
+                traceId,
+                reviewerArticleId,
+                passName: f.detection_pass ?? null,
+                validatorDecision,
+                dropReason: validatorDropReason,
+                bypassReason: null,
+              })],
+            });
+          }
           postCanonicalEvidenceDroppedCount++;
           storedEvidenceDroppedCount++;
           validatorWarnings.push({
@@ -2898,6 +3061,7 @@ export async function processChunkJudge(
           return [];
         }
         storedEvidenceBypassedCount++;
+        validatorBypassReasons.push(finalEvidenceIssue);
         validatorWarnings.push({
           stage: "stored_evidence_quality",
           issue: finalEvidenceIssue,
@@ -2930,6 +3094,7 @@ export async function processChunkJudge(
         });
         eventConsistencyPassedCount++;
         eventConsistencyBypassedCount++;
+        validatorBypassReasons.push(eventConsistencyResult.issue);
         validatorWarnings.push({
           stage: "event_consistency",
           issue: eventConsistencyResult.issue,
@@ -2955,6 +3120,7 @@ export async function processChunkJudge(
             excerpt: excerpt.slice(0, 120),
           });
           passSpecificBypassedCount++;
+          validatorBypassReasons.push(passSpecificEvidenceIssue);
           validatorWarnings.push({
             stage: "pass_specific",
             issue: passSpecificEvidenceIssue,
@@ -2976,6 +3142,7 @@ export async function processChunkJudge(
           canonicalSnippet: canonicalSnippet.slice(0, 120),
         });
         canonicalModelMismatchDroppedCount++;
+        validatorBypassReasons.push("canonical_model_mismatch");
         validatorWarnings.push({
           stage: "canonical_model_alignment",
           issue: "canonical_model_mismatch",
@@ -2998,6 +3165,7 @@ export async function processChunkJudge(
           startOffsetGlobal: f.start_offset_global ?? null,
         });
         explicitSceneMismatchDroppedCount++;
+        validatorBypassReasons.push("explicit_scene_mismatch");
         validatorWarnings.push({
           stage: "scene_alignment",
           issue: "explicit_scene_mismatch",
@@ -3007,6 +3175,23 @@ export async function processChunkJudge(
         });
       } else {
         explicitScenePassedCount++;
+      }
+
+      if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+        traceFindingPipelineStage({
+          jobId,
+          chunkId: chunk.id,
+          stageName: "After validator",
+          functionName: "getStoredEvidenceQualityIssue / getEventConsistencyIssue / snippetsReasonablyAlign / hasExplicitSceneMismatch",
+          snapshots: [buildTraceSnapshotFromFinding(f, {
+            traceId,
+            reviewerArticleId,
+            passName: f.detection_pass ?? null,
+            validatorDecision,
+            dropReason: validatorDropReason,
+            bypassReason: validatorBypassReasons.length > 0 ? validatorBypassReasons.join("; ") : null,
+          })],
+        });
       }
 
       const titleNormalizationDecision = normalizeFindingTitleDecision({
@@ -3117,6 +3302,33 @@ export async function processChunkJudge(
       }];
     });
 
+    if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+      traceFindingPipelineStage({
+        jobId,
+        chunkId: chunk.id,
+        stageName: "Before insert",
+        functionName: "analysis_findings row builder",
+        snapshots: rows.slice(0, 5).map((row) => ({
+          traceId: (row as { lineage_id?: string | null }).lineage_id ?? "",
+          reviewerArticleId: parseReviewerArticleId((row as { location?: { v3?: { detection_pass?: string | null } } }).location?.v3?.detection_pass ?? null, (row as { article_id?: number | null }).article_id ?? null),
+          passName: (row as { location?: { v3?: { detection_pass?: string | null } } }).location?.v3?.detection_pass ?? null,
+          eventId: null,
+          title_ar: (row as { title_ar?: string | null }).title_ar ?? null,
+          description_ar: (row as { description_ar?: string | null }).description_ar ?? null,
+          rationale_ar: (row as { rationale_ar?: string | null }).rationale_ar ?? null,
+          canonical_atom: (row as { canonical_atom?: string | null }).canonical_atom ?? null,
+          article_id: (row as { article_id?: number | null }).article_id ?? null,
+          claimedArticleId: (row as { article_id?: number | null }).article_id ?? null,
+          severity: (row as { severity?: string | null }).severity ?? null,
+          confidence: (row as { confidence?: number | null }).confidence ?? null,
+          evidence_snippet: (row as { evidence_snippet?: string | null }).evidence_snippet ?? null,
+          quote: (row as { evidence_snippet?: string | null }).evidence_snippet ?? null,
+          start_offset: (row as { start_offset_global?: number | null }).start_offset_global ?? null,
+          end_offset: (row as { end_offset_global?: number | null }).end_offset_global ?? null,
+        })),
+      });
+    }
+
     logger.info("Validator lifecycle summary before insert", {
       jobId,
       chunkId: chunk.id,
@@ -3177,7 +3389,7 @@ export async function processChunkJudge(
       timeoutMs: CRITICAL_DB_TIMEOUT_MS,
     });
       const { data, error } = await withOperationTimeout<{
-        data: Array<{ id: string; article_id: number; atom_id: string | null; confidence?: number | null }> | null;
+        data: Array<{ id: string; lineage_id?: string | null; article_id: number; atom_id: string | null; confidence?: number | null }> | null;
         error: { message: string } | null;
       }>(
         "Upsert analysis_findings",
@@ -3185,7 +3397,7 @@ export async function processChunkJudge(
         supabase
           .from("analysis_findings")
           .upsert(rows, { onConflict: "job_id,evidence_hash", ignoreDuplicates: true })
-          .select("id,article_id,atom_id,confidence")
+          .select("id,lineage_id,article_id,atom_id,confidence")
     );
     throwIfAborted(signal);
 
@@ -3203,6 +3415,48 @@ export async function processChunkJudge(
       inserted: data?.length ?? 0,
       error: error ?? null,
     });
+    if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+      logger.info("TRACE INSERTED FINDING IDS", {
+        jobId,
+        chunkId: chunk.id,
+        insertedCount: data?.length ?? 0,
+        insertedFindingIds: (data ?? []).map((row) => row.id),
+      });
+    }
+
+    if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+      const insertedIdByLineage = new Map(
+        (data ?? []).map((row) => [row.lineage_id ?? "", row.id] as const)
+      );
+      traceFindingPipelineStage({
+        jobId,
+        chunkId: chunk.id,
+        stageName: "After insert",
+        functionName: "analysis_findings upsert",
+        snapshots: rows.slice(0, 5).map((row) => {
+          const lineageId = (row as { lineage_id?: string | null }).lineage_id ?? "";
+          return {
+            traceId: lineageId,
+            reviewerArticleId: (row as { article_id?: number | null }).article_id ?? null,
+            passName: null,
+            eventId: null,
+            title_ar: (row as { title_ar?: string | null }).title_ar ?? null,
+            description_ar: (row as { description_ar?: string | null }).description_ar ?? null,
+            rationale_ar: (row as { rationale_ar?: string | null }).rationale_ar ?? null,
+            canonical_atom: (row as { canonical_atom?: string | null }).canonical_atom ?? null,
+            article_id: (row as { article_id?: number | null }).article_id ?? null,
+            claimedArticleId: (row as { article_id?: number | null }).article_id ?? null,
+            severity: (row as { severity?: string | null }).severity ?? null,
+            confidence: (row as { confidence?: number | null }).confidence ?? null,
+            evidence_snippet: (row as { evidence_snippet?: string | null }).evidence_snippet ?? null,
+            quote: (row as { evidence_snippet?: string | null }).evidence_snippet ?? null,
+            start_offset: (row as { start_offset_global?: number | null }).start_offset_global ?? null,
+            end_offset: (row as { end_offset_global?: number | null }).end_offset_global ?? null,
+            insertedFindingId: insertedIdByLineage.get(lineageId) ?? null,
+          };
+        }),
+      });
+    }
 
     if (error) {
       logger.error("AI findings upsert FAILED", {
@@ -3269,6 +3523,9 @@ export async function processChunkJudge(
   }
   await setChunkDone(chunk.id);
   await incrementJobProgress(jobId);
+  if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+    traceFindingPipelineSummary(jobId, chunk.id);
+  }
   logger.info("Chunk processed", {
     chunkId: chunk.id,
     runKey,

@@ -43,6 +43,7 @@ import {
 } from "./v4PromptPack.js";
 import { buildEventUnderstandingPass, renderStructuredEventContext, type EventUnderstandingPassResult } from "./eventUnderstanding.js";
 import { getV5ReviewerDefinitions } from "./v5PromptPack.js";
+import { traceFindingPipelineStage } from "./findingPipelineTrace.js";
 import type { AnalysisExecutionSignatureInput } from "./executionSignature.js";
 
 export interface LexiconTerm {
@@ -1943,6 +1944,40 @@ async function runSinglePass(
 
     // Parse findings
     const { findings, diagnostics } = await parseJudgeWithRepair(judgeCall.raw_judge_response, model, { signal });
+    if (config.DEBUG_TRACE_FINDING_PIPELINE && diagnosticContext?.jobId && diagnosticContext?.chunkId) {
+      findings.forEach((finding, index) => {
+        ensureFindingLineageId(finding, {
+          jobId: diagnosticContext.jobId,
+          chunkId: diagnosticContext.chunkId,
+          passName: pass.name,
+          index,
+        });
+      });
+      traceFindingPipelineStage({
+        jobId: diagnosticContext.jobId,
+        chunkId: diagnosticContext.chunkId,
+        stageName: "Reviewer JSON parsed",
+        functionName: "parseJudgeWithRepair",
+        snapshots: findings.slice(0, 5).map((finding) => ({
+          traceId: finding.lineage_id ?? "",
+          reviewerArticleId: articleIds[0] ?? null,
+          passName: pass.name,
+          eventId: null,
+          title_ar: finding.title_ar ?? null,
+          description_ar: finding.description_ar ?? null,
+          rationale_ar: finding.rationale_ar ?? null,
+          canonical_atom: finding.canonical_atom ?? null,
+          article_id: finding.article_id ?? null,
+          claimedArticleId: finding.article_id ?? null,
+          severity: finding.severity ?? null,
+          confidence: finding.confidence ?? null,
+          evidence_snippet: finding.evidence_snippet ?? null,
+          quote: finding.evidence_snippet ?? null,
+          start_offset: finding.location?.start_offset ?? null,
+          end_offset: finding.location?.end_offset ?? null,
+        })),
+      });
+    }
     if (diagnosticContext) {
       const rawFindingCount = extractRawFindingCount(judgeCall.raw_judge_response);
       await persistJudgeDiagnostic({
@@ -1988,6 +2023,32 @@ async function runSinglePass(
       });
       return finding;
     });
+    if (config.DEBUG_TRACE_FINDING_PIPELINE && diagnosticContext?.jobId && diagnosticContext?.chunkId) {
+      traceFindingPipelineStage({
+        jobId: diagnosticContext.jobId,
+        chunkId: diagnosticContext.chunkId,
+        stageName: "After multi-pass refinement",
+        functionName: "sortJudgeFindingsStable / normalizeFindingForPass",
+        snapshots: stableTagged.slice(0, 5).map((finding) => ({
+          traceId: finding.lineage_id ?? "",
+          reviewerArticleId: articleIds[0] ?? null,
+          passName: pass.name,
+          eventId: null,
+          title_ar: finding.title_ar ?? null,
+          description_ar: finding.description_ar ?? null,
+          rationale_ar: finding.rationale_ar ?? null,
+          canonical_atom: finding.canonical_atom ?? null,
+          article_id: finding.article_id ?? null,
+          claimedArticleId: finding.article_id ?? null,
+          severity: finding.severity ?? null,
+          confidence: finding.confidence ?? null,
+          evidence_snippet: finding.evidence_snippet ?? null,
+          quote: finding.evidence_snippet ?? null,
+          start_offset: finding.location?.start_offset ?? null,
+          end_offset: finding.location?.end_offset ?? null,
+        })),
+      });
+    }
     if (diagnosticContext) {
       await persistLineageEvents(
         stableTagged.map((finding) =>

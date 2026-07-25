@@ -96,6 +96,11 @@ export const config = {
    */
   VALIDATOR_DEBUG_MODE: (process.env.VALIDATOR_DEBUG_MODE ?? "false").toLowerCase() === "true",
   /**
+   * Temporary pipeline trace mode.
+   * When enabled, finding snapshots are logged after each major pipeline stage.
+   */
+  DEBUG_TRACE_FINDING_PIPELINE: (process.env.DEBUG_TRACE_FINDING_PIPELINE ?? "false").toLowerCase() === "true",
+  /**
    * Temporary audit mode for validators.
    * When enabled, semantic validator disagreements are recorded as warnings
    * but findings continue through persistence and reporting.

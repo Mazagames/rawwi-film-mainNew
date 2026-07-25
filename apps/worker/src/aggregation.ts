@@ -19,6 +19,7 @@ import { config } from "./config.js";
 import { containsAnyNormalized } from "./textDetectionNormalize.js";
 import { normalizeReviewFindingConsistency } from "./reviewFindingConsistency.js";
 import { buildLineageEvent, persistLineageEvents } from "./findingLineage.js";
+import { traceFindingPipelineStage, traceFindingPipelineSummary, type FindingPipelineTraceSnapshot } from "./findingPipelineTrace.js";
 
 export type SummaryJson = {
   job_id: string;
@@ -199,6 +200,59 @@ type JobConfigMeta = {
   auditor_layer_version?: string;
   deep_auditor_enabled?: boolean;
 };
+
+function buildTraceSnapshotFromRow(
+  row: {
+    lineage_id?: string | null;
+    article_id?: number | null;
+    title_ar?: string | null;
+    description_ar?: string | null;
+    rationale_ar?: string | null;
+    evidence_snippet?: string | null;
+    start_offset_global?: number | null;
+    end_offset_global?: number | null;
+    canonical_atom?: string | null;
+    severity?: string | null;
+    confidence?: number | null;
+    canonical_finding_id?: string | null;
+    atom_id?: string | null;
+    primary_article_id?: number | null;
+  },
+  stageMeta: {
+    stage: string;
+    passName?: string | null;
+    reviewerArticleId?: number | null;
+    validatorDecision?: string | null;
+    dropReason?: string | null;
+    bypassReason?: string | null;
+    insertedFindingId?: string | null;
+    canonicalFindingId?: string | null;
+  },
+): FindingPipelineTraceSnapshot {
+  return {
+    traceId: row.lineage_id ?? row.canonical_finding_id ?? "",
+    reviewerArticleId: stageMeta.reviewerArticleId ?? row.primary_article_id ?? row.article_id ?? null,
+    passName: stageMeta.passName ?? null,
+    eventId: null,
+    title_ar: row.title_ar ?? null,
+    description_ar: row.description_ar ?? null,
+    rationale_ar: row.rationale_ar ?? null,
+    canonical_atom: row.canonical_atom ?? null,
+    article_id: row.article_id ?? null,
+    claimedArticleId: row.article_id ?? null,
+    severity: row.severity ?? null,
+    confidence: row.confidence ?? null,
+    evidence_snippet: row.evidence_snippet ?? null,
+    quote: row.evidence_snippet ?? null,
+    start_offset: row.start_offset_global ?? null,
+    end_offset: row.end_offset_global ?? null,
+    validatorDecision: stageMeta.validatorDecision ?? null,
+    dropReason: stageMeta.dropReason ?? null,
+    bypassReason: stageMeta.bypassReason ?? null,
+    insertedFindingId: stageMeta.insertedFindingId ?? null,
+    canonicalFindingId: stageMeta.canonicalFindingId ?? row.canonical_finding_id ?? null,
+  };
+}
 
 function pickAnalysisEngine(value: unknown): "v2" {
   return "v2";
@@ -1438,6 +1492,33 @@ export function buildSummaryJson(
               ? "manual"
               : "ai",
       });
+      if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+        traceFindingPipelineStage({
+          jobId,
+          chunkId: jobId,
+          stageName: "Aggregation canonicalization",
+          functionName: "buildSummaryJson canonicalMap",
+          snapshots: [{
+            traceId: primary.lineage_id ?? "",
+            reviewerArticleId: articleId,
+            passName: null,
+            eventId: null,
+            title_ar: primary.title_ar,
+            description_ar: primary.description_ar,
+            rationale_ar: primary.rationale_ar ?? null,
+            canonical_atom: primary.canonical_atom ?? null,
+            article_id: articleId,
+            claimedArticleId: articleId,
+            severity: primary.severity,
+            confidence: primary.confidence ?? 0,
+            evidence_snippet: primary.evidence_snippet,
+            quote: primary.evidence_snippet,
+            start_offset: primary.start_offset_global ?? null,
+            end_offset: primary.end_offset_global ?? null,
+            canonicalFindingId: cId,
+          }],
+        });
+      }
     }
   }
 
@@ -1515,6 +1596,61 @@ export function buildSummaryJson(
       };
     })
     .filter((entry) => entry.top_findings.length > 0);
+
+  if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+    traceFindingPipelineStage({
+      jobId,
+      chunkId: jobId,
+      stageName: "Summary JSON generation",
+      functionName: "buildSummaryJson canonical_findings",
+      snapshots: canonical_findings.slice(0, 5).map((finding) => ({
+        traceId: "",
+        reviewerArticleId: finding.primary_article_id ?? null,
+        passName: null,
+        eventId: null,
+        title_ar: finding.title_ar,
+        description_ar: null,
+        rationale_ar: finding.rationale ?? null,
+        canonical_atom: finding.canonical_atom ?? null,
+        article_id: finding.primary_article_id ?? null,
+        claimedArticleId: finding.primary_article_id ?? null,
+        severity: finding.severity,
+        confidence: finding.confidence,
+        evidence_snippet: finding.evidence_snippet,
+        quote: finding.evidence_snippet,
+        start_offset: finding.start_offset_global ?? null,
+        end_offset: finding.end_offset_global ?? null,
+        canonicalFindingId: finding.canonical_finding_id,
+      })),
+    });
+    traceFindingPipelineStage({
+      jobId,
+      chunkId: jobId,
+      stageName: "Summary JSON generation",
+      functionName: "buildSummaryJson findings_by_article",
+      snapshots: findings_by_article.flatMap((article) =>
+        article.top_findings.slice(0, 5).map((finding) => ({
+          traceId: "",
+          reviewerArticleId: article.article_id,
+          passName: null,
+          eventId: null,
+          title_ar: finding.title_ar,
+          description_ar: null,
+          rationale_ar: finding.rationale ?? null,
+          canonical_atom: null,
+          article_id: article.article_id,
+          claimedArticleId: article.article_id,
+          severity: finding.severity,
+          confidence: finding.confidence,
+          evidence_snippet: finding.evidence_snippet,
+          quote: finding.evidence_snippet,
+          start_offset: finding.start_offset_global ?? null,
+          end_offset: finding.end_offset_global ?? null,
+          canonicalFindingId: finding.canonical_finding_id ?? null,
+        })),
+      ),
+    });
+  }
 
   const checklist_articles = policyArticles
     .filter((a) => a.articleId !== OUT_OF_SCOPE_ARTICLE_ID)
@@ -1647,6 +1783,37 @@ export function buildReportHtml(summary: SummaryJson): string {
     </ul>
   </section>`
       : "";
+
+  if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+    traceFindingPipelineStage({
+      jobId: s.job_id,
+      chunkId: s.job_id,
+      stageName: "Report generation",
+      functionName: "buildReportHtml",
+      reportRenderedCount: s.findings_by_article.reduce((sum, article) => sum + article.top_findings.length, 0),
+      snapshots: s.findings_by_article.flatMap((article) =>
+        article.top_findings.slice(0, 5).map((finding) => ({
+          traceId: "",
+          reviewerArticleId: article.article_id,
+          passName: null,
+          eventId: null,
+          title_ar: finding.title_ar,
+          description_ar: null,
+          rationale_ar: finding.rationale ?? null,
+          canonical_atom: null,
+          article_id: article.article_id,
+          claimedArticleId: article.article_id,
+          severity: finding.severity,
+          confidence: finding.confidence,
+          evidence_snippet: finding.evidence_snippet,
+          quote: finding.evidence_snippet,
+          start_offset: finding.start_offset_global ?? null,
+          end_offset: finding.end_offset_global ?? null,
+          canonicalFindingId: finding.canonical_finding_id ?? null,
+        })),
+      ),
+    });
+  }
 
   let detailsHtml = "";
   for (const art of s.findings_by_article) {
@@ -1999,6 +2166,21 @@ export async function runAggregation(jobId: string): Promise<void> {
     },
     queryError: findingsErr ?? null,
   });
+  if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+    traceFindingPipelineStage({
+      jobId,
+      chunkId: jobId,
+      stageName: "Aggregation input",
+      functionName: "analysis_findings load",
+      snapshots: list.slice(0, 5).map((row) =>
+        buildTraceSnapshotFromRow(row, {
+          stage: "Aggregation input",
+          reviewerArticleId: row.article_id ?? null,
+          passName: null,
+        })
+      ),
+    });
+  }
 
   const { data: pageMetaRows } = await supabase
     .from("script_pages")
@@ -2295,5 +2477,6 @@ export async function runAggregation(jobId: string): Promise<void> {
     aggregationDurationMs: Date.now() - aggregationStartedAt,
     scriptSummarySource: fullScriptText.length > 0 ? "analysis_jobs.normalized_text" : "none",
   });
+  traceFindingPipelineSummary(jobId, jobId);
   clearCachedJobResources(jobId);
 }
