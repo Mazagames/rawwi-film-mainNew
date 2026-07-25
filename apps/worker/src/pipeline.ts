@@ -1614,7 +1614,39 @@ export async function processChunkJudge(
   const chunkStart = chunk.start_offset;
   const chunkEnd = chunk.end_offset;
   const validatorDebugMode = config.VALIDATOR_DEBUG_MODE;
-  const validatorDebugBypassRules = new Set(["event_rationale_mismatch", "missing_offsets", "evidence_mismatch"]);
+  const validatorAdvisoryIssues = new Set([
+    "event_not_supported",
+    "event_evidence_mismatch",
+    "event_rationale_mismatch",
+    "event_span_mismatch",
+    "event_ambiguous",
+    "unsupported_rationale",
+    "ownership_drift",
+    "non_text",
+    "too_short",
+    "heading_like",
+    "women_not_self_proving",
+    "security_not_self_proving",
+    "political_not_self_proving",
+    "sexual_not_self_proving",
+    "violence_single_word_non_violent",
+    "evidence_mismatch",
+    "rationale_local_mismatch",
+    "pass_article_mismatch",
+    "canonical_model_mismatch",
+    "explicit_scene_mismatch",
+    "strict_exact_proof_required",
+  ]);
+  const objectiveEvidenceIssues = new Set(["empty", "missing_offsets"]);
+  const isValidatorAdvisoryIssue = (issue: string | null | undefined): boolean =>
+    typeof issue === "string" && validatorAdvisoryIssues.has(issue);
+  const validatorWarnings: Array<{
+    stage: string;
+    issue: string;
+    articleId: number | null;
+    passName: string | null;
+    message: string;
+  }> = [];
 
   throwIfAborted(signal);
   if (await isJobCancelled(jobId)) {
@@ -2231,11 +2263,27 @@ export async function processChunkJudge(
       });
       const grounded = groundedResults
         .filter((result) => result.grounded)
-        .filter((result) => {
-          if (!requiresStrictExactProof(result.finding)) return true;
-          return allowsStrictGroundingMethod(result.method);
-        })
-        .map((result) => result.finding);
+        .map((result) => {
+          if (requiresStrictExactProof(result.finding) && !allowsStrictGroundingMethod(result.method)) {
+            validatorWarnings.push({
+              stage: "grounding",
+              issue: "strict_exact_proof_required",
+              articleId: result.finding.article_id ?? null,
+              passName: result.finding.detection_pass ?? null,
+              message: "Strict exact proof disagreement treated as advisory.",
+            });
+            logger.warn("Strict exact proof disagreement (advisory only)", {
+              jobId,
+              chunkId: chunk.id,
+              runKey,
+              article: result.finding.article_id,
+              pass: result.finding.detection_pass ?? null,
+              method: result.method,
+              reason: result.reason ?? null,
+            });
+          }
+          return result.finding;
+        });
       await persistLineageEvents(
         groundedResults.map((result) => {
           const strictRejected =
@@ -2276,11 +2324,28 @@ export async function processChunkJudge(
       const qualityFiltered = enriched.filter((f) => {
         const qualityIssue = getEvidenceQualityIssue(f, chunkText);
         if (qualityIssue) {
-          logger.warn("Low-quality evidence snippet (dropping finding)", {
+          logger.warn("Low-quality evidence snippet detected", {
             chunkId: chunk.id,
             article: f.article_id,
             issue: qualityIssue,
             evidence: f.evidence_snippet?.slice(0, 80),
+          });
+          if (!objectiveEvidenceIssues.has(qualityIssue) || isValidatorAdvisoryIssue(qualityIssue)) {
+            validatorWarnings.push({
+              stage: "evidence_quality",
+              issue: qualityIssue,
+              articleId: f.article_id ?? null,
+              passName: f.detection_pass ?? null,
+              message: "Evidence quality disagreement treated as advisory.",
+            });
+            return true;
+          }
+          validatorWarnings.push({
+            stage: "evidence_quality",
+            issue: qualityIssue,
+            articleId: f.article_id ?? null,
+            passName: f.detection_pass ?? null,
+            message: "Objective evidence corruption rejected before insert.",
           });
           return false;
         }
@@ -2338,17 +2403,24 @@ export async function processChunkJudge(
         runKey,
         findingsToCheck: beforeVerbatimCount,
       });
-      allFindings = withGlobal.filter((f) => {
+      allFindings = withGlobal.map((f) => {
         const isExact = isDetectionVerbatim(chunkText, f.evidence_snippet);
         if (!isExact) {
-          logger.warn("Evidence mismatch (dropping finding)", { 
+          logger.warn("Evidence mismatch (advisory only)", {
             chunkId: chunk.id,
             article: f.article_id,
             evidence: f.evidence_snippet?.slice(0, 50),
             severity: f.severity
           });
+          validatorWarnings.push({
+            stage: "verbatim_guardrail",
+            issue: "evidence_mismatch",
+            articleId: f.article_id ?? null,
+            passName: f.detection_pass ?? null,
+            message: "Verbatim disagreement treated as advisory.",
+          });
         }
-        return isExact;
+        return f;
       });
       allFindings = sortFindingsStable(allFindings);
       logger.info("Verbatim guardrail completed", {
@@ -2766,8 +2838,7 @@ export async function processChunkJudge(
         hasSaneGlobalOffsets ? end : null,
       );
       if (finalEvidenceIssue) {
-        const bypass = validatorDebugMode && validatorDebugBypassRules.has(finalEvidenceIssue);
-        logger.warn("Low-quality final evidence excerpt (dropping finding before insert)", {
+        logger.warn("Low-quality final evidence excerpt (objective corruption only)", {
           jobId,
           chunkId: chunk.id,
           runKey,
@@ -2776,16 +2847,27 @@ export async function processChunkJudge(
           excerpt: excerpt.slice(0, 80),
           modelSnippet: modelSnippet.slice(0, 80),
           canonicalSnippet: canonicalSnippet.slice(0, 80),
-          bypassed: bypass,
         });
-        if (bypass) {
-          storedEvidencePassedCount++;
-          storedEvidenceBypassedCount++;
-        } else {
+        if (objectiveEvidenceIssues.has(finalEvidenceIssue) && !isValidatorAdvisoryIssue(finalEvidenceIssue)) {
           postCanonicalEvidenceDroppedCount++;
           storedEvidenceDroppedCount++;
+          validatorWarnings.push({
+            stage: "stored_evidence_quality",
+            issue: finalEvidenceIssue,
+            articleId: f.article_id ?? null,
+            passName: f.detection_pass ?? null,
+            message: "Objective evidence corruption rejected before insert.",
+          });
           return [];
         }
+        storedEvidenceBypassedCount++;
+        validatorWarnings.push({
+          stage: "stored_evidence_quality",
+          issue: finalEvidenceIssue,
+          articleId: f.article_id ?? null,
+          passName: f.detection_pass ?? null,
+          message: "Stored evidence disagreement treated as advisory.",
+        });
       }
       if (!finalEvidenceIssue) {
         storedEvidencePassedCount++;
@@ -2796,8 +2878,7 @@ export async function processChunkJudge(
           ? getEventConsistencyIssue(f, multiPassEventUnderstanding.events)
           : null;
       if (eventConsistencyResult?.issue) {
-        const bypass = validatorDebugMode && validatorDebugBypassRules.has(eventConsistencyResult.issue);
-        logger.warn("Event consistency issue (dropping finding before insert)", {
+        logger.warn("Event consistency issue (advisory only)", {
           jobId,
           chunkId: chunk.id,
           runKey,
@@ -2809,26 +2890,24 @@ export async function processChunkJudge(
           matchedScore: eventConsistencyResult.matchedScore,
           runnerUpScore: eventConsistencyResult.runnerUpScore,
           excerpt: excerpt.slice(0, 120),
-          bypassed: bypass,
         });
-        if (bypass) {
-          eventConsistencyPassedCount++;
-          eventConsistencyBypassedCount++;
-        } else {
-          postCanonicalEvidenceDroppedCount++;
-          eventConsistencyDroppedCount++;
-          return [];
-        }
+        eventConsistencyPassedCount++;
+        eventConsistencyBypassedCount++;
+        validatorWarnings.push({
+          stage: "event_consistency",
+          issue: eventConsistencyResult.issue,
+          articleId: f.article_id ?? null,
+          passName: f.detection_pass ?? null,
+          message: "Event consistency disagreement treated as advisory.",
+        });
       } else {
         eventConsistencyPassedCount++;
       }
 
-      let passedPassSpecific = true;
       if (config.VIOLATION_SYSTEM_VERSION !== "v5") {
         const passSpecificEvidenceIssue = getPassSpecificEvidenceIssue(f, excerpt, normalizedText, sceneIndex);
         if (passSpecificEvidenceIssue) {
-          const bypass = validatorDebugMode && validatorDebugBypassRules.has(passSpecificEvidenceIssue);
-          logger.warn("Pass-specific final evidence issue (dropping finding before insert)", {
+          logger.warn("Pass-specific final evidence issue (advisory only)", {
             jobId,
             chunkId: chunk.id,
             runKey,
@@ -2837,25 +2916,21 @@ export async function processChunkJudge(
             canonicalAtom: f.canonical_atom ?? null,
             issue: passSpecificEvidenceIssue,
             excerpt: excerpt.slice(0, 120),
-            bypassed: bypass,
           });
-          if (bypass) {
-            passSpecificBypassedCount++;
-          } else {
-            postCanonicalEvidenceDroppedCount++;
-            passSpecificDroppedCount++;
-            passedPassSpecific = false;
-            return [];
-          }
+          passSpecificBypassedCount++;
+          validatorWarnings.push({
+            stage: "pass_specific",
+            issue: passSpecificEvidenceIssue,
+            articleId: f.article_id ?? null,
+            passName: f.detection_pass ?? null,
+            message: "Pass-specific semantic disagreement treated as advisory.",
+          });
         }
       }
-      if (passedPassSpecific) {
-        passSpecificPassedCount++;
-      }
+      passSpecificPassedCount++;
 
       if (canonicalSnippet.length > 0 && modelSnippet.length > 0 && !snippetsReasonablyAlign(modelSnippet, canonicalSnippet)) {
-        canonicalModelMismatchDroppedCount++;
-        logger.warn("Canonical/model evidence mismatch (dropping finding before insert)", {
+        logger.warn("Canonical/model evidence mismatch (advisory only)", {
           jobId,
           chunkId: chunk.id,
           runKey,
@@ -2863,13 +2938,20 @@ export async function processChunkJudge(
           modelSnippet: modelSnippet.slice(0, 120),
           canonicalSnippet: canonicalSnippet.slice(0, 120),
         });
-        return [];
+        canonicalModelMismatchDroppedCount++;
+        validatorWarnings.push({
+          stage: "canonical_model_alignment",
+          issue: "canonical_model_mismatch",
+          articleId: f.article_id ?? null,
+          passName: f.detection_pass ?? null,
+          message: "Canonical/model disagreement treated as advisory.",
+        });
+      } else {
+        canonicalModelPassedCount++;
       }
-      canonicalModelPassedCount++;
 
       if (hasExplicitSceneMismatch(f.rationale_ar ?? null, sceneIndex, f.start_offset_global ?? null)) {
-        explicitSceneMismatchDroppedCount++;
-        logger.warn("Explicit scene mismatch between rationale and resolved offset (dropping finding before insert)", {
+        logger.warn("Explicit scene mismatch between rationale and resolved offset (advisory only)", {
           jobId,
           chunkId: chunk.id,
           runKey,
@@ -2878,9 +2960,17 @@ export async function processChunkJudge(
           excerpt: excerpt.slice(0, 120),
           startOffsetGlobal: f.start_offset_global ?? null,
         });
-        return [];
+        explicitSceneMismatchDroppedCount++;
+        validatorWarnings.push({
+          stage: "scene_alignment",
+          issue: "explicit_scene_mismatch",
+          articleId: f.article_id ?? null,
+          passName: f.detection_pass ?? null,
+          message: "Scene mismatch treated as advisory.",
+        });
+      } else {
+        explicitScenePassedCount++;
       }
-      explicitScenePassedCount++;
 
       const glossarySafeTitle = normalizeMisusedGlossaryPassTitle({
         titleAr: f.title_ar,
@@ -3016,6 +3106,7 @@ export async function processChunkJudge(
       validated_finding_count: validatedFindingCount,
       final_chunk_finding_count: rows.length,
       final_chunk_findings: rows,
+      parser_validation_errors: validatorWarnings.length > 0 ? { validator_warnings: validatorWarnings } : null,
     });
 
     logger.info("[DEBUG] Persistence stage preparing", {
