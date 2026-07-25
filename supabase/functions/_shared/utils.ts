@@ -295,8 +295,8 @@ export type Chunk = {
   end_line: number;
 };
 
-const DEFAULT_CHUNK_SIZE = 12_000;
-const DEFAULT_OVERLAP = 800;
+const DEFAULT_CHUNK_SIZE = 2_500;
+const DEFAULT_OVERLAP = 0;
 
 /**
  * Chunk text with overlap; compute line numbers (1-based) from normalized text.

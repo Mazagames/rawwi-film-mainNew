@@ -131,7 +131,7 @@ async function runIngest(
     (Deno.env.get("ANALYSIS_CHUNK_BY_PAGE") ?? "").toLowerCase() === "true" &&
     pr.length > 0;
   const chunks = usePageChunks
-    ? chunkTextByScriptPages(safeNormalized, pr, 12_000)
+    ? chunkTextByScriptPages(safeNormalized, pr, 2_500)
     : chunkText(safeNormalized);
   const progressTotal = chunks.length + 1;
   const progressPercent = 0;

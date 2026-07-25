@@ -783,12 +783,12 @@ Deno.serve(async (req: Request) => {
     (Deno.env.get("ANALYSIS_CHUNK_BY_PAGE") ?? "").toLowerCase() === "true" &&
     pageRows.length > 0;
   const chunks = usePageChunks
-    ? chunkTextByScriptPages(normalized, pageRows, 12_000)
-    : chunkText(normalized, 12_000, 800);
+    ? chunkTextByScriptPages(normalized, pageRows, 2_500)
+    : chunkText(normalized, 2_500, 0);
   const progress_total = chunks.length + 1;
   const manualReviewSnapshot = await loadManualReviewSnapshot(supabase, scriptId, versionId.trim());
-  const chunkSize = 12_000;
-  const overlapSize = usePageChunks ? 0 : 800;
+  const chunkSize = 2_500;
+  const overlapSize = 0;
   const totalDetectionPasses = 11;
 
   const { data: job, error: jobErr } = await supabase

@@ -81,7 +81,7 @@
 
 قبل تسجيل أي مخالفة اسأل نفسك:
 
-**هل هذه المخالفة تخص المادة 01 فقط؟**
+**هل هذه المادة هي المالك الأساسي لهذه المخالفة؟**
 
 إذا كانت الإجابة لا، فأعد findings فارغة.
 
@@ -92,6 +92,91 @@
 يهدف هذا المراجع إلى اكتشاف أي محتوى يتضمن إساءة مباشرة أو غير مباشرة إلى الدين الإسلامي أو الذات الإلهية أو الأنبياء أو الرسل أو الصحابة أو آل البيت أو القرآن الكريم أو الكتب السماوية أو الشعائر والثوابت الإسلامية، مع مراعاة السياق الدرامي وعدم تسجيل مخالفات على المحتوى التعليمي أو التوثيقي أو التاريخي أو الناقل للحدث ما لم يتبنَّ أو يروّج للإساءة.
 
 ---
+
+# Cognitive Review Protocol (MANDATORY)
+
+Before deciding whether any finding exists, follow this reasoning process internally.
+
+## Step 1 — Understand the events
+
+Read the entire provided text and identify the meaningful events, actions, dialogue, and interactions.
+
+Do not classify anything yet.
+
+First understand what actually happened.
+
+---
+
+## Step 2 — Filter by this article
+
+Ignore every event that is unrelated to the purpose of this article.
+
+Do not reinterpret unrelated events so they fit this article.
+
+---
+
+## Step 3 — Determine ownership
+
+For every remaining event, ask:
+
+"Is this article the primary and most appropriate GCAM owner of this event?"
+
+Do not classify based on topic similarity.
+
+Do not classify based on keywords.
+
+Ownership must be explicit and direct.
+
+Keyword matches never establish article ownership.
+Article ownership is determined by the complete meaning of the event, not by individual words or isolated phrases.
+
+---
+
+## Step 4 — Reject secondary ownership
+
+If another GCAM article is a better owner,
+
+or another article is equally plausible,
+
+return:
+
+```json
+{
+  "findings": []
+}
+```
+
+Never claim a finding that primarily belongs to another reviewer.
+
+---
+
+## Step 5 — Extract evidence
+
+Only after ownership has been confirmed,
+
+extract the shortest verbatim quotation that independently proves the violation.
+
+Never paraphrase.
+
+Never summarize.
+
+Never merge multiple quotations.
+
+---
+
+## Step 6 — Produce findings
+
+Return findings only after every previous step succeeds.
+
+If any doubt remains,
+
+return:
+
+```json
+{
+  "findings": []
+}
+```
 
 # What is considered a violation
 
