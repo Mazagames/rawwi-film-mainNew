@@ -1,3 +1,6 @@
+import { getPolicyArticle } from "./policyMap.js";
+import { isGcamMappedToCanonical } from "./canonicalAtomMapping.js";
+
 export type VerifierSceneIndexEntry = {
   sceneIndex: number;
   startOffset: number;
@@ -18,7 +21,7 @@ function compactNormalizedEvidence(value: string | null | undefined): string {
   return (value ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
 }
 
-function tokenizeArabicRationale(value: string | null | undefined): string[] {
+function tokenVariants(value: string | null | undefined): string[] {
   const text = compactNormalizedEvidence(value);
   if (!text) return [];
   const stopwords = new Set([
@@ -60,22 +63,60 @@ function tokenizeArabicRationale(value: string | null | undefined): string[] {
     "كل",
     "أيضاً",
     "ايضا",
+    "المادة",
+    "مادة",
+    "ال",
+    "غير",
   ]);
-  const tokens = text
-    .split(/[^\p{L}\p{N}]+/u)
-    .map((token) => token.trim())
-    .filter(Boolean)
-    .flatMap((token) => {
-      const variants = new Set<string>();
-      const normalized = token.normalize("NFC");
-      if (normalized.length >= 3 && !stopwords.has(normalized)) variants.add(normalized);
-      if (normalized.startsWith("ال") && normalized.length > 4) {
-        const stripped = normalized.slice(2);
-        if (stripped.length >= 3 && !stopwords.has(stripped)) variants.add(stripped);
-      }
-      return [...variants];
-    });
-  return [...new Set(tokens)];
+  const out = new Set<string>();
+  for (const rawToken of text.split(/[^\p{L}\p{N}]+/u)) {
+    const token = rawToken.trim().normalize("NFC");
+    if (!token) continue;
+    if (token.length >= 3 && !stopwords.has(token)) out.add(token);
+    if (token.startsWith("ال") && token.length > 4) {
+      const stripped = token.slice(2);
+      if (stripped.length >= 3 && !stopwords.has(stripped)) out.add(stripped);
+    }
+  }
+  return [...out];
+}
+
+function tokenizeArabicRationale(value: string | null | undefined): string[] {
+  return tokenVariants(value);
+}
+
+function getPolicyArticleAnchorTokens(articleId: number): string[] {
+  const article = getPolicyArticle(articleId);
+  if (!article) return [];
+  const sources = [
+    ...(article.title_ar ? [article.title_ar] : []),
+    ...((article.atoms ?? []).map((atom) => atom.title_ar)),
+  ];
+  const tokens = new Set<string>();
+  for (const source of sources) {
+    for (const token of tokenVariants(source)) tokens.add(token);
+  }
+  const extras: Record<number, string[]> = {
+    21: ["ملف", "ملفات", "مسرب", "مسربة", "تسريب", "تسرب", "سري", "سرية"],
+  };
+  for (const token of extras[articleId] ?? []) {
+    for (const variant of tokenVariants(token)) tokens.add(variant);
+  }
+  return [...tokens];
+}
+
+export function hasPolicyArticleAnchor(articleId: number, localWindow: string): boolean {
+  if (articleId <= 3) return true;
+  const anchors = getPolicyArticleAnchorTokens(articleId);
+  if (anchors.length === 0) return true;
+  const localTokens = new Set(tokenVariants(localWindow));
+  return anchors.some((token) => localTokens.has(token));
+}
+
+export function hasCanonicalAtomArticleMismatch(articleId: number, canonicalAtom: string | null | undefined, atomId: string | null | undefined): boolean {
+  const canonical = String(canonicalAtom ?? "").trim();
+  if (!canonical) return false;
+  return !isGcamMappedToCanonical(canonical, articleId, atomId ?? null);
 }
 
 export function hasRationaleLocalSupport(rationale: string, localWindow: string): boolean {
@@ -157,6 +198,14 @@ export function getPassSpecificEvidenceIssue(
 
   if (rationale && !hasRationaleLocalSupport(rationale, localContext)) {
     return "unsupported_rationale";
+  }
+
+  if (hasCanonicalAtomArticleMismatch(articleId, finding.canonical_atom, finding.atom_id ?? null)) {
+    return "canonical_article_mismatch";
+  }
+
+  if (articleId >= 4 && !hasPolicyArticleAnchor(articleId, localContext)) {
+    return "article_topic_mismatch";
   }
 
   if ([12, 15, 19, 21, 23].includes(articleId) && !hasDriftProneArticleAnchor(articleId, localContext)) {
