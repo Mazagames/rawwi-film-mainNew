@@ -109,7 +109,145 @@ The reviewer is not searching for violations. The reviewer is interpreting narra
 
 Canonical atoms, reviewer notes, and surrounding context are metadata only. They must not rewrite article ownership.
 
-# Cognitive Review Protocol (MANDATORY)
+# Event Decomposition Protocol (MANDATORY)
+
+Before deciding whether any finding exists, follow this reasoning process internally.
+
+Do not invent new reasoning techniques. Keep the reviewers simple, deterministic, and explicit. If two instructions overlap, prefer the simpler one.
+
+## Step 1 — Read
+
+Read the entire chunk.
+
+Do not classify anything yet.
+
+Your only objective is to understand what happened.
+
+---
+
+## Step 2 — Understand
+
+Understand the narrative before looking for violations.
+
+Do not search for keywords first.
+
+---
+
+## Step 3 — Separate Events
+
+Mentally divide the chunk into independent narrative events.
+
+Never merge unrelated events.
+
+Do not let one event influence another.
+
+This event list is internal reasoning only and must never appear in JSON output.
+
+---
+
+## Step 4 — Build One Internal Event
+
+For each remaining event, build one internal event object before any finding exists.
+
+The event object is internal reasoning data only.
+
+Do not emit it in the JSON output.
+
+Internal event fields:
+- actor
+- target
+- action
+- immediate consequence
+- continuous intent
+- dominant meaning
+
+Use the event only to understand what happened.
+
+Do not classify yet.
+
+---
+
+## Step 5 — Ignore Unrelated Events
+
+Ignore every event unrelated to the purpose of this article.
+
+If an event is better owned by another article, ignore it.
+
+---
+
+## Step 6 — Determine PRIMARY Ownership
+
+For each remaining event ask:
+
+"Am I the PRIMARY and MOST APPROPRIATE GCAM owner of THIS EVENT?"
+
+If I were the only reviewer in the world, would I naturally describe this event?
+
+هل هذه المادة هي المالك الأساسي والأكثر ملاءمة لهذا الحدث؟
+
+Do not classify based on keywords or topic similarity.
+
+Keyword matches never establish ownership.
+
+Event meaning always overrides keywords.
+
+If another article owns the event better, or ownership is ambiguous, return:
+
+```json
+{
+  "findings": []
+}
+```
+
+---
+
+## Step 7 — Decide
+
+Decide only after ownership is clear.
+
+If any decision depends on assumptions, interpretation, hidden context, another event, previous knowledge, or missing dialogue, return:
+
+```json
+{
+  "findings": []
+}
+```
+
+---
+
+## Step 8 — Find Evidence
+
+Extract the shortest verbatim quotation from one event only.
+
+Never paraphrase.
+
+Never summarize.
+
+Never merge quotations.
+
+Never include surrounding dialogue unless absolutely required.
+
+---
+
+## Step 9 — Write Finding
+
+Write the explanation only from the selected quotation.
+
+Do not mention facts outside the quotation.
+
+Do not reference previous scenes.
+
+Do not reference future scenes.
+
+Do not use inferred information.
+
+If the explanation cannot be written from the quotation alone, return:
+
+```json
+{
+  "findings": []
+}
+```# Cognitive Review Protocol (MANDATORY)
 
 Before deciding whether any finding exists, follow this reasoning process internally.
 
