@@ -36,7 +36,6 @@ import { PIPELINE_V2_MEMORY_VERSION } from "./pipelineV2/contextMemory.js";
 import { PIPELINE_V2_SCENE_MEMORY_VERSION } from "./pipelineV2/sceneMemory.js";
 import { PIPELINE_V2_SCRIPT_MEMORY_VERSION } from "./pipelineV2/scriptMemory.js";
 import { PIPELINE_EVIDENCE_GROUNDING_VERSION, groundFindingEvidenceToChunk } from "./evidenceGrounding.js";
-import { hasCanonicalAtomArticleMismatch, hasPolicyArticleAnchor as hasPolicyArticleAnchorV5 } from "./verifierStabilization.js";
 import { V3_SUBJECT_DEFINITIONS } from "./v3PromptPack.js";
 import { buildLineageEvent, ensureFindingLineageId, persistLineageEvents } from "./findingLineage.js";
 import { canonicalStringify } from "./canonicalJson.js";
@@ -818,40 +817,6 @@ export function applyMemory2SanityGuards(
       continue;
     }
 
-    if (hasCanonicalAtomArticleMismatch(finding.article_id, finding.canonical_atom, finding.atom_id ?? null)) {
-      rejected.push({
-        reason: "canonical_article_mismatch",
-        article: finding.article_id,
-        title: finding.title_ar,
-        evidence: (finding.evidence_snippet ?? "").slice(0, 220),
-        rationale: rationale.slice(0, 260),
-      });
-      logger.warn("Memory2 sanity guard dropped finding due to canonical/article mismatch", {
-        article: finding.article_id,
-        title: finding.title_ar,
-        canonicalAtom: finding.canonical_atom ?? null,
-        atomId: finding.atom_id ?? null,
-        evidence: (finding.evidence_snippet ?? "").slice(0, 120),
-      });
-      continue;
-    }
-
-    if (finding.article_id >= 4 && !hasPolicyArticleAnchorV5(finding.article_id, combinedLocal)) {
-      rejected.push({
-        reason: "article_topic_mismatch",
-        article: finding.article_id,
-        title: finding.title_ar,
-        evidence: (finding.evidence_snippet ?? "").slice(0, 220),
-        rationale: rationale.slice(0, 260),
-      });
-      logger.warn("Memory2 sanity guard dropped finding without article-topic anchor", {
-        article: finding.article_id,
-        title: finding.title_ar,
-        evidence: (finding.evidence_snippet ?? "").slice(0, 120),
-      });
-      continue;
-    }
-
     // Sexual category must be grounded by explicit sexual anchors in local context.
     // This blocks child-abuse or bullying snippets from leaking into article 10.
     if (isSexualFinding(finding) && !hasSexualAnchorContext(combinedLocal)) {
@@ -1048,14 +1013,6 @@ export function getPassSpecificEvidenceIssue(
 
   if (rationale && !hasRationaleLocalSupport(rationale, localContext)) {
     return "unsupported_rationale";
-  }
-
-  if (hasCanonicalAtomArticleMismatch(articleId, finding.canonical_atom, finding.atom_id ?? null)) {
-    return "canonical_article_mismatch";
-  }
-
-  if (articleId >= 4 && !hasPolicyArticleAnchorV5(articleId, localContext)) {
-    return "article_topic_mismatch";
   }
 
   if ([12, 15, 19, 21, 23].includes(articleId) && !hasDriftProneArticleAnchor(articleId, localContext)) {
