@@ -99,15 +99,6 @@ export type ReviewerBenchmarkReport = {
   };
 };
 
-type MatchedFinding = {
-  finding: ReviewerBenchmarkFindingLike;
-  passName: string;
-  passArticleId: number;
-  event: StructuredEvent | null;
-  score: number;
-  kind: "raw" | "accepted";
-};
-
 const CONTENT_TOKEN_RE = /[\p{L}\p{N}]+/gu;
 const STOPWORDS = new Set([
   "و", "في", "على", "إلى", "الى", "من", "عن", "أن", "إن", "كان", "كانت", "هذا", "هذه",
@@ -453,50 +444,6 @@ export function buildReviewerBenchmarkReport(args: {
     finalFindings: args.finalFindings,
     reviewers: Array.from(reviewerLookup.values()),
   });
-
-  const rawMatches: MatchedFinding[] = [];
-  for (const passResult of args.passResults) {
-    const passArticleId = parsePassArticleNumber(passResult.passName);
-    if (passArticleId == null) continue;
-    for (const finding of passResult.findings) {
-      const match = bestEventMatch(finding, events);
-      rawMatches.push({
-        finding,
-        passName: passResult.passName,
-        passArticleId,
-        event: match.event,
-        score: match.score,
-        kind: "raw",
-      });
-    }
-  }
-
-  const acceptedMatches: MatchedFinding[] = [];
-  for (const finding of args.finalFindings) {
-    const passName = String(finding.detection_pass ?? "").trim();
-    const passArticleId = parsePassArticleNumber(passName);
-    if (passArticleId == null) continue;
-    const match = bestEventMatch(finding, events);
-    acceptedMatches.push({
-      finding,
-      passName,
-      passArticleId,
-      event: match.event,
-      score: match.score,
-      kind: "accepted",
-    });
-  }
-
-  const allMatches = [...acceptedMatches, ...rawMatches];
-  const acceptedByEvent = new Map<number, MatchedFinding[]>();
-  const rawByEvent = new Map<number, MatchedFinding[]>();
-
-  for (const match of allMatches) {
-    if (!match.event) continue;
-    const bucket = match.kind === "accepted" ? acceptedByEvent : rawByEvent;
-    if (!bucket.has(match.event.event_id)) bucket.set(match.event.event_id, []);
-    bucket.get(match.event.event_id)!.push(match);
-  }
 
   const reviewerRows: ReviewerBenchmarkReviewerRow[] = [];
   const falsePositives: ReviewerBenchmarkIssue[] = [];

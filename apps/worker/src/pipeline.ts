@@ -61,6 +61,21 @@ export type FindingWithGlobal = JudgeFinding & {
 };
 
 type MultiPassDetectionResult = Awaited<ReturnType<typeof runMultiPassDetection>>;
+type BenchmarkInstrumentationArgs = {
+  jobId: string;
+  chunkId: string;
+  runKey: string;
+  chunkStart: number;
+  chunkEnd: number;
+  chunkText: string;
+  routerOutputJson: unknown;
+  job: AnalysisJob;
+  chunk: AnalysisChunk;
+  allFindings: FindingWithGlobal[];
+  resolvedFindings: FindingWithGlobal[];
+  multiPassEventUnderstanding: MultiPassDetectionResult["eventUnderstanding"];
+  multiPassPassResults: MultiPassDetectionResult["passResults"];
+};
 
 type AnalysisEngineMode = "v2";
 
@@ -105,6 +120,105 @@ async function isPartialFinalizeRequested(jobId: string): Promise<boolean> {
       timeoutMs: NON_CRITICAL_DB_TIMEOUT_MS,
     });
     return false;
+  }
+}
+
+async function runBenchmarkInstrumentation(args: BenchmarkInstrumentationArgs): Promise<void> {
+  if (config.VIOLATION_SYSTEM_VERSION !== "v5" || !args.multiPassEventUnderstanding) {
+    return;
+  }
+
+  try {
+    if (config.ANALYSIS_EVAL_LOG) {
+      await persistJudgeDiagnostic({
+        diagnostic_kind: "understanding_snapshot",
+        job_id: args.job.id,
+        chunk_id: args.chunk.id,
+        pass_name: "event_understanding",
+        prompt_hash: "",
+        router_candidates: null,
+        raw_judge_response: JSON.stringify(args.multiPassEventUnderstanding),
+        rendered_system_prompt: null,
+        rendered_user_prompt: null,
+        parsed_judge_response: args.multiPassEventUnderstanding,
+        raw_finding_count: 0,
+        parsed_finding_count: 0,
+        finding_count: 0,
+        judge_model: config.OPENAI_JUDGE_MODEL,
+        finish_reason: null,
+        openai_usage: null,
+        openai_response_id: null,
+        raw_response_timestamp: new Date().toISOString(),
+      });
+      logger.info("Understanding snapshot persisted", {
+        chunkId: args.chunk.id,
+        eventCount: args.multiPassEventUnderstanding.event_count,
+      });
+    }
+
+    const reviewerBenchmarkReport = buildReviewerBenchmarkReport({
+      chunkStart: args.chunkStart,
+      chunkEnd: args.chunkEnd,
+      eventUnderstanding: args.multiPassEventUnderstanding,
+      passResults: args.multiPassPassResults,
+      finalFindings: args.allFindings,
+    });
+    const reviewerBenchmarkHtml = buildReviewerBenchmarkHtml(reviewerBenchmarkReport);
+    logger.info("Reviewer benchmark report", toReviewerBenchmarkLog(reviewerBenchmarkReport));
+    logger.info("Reviewer benchmark dashboard generated", {
+      chunkId: args.chunk.id,
+      htmlLength: reviewerBenchmarkHtml.length,
+      reviewerCount: reviewerBenchmarkReport.summary.totalReviewers,
+      eventCount: reviewerBenchmarkReport.eventCount,
+      falsePositiveCount: reviewerBenchmarkReport.falsePositives.length,
+      falseNegativeCount: reviewerBenchmarkReport.falseNegatives.length,
+    });
+
+    const validatorAuditReport = buildValidatorAuditReport({
+      chunkStart: args.chunkStart,
+      chunkEnd: args.chunkEnd,
+      chunkText: args.chunkText,
+      eventUnderstanding: args.multiPassEventUnderstanding,
+      passResults: args.multiPassPassResults,
+      finalFindings: args.resolvedFindings,
+      memory2Enabled: isMemory2Mode(args.job),
+      useEventConsistencyChecks: config.VIOLATION_SYSTEM_VERSION === "v5",
+    });
+    const validatorAuditHtml = buildValidatorAuditHtml(validatorAuditReport);
+    logger.info("Validator audit report", toValidatorAuditLog(validatorAuditReport));
+    logger.info("Validator audit dashboard generated", {
+      chunkId: args.chunk.id,
+      htmlLength: validatorAuditHtml.length,
+      rejectedFindings: validatorAuditReport.summary.totalRejectedFindings,
+      falseRejects: validatorAuditReport.summary.totalFalseRejects,
+    });
+
+    if (config.ENABLE_REVIEWER_TRACE) {
+      const reviewerTraceReport = buildReviewerTraceReport({
+        chunkStart: args.chunkStart,
+        chunkEnd: args.chunkEnd,
+        eventUnderstanding: args.multiPassEventUnderstanding,
+        passResults: args.multiPassPassResults,
+        finalFindings: args.resolvedFindings,
+        validatorAuditReport,
+        decisionAudits: reviewerBenchmarkReport.decisionAudits,
+      });
+      logger.info("Reviewer trace report", toReviewerTraceLog(reviewerTraceReport));
+      logger.info("Reviewer trace enabled", {
+        chunkId: args.chunk.id,
+        reviewerCount: reviewerTraceReport.summary.totalReviewers,
+        eventCount: reviewerTraceReport.summary.totalEvents,
+        findingsEmitted: reviewerTraceReport.summary.totalFindingsEmitted,
+        verifierAccepted: reviewerTraceReport.summary.totalVerifierAccepted,
+        verifierRejected: reviewerTraceReport.summary.totalVerifierRejected,
+      });
+    }
+  } catch (error) {
+    logger.warn("Benchmark instrumentation failed", {
+      jobId: args.jobId,
+      chunkId: args.chunk.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -1979,7 +2093,6 @@ export async function processChunkJudge(
     let multiPassResult: MultiPassDetectionResult | null = null;
     let multiPassEventUnderstanding: MultiPassDetectionResult["eventUnderstanding"] = null;
     let multiPassPassResults: MultiPassDetectionResult["passResults"] = [];
-    let reviewerBenchmarkReport: ReturnType<typeof buildReviewerBenchmarkReport> | null = null;
     try {
       const passExecutionPlan = planDetectionPassExecution(chunkText, selectedArticles, terms);
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
@@ -2274,11 +2387,11 @@ export async function processChunkJudge(
     const afterOverlapCount = allFindings.length;
     allFindings = dropRedundantArticleFourFindings(allFindings);
     const afterArticleFourCollapseCount = allFindings.length;
-    logger.info("[DEBUG] Dedupe/overlap stage complete", {
-      jobId,
-      chunkId: chunk.id,
-      runKey,
-      beforeDedupe: beforeDedupeCount,
+      logger.info("[DEBUG] Dedupe/overlap stage complete", {
+        jobId,
+        chunkId: chunk.id,
+        runKey,
+        beforeDedupe: beforeDedupeCount,
       afterDedupe: afterDedupeCount,
       afterOverlap: afterOverlapCount,
       afterArticleFourCollapse: afterArticleFourCollapseCount,
@@ -2296,52 +2409,6 @@ export async function processChunkJudge(
         finalAiFindings: afterArticleFourCollapseCount,
         lexiconFindings: mandatoryFindings.length,
       });
-      if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
-        if (config.ANALYSIS_EVAL_LOG) {
-          await persistJudgeDiagnostic({
-              diagnostic_kind: "understanding_snapshot",
-              job_id: job.id,
-              chunk_id: chunk.id,
-              pass_name: "event_understanding",
-              prompt_hash: "",
-              router_candidates: null,
-              raw_judge_response: JSON.stringify(multiPassEventUnderstanding),
-              rendered_system_prompt: null,
-              rendered_user_prompt: null,
-              parsed_judge_response: multiPassEventUnderstanding,
-              raw_finding_count: 0,
-              parsed_finding_count: 0,
-              finding_count: 0,
-              judge_model: config.OPENAI_JUDGE_MODEL,
-              finish_reason: null,
-              openai_usage: null,
-              openai_response_id: null,
-              raw_response_timestamp: new Date().toISOString(),
-            });
-          logger.info("Understanding snapshot persisted", {
-              chunkId: chunk.id,
-              eventCount: multiPassEventUnderstanding.event_count,
-            });
-          }
-
-          reviewerBenchmarkReport = buildReviewerBenchmarkReport({
-            chunkStart,
-            chunkEnd,
-            eventUnderstanding: multiPassEventUnderstanding,
-            passResults: multiPassPassResults,
-            finalFindings: allFindings,
-          });
-          const reviewerBenchmarkHtml = buildReviewerBenchmarkHtml(reviewerBenchmarkReport);
-          logger.info("Reviewer benchmark report", toReviewerBenchmarkLog(reviewerBenchmarkReport));
-          logger.info("Reviewer benchmark dashboard generated", {
-            chunkId: chunk.id,
-            htmlLength: reviewerBenchmarkHtml.length,
-            reviewerCount: reviewerBenchmarkReport.summary.totalReviewers,
-            eventCount: reviewerBenchmarkReport.eventCount,
-            falsePositiveCount: reviewerBenchmarkReport.falsePositives.length,
-            falseNegativeCount: reviewerBenchmarkReport.falseNegatives.length,
-          });
-      }
       const canonicalizationKept = new Set(
         allFindings.map((finding) => ensureFindingLineageId(finding, {
           jobId,
@@ -2488,10 +2555,10 @@ export async function processChunkJudge(
         })
       ),
   ]);
-  await persistJudgeDiagnostic({
-    diagnostic_kind: "validated_snapshot",
-    job_id: jobId,
-    chunk_id: chunk.id,
+    await persistJudgeDiagnostic({
+      diagnostic_kind: "validated_snapshot",
+      job_id: jobId,
+      chunk_id: chunk.id,
     prompt_hash: "",
     router_candidates: routerOutputJson,
     raw_judge_response: "",
@@ -2577,10 +2644,10 @@ export async function processChunkJudge(
     });
   }
 
-  if (isMemory2Mode(job)) {
-    const beforeGuard = resolvedFindings.length;
-    const guardResult = applyMemory2SanityGuards(resolvedFindings, normalizedText, chunk.text);
-    resolvedFindings = sortFindingsStable(guardResult.accepted);
+    if (isMemory2Mode(job)) {
+      const beforeGuard = resolvedFindings.length;
+      const guardResult = applyMemory2SanityGuards(resolvedFindings, normalizedText, chunk.text);
+      resolvedFindings = sortFindingsStable(guardResult.accepted);
     const droppedByGuard = guardResult.rejected.length;
     if (droppedByGuard > 0) {
       logger.warn("Memory2 sanity guards dropped findings before persistence", {
@@ -2600,46 +2667,21 @@ export async function processChunkJudge(
     });
   }
 
-  if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
-    const validatorAuditReport = buildValidatorAuditReport({
-      chunkStart,
-      chunkEnd,
-      chunkText,
-      eventUnderstanding: multiPassEventUnderstanding,
-      passResults: multiPassPassResults,
-      finalFindings: resolvedFindings,
-      memory2Enabled: isMemory2Mode(job),
-      useEventConsistencyChecks: config.VIOLATION_SYSTEM_VERSION === "v5",
-    });
-    const validatorAuditHtml = buildValidatorAuditHtml(validatorAuditReport);
-    logger.info("Validator audit report", toValidatorAuditLog(validatorAuditReport));
-    logger.info("Validator audit dashboard generated", {
-      chunkId: chunk.id,
-      htmlLength: validatorAuditHtml.length,
-      rejectedFindings: validatorAuditReport.summary.totalRejectedFindings,
-      falseRejects: validatorAuditReport.summary.totalFalseRejects,
-    });
-    if (config.ENABLE_REVIEWER_TRACE) {
-      const reviewerTraceReport = buildReviewerTraceReport({
-        chunkStart,
-        chunkEnd,
-        eventUnderstanding: multiPassEventUnderstanding,
-        passResults: multiPassPassResults,
-        finalFindings: resolvedFindings,
-        validatorAuditReport,
-        decisionAudits: reviewerBenchmarkReport?.decisionAudits ?? null,
-      });
-      logger.info("Reviewer trace report", toReviewerTraceLog(reviewerTraceReport));
-      logger.info("Reviewer trace enabled", {
-        chunkId: chunk.id,
-        reviewerCount: reviewerTraceReport.summary.totalReviewers,
-        eventCount: reviewerTraceReport.summary.totalEvents,
-        findingsEmitted: reviewerTraceReport.summary.totalFindingsEmitted,
-        verifierAccepted: reviewerTraceReport.summary.totalVerifierAccepted,
-        verifierRejected: reviewerTraceReport.summary.totalVerifierRejected,
-      });
-    }
-  }
+  await runBenchmarkInstrumentation({
+    jobId,
+    chunkId: chunk.id,
+    runKey,
+    chunkStart,
+    chunkEnd,
+    chunkText,
+    routerOutputJson,
+    job,
+    chunk,
+    allFindings,
+    resolvedFindings,
+    multiPassEventUnderstanding,
+    multiPassPassResults,
+  });
 
   throwIfAborted(signal);
   await setChunkPhase(chunk.id, "aggregating");
