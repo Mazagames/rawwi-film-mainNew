@@ -60,6 +60,8 @@ export type FindingWithGlobal = JudgeFinding & {
   secondary_pillar_ids?: string[];
 };
 
+type MultiPassDetectionResult = Awaited<ReturnType<typeof runMultiPassDetection>>;
+
 type AnalysisEngineMode = "v2";
 
 const MAX_EVIDENCE_SPAN = 280;
@@ -1966,7 +1968,7 @@ export async function processChunkJudge(
       selectedArticleCount: selectedIds.length,
       routerDurationMs,
     });
-    logger.info("[DEBUG] Articles passed to multi-pass", {
+  logger.info("[DEBUG] Articles passed to multi-pass", {
       chunkId: chunk.id,
       selectedArticlesCount: selectedArticles.length,
       selectedArticleIds: selectedArticles.map(a => a.id),
@@ -1974,12 +1976,13 @@ export async function processChunkJudge(
 
     // 3) Multi-Pass Detection (specialized scanners running in parallel)
     allFindings = [];
+    let multiPassResult: MultiPassDetectionResult | null = null;
     try {
       const passExecutionPlan = planDetectionPassExecution(chunkText, selectedArticles, terms);
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
       const multiPassStartedAt = Date.now();
       throwIfAborted(signal);
-      const multiPassResult = await runMultiPassDetection(
+      multiPassResult = await runMultiPassDetection(
         chunkText,
         chunkStart,
         chunkEnd,
@@ -2225,24 +2228,32 @@ export async function processChunkJudge(
           skipped: r.skipped ?? false,
           reason: r.reason ?? null,
         }))
-      });
-      logger.info("Chunk multipass timings", {
-        jobId,
-        chunkId: chunk.id,
-        runKey,
-        routerDurationMs,
-        multiPassDurationMs: Date.now() - multiPassStartedAt,
-      });
-    } catch (e) {
-      if (
-        (e instanceof Error && (e.name === "AbortError" || e.name === "ChunkTimeoutError")) ||
-        signal?.aborted
-      ) {
-        throwIfAborted(signal);
-        throw e;
+        });
+        logger.info("Chunk multipass timings", {
+          jobId,
+          chunkId: chunk.id,
+          runKey,
+          routerDurationMs,
+          multiPassDurationMs: Date.now() - multiPassStartedAt,
+        });
+      } catch (e) {
+        if (
+          (e instanceof Error && (e.name === "AbortError" || e.name === "ChunkTimeoutError")) ||
+          signal?.aborted
+        ) {
+          throwIfAborted(signal);
+          throw e;
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        logger.error("Multi-pass detection failed", { error: message, chunkId: chunk.id, runKey });
+        await setChunkFailed(chunk.id, message);
+        return;
       }
-      logger.error("Multi-pass detection failed", { error: String(e), chunkId: chunk.id });
-    }
+
+      if (!multiPassResult) {
+        await setChunkFailed(chunk.id, "Multi-pass detection returned no result");
+        return;
+      }
 
     // 4) Micro-windows (DISABLED for multi-pass - full chunk coverage is sufficient)
     // Multi-pass already provides comprehensive coverage, micro-windows add redundancy
