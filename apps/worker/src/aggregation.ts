@@ -1380,65 +1380,65 @@ export function buildSummaryJson(
   const canonicalGroups = buildCanonicalGroups(deduped, oneCardPerOccurrence, overlapRatio);
 
   for (const [clusterIndex, { key: groupKey, list }] of canonicalGroups.entries()) {
-    const primary = choosePrimaryFromDb(list);
-    const relatedArticleIds = [...new Set(list.map((f) => f.article_id).filter((id) => id !== primary.article_id))].sort((a, b) => a - b);
-    const cId = oneCardPerOccurrence
-      ? `CF-every-${clusterIndex}-${primary.article_id}`
-      : groupKey.startsWith("CF-")
-        ? groupKey
-        : `CF-${Buffer.from(
-          clusterCanonicalKey(
-            list.map((f) => ({
-              ...f,
-              start_offset_global: f.start_offset_global ?? undefined,
-              end_offset_global: f.end_offset_global ?? undefined,
-            }))
-          )
-        ).toString("base64").replace(/=+$/g, "").slice(0, 20)}`;
-    const v3 = getFindingV3(primary);
-    const policyLinks: Array<{ article_id: number; atom_concept_id?: string | null; role?: string | null }> = [
-      { article_id: primary.article_id, role: "primary" },
-      ...relatedArticleIds.map((id) => ({ article_id: id, role: "related" as const })),
-    ];
-    canonicalMap.set(cId, {
-      canonical_finding_id: cId,
-      title_ar: primary.title_ar,
-      evidence_snippet: primary.evidence_snippet,
-      severity: primary.severity,
-      confidence: primary.confidence ?? 0,
-      final_ruling: (v3.final_ruling as string | undefined) ?? null,
-      rationale: (() => {
-        const fromPrimary = (primary.rationale_ar != null && primary.rationale_ar.trim() !== "") ? primary.rationale_ar : null;
-        const fromV3 = ((v3.rationale_ar as string | undefined) != null && (v3.rationale_ar as string).trim() !== "") ? (v3.rationale_ar as string) : null;
-        const raw = fromPrimary ?? fromV3 ?? RATIONALE_FALLBACK;
-        if (isSnippetOnlyRationale(raw, primary.evidence_snippet)) return RATIONALE_FALLBACK;
-        return raw;
-      })(),
-      pillar_id: (v3.pillar_id as string | undefined) ?? null,
-      primary_article_id: primary.article_id,
-      related_article_ids: relatedArticleIds,
-      policy_links: policyLinks,
-      start_offset_global: primary.start_offset_global ?? null,
-      end_offset_global: primary.end_offset_global ?? null,
-      start_line_chunk: primary.start_line_chunk ?? null,
-      end_line_chunk: primary.end_line_chunk ?? null,
-      page_number: primary.page_number ?? null,
-      primary_policy_atom_id: (() => {
-        const n = normalizeAtomId(primary.atom_id, primary.article_id);
-        return n && String(n).trim() !== "" ? String(n) : null;
-      })(),
-      canonical_atom: primary.canonical_atom ?? null,
-      intensity: primary.intensity ?? null,
-      context_impact: primary.context_impact ?? null,
-      legal_sensitivity: primary.legal_sensitivity ?? null,
-      audience_risk: primary.audience_risk ?? null,
-      source:
-        primary.source === "lexicon_mandatory"
-          ? "lexicon_mandatory"
-          : primary.source === "manual"
-            ? "manual"
-            : "ai",
-    });
+    const byArticle = new Map<number, DbFinding[]>();
+    for (const finding of list) {
+      const articleId = finding.article_id ?? 0;
+      if (articleId === 0 || articleId === OUT_OF_SCOPE_ARTICLE_ID) continue;
+      if (!byArticle.has(articleId)) byArticle.set(articleId, []);
+      byArticle.get(articleId)!.push(finding);
+    }
+
+    for (const [articleId, articleList] of [...byArticle.entries()].sort((a, b) => a[0] - b[0])) {
+      const primary = choosePrimaryFromDb(articleList);
+      const relatedArticleIds = [...new Set(articleList.map((f) => f.article_id).filter((id) => id !== articleId))].sort((a, b) => a - b);
+      const cId = oneCardPerOccurrence
+        ? `CF-every-${clusterIndex}-${articleId}`
+        : `${groupKey}-article-${articleId}`;
+      const v3 = getFindingV3(primary);
+      const policyLinks: Array<{ article_id: number; atom_concept_id?: string | null; role?: string | null }> = [
+        { article_id: articleId, role: "primary" },
+        ...relatedArticleIds.map((id) => ({ article_id: id, role: "related" as const })),
+      ];
+      canonicalMap.set(cId, {
+        canonical_finding_id: cId,
+        title_ar: primary.title_ar,
+        evidence_snippet: primary.evidence_snippet,
+        severity: primary.severity,
+        confidence: primary.confidence ?? 0,
+        final_ruling: (v3.final_ruling as string | undefined) ?? null,
+        rationale: (() => {
+          const fromPrimary = (primary.rationale_ar != null && primary.rationale_ar.trim() !== "") ? primary.rationale_ar : null;
+          const fromV3 = ((v3.rationale_ar as string | undefined) != null && (v3.rationale_ar as string).trim() !== "") ? (v3.rationale_ar as string) : null;
+          const raw = fromPrimary ?? fromV3 ?? RATIONALE_FALLBACK;
+          if (isSnippetOnlyRationale(raw, primary.evidence_snippet)) return RATIONALE_FALLBACK;
+          return raw;
+        })(),
+        pillar_id: (v3.pillar_id as string | undefined) ?? null,
+        primary_article_id: articleId,
+        related_article_ids: relatedArticleIds,
+        policy_links: policyLinks,
+        start_offset_global: primary.start_offset_global ?? null,
+        end_offset_global: primary.end_offset_global ?? null,
+        start_line_chunk: primary.start_line_chunk ?? null,
+        end_line_chunk: primary.end_line_chunk ?? null,
+        page_number: primary.page_number ?? null,
+        primary_policy_atom_id: (() => {
+          const n = normalizeAtomId(primary.atom_id, articleId);
+          return n && String(n).trim() !== "" ? String(n) : null;
+        })(),
+        canonical_atom: primary.canonical_atom ?? null,
+        intensity: primary.intensity ?? null,
+        context_impact: primary.context_impact ?? null,
+        legal_sensitivity: primary.legal_sensitivity ?? null,
+        audience_risk: primary.audience_risk ?? null,
+        source:
+          primary.source === "lexicon_mandatory"
+            ? "lexicon_mandatory"
+            : primary.source === "manual"
+              ? "manual"
+              : "ai",
+      });
+    }
   }
 
   const canonical_findings = [...canonicalMap.values()].sort(compareCanonicalItemsStable);

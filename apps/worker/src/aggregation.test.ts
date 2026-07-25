@@ -85,11 +85,34 @@ function testSummaryHasFindingsByArticle() {
   console.log("✓ Summary includes findings from AI, manual, glossary (sources for badge)");
 }
 
+function testCrossArticleOverlapKeepsOwnershipSeparate() {
+  const sharedSpan = {
+    start_offset_global: 10,
+    end_offset_global: 20,
+    start_line_chunk: null,
+    end_line_chunk: null,
+    location: {},
+  };
+  const findings: DbFinding[] = [
+    { source: "ai", article_id: 5, atom_id: "5-1", severity: "medium", confidence: 0.9, title_ar: "A", description_ar: "", evidence_snippet: "shared", ...sharedSpan },
+    { source: "ai", article_id: 8, atom_id: "8-1", severity: "high", confidence: 0.95, title_ar: "B", description_ar: "", evidence_snippet: "shared", ...sharedSpan },
+  ];
+  const summary = buildSummaryJson("job1", "script1", findings);
+  const articleIds = summary.findings_by_article.map((item) => item.article_id).sort((a, b) => a - b);
+  assert(JSON.stringify(articleIds) === JSON.stringify([5, 8]), `expected separate ownership for articles 5 and 8, got ${JSON.stringify(articleIds)}`);
+  const article5 = summary.findings_by_article.find((item) => item.article_id === 5);
+  const article8 = summary.findings_by_article.find((item) => item.article_id === 8);
+  assert((article5?.top_findings[0]?.primary_article_id ?? 0) === 5, "article 5 should remain owner of its finding");
+  assert((article8?.top_findings[0]?.primary_article_id ?? 0) === 8, "article 8 should remain owner of its finding");
+  console.log("✓ Cross-article overlaps keep article ownership separate");
+}
+
 async function main() {
   testArticleOrder();
   testDedup();
   testArticle26Excluded();
   testSummaryHasFindingsByArticle();
+  testCrossArticleOverlapKeepsOwnershipSeparate();
   console.log("\nAll aggregation tests passed.");
 }
 

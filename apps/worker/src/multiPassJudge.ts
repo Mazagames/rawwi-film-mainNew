@@ -28,7 +28,6 @@ import {
   setChunkCurrentPass,
 } from "./jobs.js";
 import { evaluatePassGating } from "./passGating.js";
-import { getGcamRefsForCanonicalAtom } from "./canonicalAtomMapping.js";
 import { config } from "./config.js";
 import {
   buildV3PromptOverlay,
@@ -125,37 +124,17 @@ function sortJudgeFindingsStable(findings: JudgeFinding[]): JudgeFinding[] {
 
 function normalizeFindingForPass(
   finding: JudgeFinding,
-  articles: GCAMArticle[]
+  _articles: GCAMArticle[]
 ): JudgeFinding {
-  const allowedArticleIds = new Set(articles.map((article) => article.id));
-  const fallbackArticleId = articles[0]?.id ?? 5;
-  const canonicalAtom = finding.canonical_atom ?? null;
-  let articleId = typeof finding.article_id === "number" ? finding.article_id : 0;
-  let atomId = finding.atom_id ?? null;
-
-  if (canonicalAtom) {
-    const allowedRefs = getGcamRefsForCanonicalAtom(canonicalAtom).filter((ref) => allowedArticleIds.has(ref.article_id));
-    if (allowedRefs.length > 0) {
-      const currentAllowed = allowedRefs.some((ref) => ref.article_id === articleId);
-      const preferred = allowedRefs[0];
-      if (!currentAllowed) {
-        articleId = preferred.article_id;
-        atomId = preferred.atom_id ?? atomId;
-      } else if (atomId != null && !atomId.startsWith(`${articleId}-`)) {
-        atomId = preferred.atom_id ?? null;
-      }
-    }
-  }
-
-  if (!allowedArticleIds.has(articleId)) {
-    articleId = fallbackArticleId;
-    if (atomId != null && !atomId.startsWith(`${articleId}-`)) atomId = null;
-  }
+  const canonicalAtoms = finding.canonical_atoms ?? null;
+  const canonical_atom =
+    Array.isArray(canonicalAtoms) && canonicalAtoms.length > 0
+      ? canonicalAtoms[0] ?? finding.canonical_atom ?? null
+      : finding.canonical_atom ?? null;
 
   return {
     ...finding,
-    article_id: articleId,
-    atom_id: atomId,
+    canonical_atom,
   };
 }
 

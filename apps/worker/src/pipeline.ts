@@ -25,7 +25,7 @@ import { normalizeFindingTitleAgainstRationale, normalizeMisusedGlossaryPassTitl
 import { persistJudgeDiagnostic } from "./judgeDiagnostics.js";
 import { upsertFindingPolicyLinks } from "./policyLinks.js";
 import { calculateSeverity } from "./severityRulebook.js";
-import { getPrimaryGcamForCanonicalAtom, getPrimaryCanonicalAtomForGcam } from "./canonicalAtomMapping.js";
+import { getPrimaryCanonicalAtomForGcam } from "./canonicalAtomMapping.js";
 import { offsetToPageNumber, computePageLocalSpan, globalOffsetForPageStart, SCRIPT_PAGE_SEPARATOR } from "./offsetToPage.js";
 import { getCachedJobResources } from "./jobAnalysisCache.js";
 import { refineAtomPrecision } from "./atomPrecision.js";
@@ -2450,50 +2450,65 @@ export async function processChunkJudge(
     throw new JobCancelledError();
   }
 
-  // 7) Resolve article_id/atom_id from canonical_atom when missing; compute severity from factors when present.
-  let resolvedFindings = sortFindingsStable(persistedFindings.map((f) => {
-    let article_id = f.article_id;
-    let atom_id = f.atom_id ?? null;
-    let severity = f.severity ?? null;
-    const canonical_atoms = (f as { canonical_atoms?: string[] | null }).canonical_atoms;
-    let canonical_atom = (f as { canonical_atom?: string | null }).canonical_atom ?? null;
-    if (Array.isArray(canonical_atoms) && canonical_atoms.length > 0) {
-      canonical_atom = canonical_atoms[0];
-    }
-    const intensity = (f as { intensity?: number | null }).intensity ?? null;
-    const context_impact = (f as { context_impact?: number | null }).context_impact ?? null;
-    const legal_sensitivity = (f as { legal_sensitivity?: number | null }).legal_sensitivity ?? null;
-    const audience_risk = (f as { audience_risk?: number | null }).audience_risk ?? null;
-    if (article_id === 0 && canonical_atom) {
-      const gcam = getPrimaryGcamForCanonicalAtom(canonical_atom);
-      if (gcam) {
-        article_id = gcam.article_id;
-        atom_id = atom_id ?? gcam.atom_id;
-      }
-    }
-    if (article_id === 0) article_id = 5;
-    if (severity == null && canonical_atom && (intensity != null || context_impact != null || legal_sensitivity != null || audience_risk != null)) {
-      severity = calculateSeverity({
-        canonical_atom,
-        intensity: intensity ?? 1,
-        context_impact: context_impact ?? 1,
-        legal_sensitivity: legal_sensitivity ?? undefined,
-        audience_risk: audience_risk ?? undefined,
-      });
-    }
-    if (severity == null) severity = "medium";
-    return {
-      ...f,
-      article_id,
-      atom_id,
-      severity,
-      canonical_atom,
-      intensity,
-      context_impact,
-      legal_sensitivity,
-      audience_risk,
-    };
-  }));
+  // 7) Preserve reviewer ownership; only enrich metadata and compute severity from factors when present.
+  const ownershipRejectedFindings: Array<{ article_id: number | null | undefined; detection_pass?: string | null }> = [];
+  let resolvedFindings = sortFindingsStable(
+    persistedFindings
+      .map((f) => {
+        let article_id = f.article_id;
+        const atom_id = f.atom_id ?? null;
+        let severity = f.severity ?? null;
+        const canonical_atoms = (f as { canonical_atoms?: string[] | null }).canonical_atoms;
+        const canonical_atom = Array.isArray(canonical_atoms) && canonical_atoms.length > 0
+          ? canonical_atoms[0] ?? (f as { canonical_atom?: string | null }).canonical_atom ?? null
+          : (f as { canonical_atom?: string | null }).canonical_atom ?? null;
+        const intensity = (f as { intensity?: number | null }).intensity ?? null;
+        const context_impact = (f as { context_impact?: number | null }).context_impact ?? null;
+        const legal_sensitivity = (f as { legal_sensitivity?: number | null }).legal_sensitivity ?? null;
+        const audience_risk = (f as { audience_risk?: number | null }).audience_risk ?? null;
+
+        if (!(typeof article_id === "number" && Number.isInteger(article_id) && article_id >= 1)) {
+          ownershipRejectedFindings.push({
+            article_id,
+            detection_pass: (f as { detection_pass?: string | null }).detection_pass ?? null,
+          });
+          return null;
+        }
+
+        if (severity == null && canonical_atom && (intensity != null || context_impact != null || legal_sensitivity != null || audience_risk != null)) {
+          severity = calculateSeverity({
+            canonical_atom,
+            intensity: intensity ?? 1,
+            context_impact: context_impact ?? 1,
+            legal_sensitivity: legal_sensitivity ?? undefined,
+            audience_risk: audience_risk ?? undefined,
+          });
+        }
+        if (severity == null) severity = "medium";
+        return {
+          ...f,
+          article_id,
+          atom_id,
+          severity,
+          canonical_atom,
+          intensity,
+          context_impact,
+          legal_sensitivity,
+          audience_risk,
+        };
+      })
+      .filter((finding): finding is (typeof persistedFindings)[number] => finding != null)
+  );
+
+  if (ownershipRejectedFindings.length > 0) {
+    logger.warn("Dropped findings with unresolved ownership before persistence", {
+      jobId,
+      chunkId: chunk.id,
+      droppedCount: ownershipRejectedFindings.length,
+      articleIds: ownershipRejectedFindings.map((finding) => finding.article_id ?? null),
+      detectionPasses: ownershipRejectedFindings.map((finding) => finding.detection_pass ?? null),
+    });
+  }
 
   if (isMemory2Mode(job)) {
     const beforeGuard = resolvedFindings.length;

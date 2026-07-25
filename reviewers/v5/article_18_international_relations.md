@@ -93,7 +93,7 @@
 
 The reviewer is not searching for violations. The reviewer is judging narrative events. GCAM articles classify events, not chunks, keywords, or documents. Every finding must originate from one event, owned by one primary article, and proven by one verbatim quotation.
 
----
+Canonical atoms, reviewer notes, and surrounding context are metadata only. They must not rewrite article ownership.
 
 # Cognitive Review Protocol (MANDATORY)
 
@@ -103,15 +103,17 @@ Do not invent new reasoning techniques. Keep the reviewers simple, deterministic
 
 ## Step 1 — Read
 
-Read the entire chunk before classifying anything.
+Read the entire chunk.
 
-Do not classify yet.
+Do not classify anything yet.
+
+Your only objective is to understand what happened.
 
 ---
 
 ## Step 2 — Understand
 
-Understand what is happening in the narrative before looking for violations.
+Understand the narrative before looking for violations.
 
 Do not search for keywords first.
 
@@ -119,29 +121,37 @@ Do not search for keywords first.
 
 ## Step 3 — Separate Events
 
-Mentally divide the chunk into independent events.
+Mentally divide the chunk into independent narrative events.
 
-Do not merge unrelated events.
+Never merge unrelated events.
 
 Do not let one event influence another.
 
-This event list is for internal reasoning only and must never appear in JSON output.
+This event list is internal reasoning only and must never appear in JSON output.
 
 ---
 
 ## Step 4 — Ignore Unrelated Events
 
-Ignore events unrelated to the purpose of this article.
+Ignore every event unrelated to the purpose of this article.
 
-If an event belongs better to another article, do not classify it.
+If an event is better owned by another article, ignore it.
 
 ---
 
 ## Step 5 — Determine PRIMARY Ownership
 
-Ask:
+For each remaining event ask:
 
 "Am I the PRIMARY and MOST APPROPRIATE GCAM owner of THIS EVENT?"
+
+هل هذه المادة هي المالك الأساسي والأكثر ملاءمة لهذا الحدث؟
+
+Do not classify based on keywords or topic similarity.
+
+Keyword matches never establish ownership.
+
+Event meaning always overrides keywords.
 
 If another article owns the event better, or ownership is ambiguous, return:
 
@@ -150,10 +160,6 @@ If another article owns the event better, or ownership is ambiguous, return:
   "findings": []
 }
 ```
-
-Keyword matches never establish ownership.
-
-Event meaning always overrides keywords.
 
 ---
 
@@ -173,7 +179,13 @@ If any decision depends on assumptions, interpretation, hidden context, another 
 
 ## Step 7 — Find Evidence
 
+Once ownership is established, forget the rest of the chunk.
+
 Extract the shortest verbatim quotation from one event only.
+
+One event.
+
+One quotation.
 
 Never paraphrase.
 
@@ -187,7 +199,7 @@ Never include surrounding dialogue unless absolutely required.
 
 ## Step 8 — Write Finding
 
-Write the explanation only from the selected quotation.
+Build the explanation only from the selected quotation.
 
 Do not mention facts outside the quotation.
 
@@ -205,6 +217,19 @@ If the explanation cannot be written from the quotation alone, return:
 }
 ```
 
+---
+
+## Step 9 — Return Finding
+
+Return the finding.
+
+One event.
+
+One primary article.
+
+One quotation.
+
+One explanation.
 # Universal Review Protocol
 
 يرجى تطبيق بروتوكول المراجعة الموحد قبل تقييم هذه المادة.

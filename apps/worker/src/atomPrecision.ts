@@ -18,9 +18,7 @@ function includesAny(text: string, needles: string[]): boolean {
 function withPolicy(finding: JudgeFinding, articleId: number, atomId: string | null): JudgeFinding {
   return {
     ...finding,
-    article_id: articleId,
-    atom_id: atomId,
-    canonical_atom: getPrimaryCanonicalAtomForGcam(articleId, atomId) ?? finding.canonical_atom ?? null,
+    canonical_atom: finding.canonical_atom ?? getPrimaryCanonicalAtomForGcam(articleId, atomId) ?? null,
   };
 }
 

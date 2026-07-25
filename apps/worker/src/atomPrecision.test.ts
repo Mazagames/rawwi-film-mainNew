@@ -38,16 +38,18 @@ function run() {
     rationale_ar: "السطر يلوم الضحية ويبرر الإساءة إليها.",
     canonical_atom: "WOMEN",
   }));
-  assert.equal(victimBlaming.article_id, 7);
-  assert.equal(victimBlaming.atom_id, "7-4");
+  assert.equal(victimBlaming.article_id, 5);
+  assert.equal(victimBlaming.atom_id, "5-2");
+  assert.equal(victimBlaming.canonical_atom, "WOMEN");
 
   const genderHumiliation = refineAtomPrecision(baseFinding({
     evidence_snippet: "مكان البنت المطبخ والسرير",
     rationale_ar: "فيه تحقير للمرأة بسبب جنسها.",
     canonical_atom: "WOMEN",
   }));
-  assert.equal(genderHumiliation.article_id, 7);
-  assert.equal(genderHumiliation.atom_id, "7-2");
+  assert.equal(genderHumiliation.article_id, 5);
+  assert.equal(genderHumiliation.atom_id, "5-2");
+  assert.equal(genderHumiliation.canonical_atom, "WOMEN");
 
   const violenceSolution = refineAtomPrecision(baseFinding({
     evidence_snippet: "الضرب هو الحل مع هؤلاء",
@@ -56,16 +58,18 @@ function run() {
     article_id: 5,
     atom_id: "5-1",
   }));
-  assert.equal(violenceSolution.article_id, 9);
-  assert.equal(violenceSolution.atom_id, "9-1");
+  assert.equal(violenceSolution.article_id, 5);
+  assert.equal(violenceSolution.atom_id, "5-1");
+  assert.equal(violenceSolution.canonical_atom, "VIOLENCE");
 
   const dignityHarm = refineAtomPrecision(baseFinding({
     evidence_snippet: "أنت عديم الكرامة ولا قيمة لك",
     rationale_ar: "السياق يهين الكرامة الإنسانية مباشرة.",
     canonical_atom: "PRIVACY",
   }));
-  assert.equal(dignityHarm.article_id, 17);
-  assert.equal(dignityHarm.atom_id, "17-1");
+  assert.equal(dignityHarm.article_id, 5);
+  assert.equal(dignityHarm.atom_id, "5-2");
+  assert.equal(dignityHarm.canonical_atom, "PRIVACY");
 
   console.log("All atom precision tests passed.");
 }
