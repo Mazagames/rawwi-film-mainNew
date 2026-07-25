@@ -22,7 +22,7 @@ export type ReviewerBenchmarkIssue = {
   ownerArticleId: number | null;
   reviewerArticleId: number;
   reviewerPassName: string;
-  claimArticleId: number | null;
+  claimedArticleId: number | null;
   evidenceSnippet: string;
   rationaleAr: string | null;
   verifierStatus: "accepted" | "rejected";
@@ -507,7 +507,7 @@ export function buildReviewerBenchmarkReport(args: {
         ownerArticleId: audit.expectedArticleId,
         reviewerArticleId: audit.reviewerArticleId,
         reviewerPassName: audit.reviewerPassName,
-        claimArticleId: audit.claimedArticleId,
+        claimedArticleId: audit.claimedArticleId,
         evidenceSnippet: audit.findingEvidence,
         rationaleAr: audit.findingRationale,
         verifierStatus: audit.acceptedByVerifier ? "accepted" : "rejected",
@@ -704,7 +704,7 @@ function renderFalsePositiveRows(rows: ReviewerBenchmarkIssue[]): string {
         <td>${formatInteger(row.eventId)}</td>
         <td>${escapeHtml(String(row.reviewerArticleId).padStart(2, "0"))}</td>
         <td>${escapeHtml(row.reviewerPassName)}</td>
-        <td>${escapeHtml(String(row.claimArticleId ?? "n/a"))}</td>
+        <td>${escapeHtml(String(row.claimedArticleId ?? "n/a"))}</td>
         <td>${escapeHtml(String(row.ownerArticleId ?? "n/a"))}</td>
         <td>${escapeHtml(row.verifierStatus)}</td>
         <td>${escapeHtml(row.eventQuote)}</td>

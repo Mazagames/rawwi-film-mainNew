@@ -1966,6 +1966,9 @@ export async function processChunkJudge(
   let validatedFindingCount: number | null = null;
   let selectedIds: number[];
   let routerOutputJson: any = null;
+  let multiPassResult: MultiPassDetectionResult | null = null;
+  let multiPassEventUnderstanding: MultiPassDetectionResult["eventUnderstanding"] = null;
+  let multiPassPassResults: MultiPassDetectionResult["passResults"] = [];
 
   const cachedValidated = ((cachedRun?.validated_ai_findings as any[]) || []) as FindingWithGlobal[];
   const cachedLegacy = ((cachedRun?.ai_findings as any[]) || []) as FindingWithGlobal[];
@@ -2090,9 +2093,6 @@ export async function processChunkJudge(
 
     // 3) Multi-Pass Detection (specialized scanners running in parallel)
     allFindings = [];
-    let multiPassResult: MultiPassDetectionResult | null = null;
-    let multiPassEventUnderstanding: MultiPassDetectionResult["eventUnderstanding"] = null;
-    let multiPassPassResults: MultiPassDetectionResult["passResults"] = [];
     try {
       const passExecutionPlan = planDetectionPassExecution(chunkText, selectedArticles, terms);
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
@@ -2675,12 +2675,12 @@ export async function processChunkJudge(
     chunkEnd,
     chunkText,
     routerOutputJson,
-    job,
-    chunk,
-    allFindings,
-    resolvedFindings,
-    multiPassEventUnderstanding,
-    multiPassPassResults,
+    job: structuredClone(job),
+    chunk: structuredClone(chunk),
+    allFindings: structuredClone(allFindings),
+    resolvedFindings: structuredClone(resolvedFindings),
+    multiPassEventUnderstanding: multiPassEventUnderstanding ? structuredClone(multiPassEventUnderstanding) : null,
+    multiPassPassResults: structuredClone(multiPassPassResults),
   });
 
   throwIfAborted(signal);

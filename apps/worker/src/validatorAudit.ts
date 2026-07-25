@@ -24,7 +24,7 @@ export type ValidatorAuditRejectionRow = {
   rule: string;
   reviewerArticleId: number;
   reviewerPassName: string;
-  claimArticleId: number | null;
+  claimedArticleId: number | null;
   eventId: number | null;
   eventQuote: string;
   evidenceSnippet: string;
@@ -1076,7 +1076,7 @@ export function buildValidatorAuditReport(args: {
 
     for (const finding of passResult.findings) {
       totalFindingsReviewed++;
-      const claimArticleId = finding.article_id ?? reviewerArticleId;
+      const claimedArticleId: number | null = finding.article_id ?? reviewerArticleId;
       const bestMatch = bestEventMatch(finding, events);
       const event = bestMatch.event;
       const groundedPreview = groundFindingEvidenceToChunk(finding, args.chunkText);
@@ -1113,7 +1113,7 @@ export function buildValidatorAuditReport(args: {
 
       const demonstrablyCorrect =
         Boolean(event) &&
-        reviewerArticleId === claimArticleId &&
+        reviewerArticleId === claimedArticleId &&
         isSnippetSupportedByEvent(finding, event!) &&
         isExplanationSupportedByEvent(finding, event!);
 
@@ -1123,7 +1123,7 @@ export function buildValidatorAuditReport(args: {
         rule: rejection.rule ?? rejection.rejectionReason,
         reviewerArticleId,
         reviewerPassName: passResult.passName,
-        claimArticleId,
+        claimedArticleId,
         eventId: event?.event_id ?? null,
         eventQuote: event?.quote ?? "",
         evidenceSnippet: String(finding.evidence_snippet ?? ""),
