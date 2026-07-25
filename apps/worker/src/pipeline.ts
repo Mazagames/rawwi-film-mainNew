@@ -2279,12 +2279,39 @@ export async function processChunkJudge(
         finalAiFindings: afterArticleFourCollapseCount,
         lexiconFindings: mandatoryFindings.length,
       });
-      if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassResult.eventUnderstanding) {
-        const reviewerBenchmarkReport = buildReviewerBenchmarkReport({
-          chunkStart,
-          chunkEnd,
-          eventUnderstanding: multiPassResult.eventUnderstanding,
-          passResults: multiPassResult.passResults,
+        if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassResult.eventUnderstanding) {
+          if (config.ANALYSIS_EVAL_LOG) {
+            await persistJudgeDiagnostic({
+              diagnostic_kind: "understanding_snapshot",
+              job_id: job.id,
+              chunk_id: chunk.id,
+              pass_name: "event_understanding",
+              prompt_hash: "",
+              router_candidates: null,
+              raw_judge_response: JSON.stringify(multiPassResult.eventUnderstanding),
+              rendered_system_prompt: null,
+              rendered_user_prompt: null,
+              parsed_judge_response: multiPassResult.eventUnderstanding,
+              raw_finding_count: 0,
+              parsed_finding_count: 0,
+              finding_count: 0,
+              judge_model: config.OPENAI_JUDGE_MODEL,
+              finish_reason: null,
+              openai_usage: null,
+              openai_response_id: null,
+              raw_response_timestamp: new Date().toISOString(),
+            });
+            logger.info("Understanding snapshot persisted", {
+              chunkId: chunk.id,
+              eventCount: multiPassResult.eventUnderstanding.event_count,
+            });
+          }
+
+          const reviewerBenchmarkReport = buildReviewerBenchmarkReport({
+            chunkStart,
+            chunkEnd,
+            eventUnderstanding: multiPassResult.eventUnderstanding,
+            passResults: multiPassResult.passResults,
           finalFindings: allFindings,
         });
         const reviewerBenchmarkHtml = buildReviewerBenchmarkHtml(reviewerBenchmarkReport);

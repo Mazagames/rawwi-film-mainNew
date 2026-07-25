@@ -30,6 +30,9 @@ Main write paths:
   - after scene analyzer Judge response parse attempt
   - diagnostic_kind = judge_call
 - apps/worker/src/pipeline.ts
+  - benchmark / eval mode only, after V5 Event Understanding completes
+  - diagnostic_kind = understanding_snapshot
+- apps/worker/src/pipeline.ts
   - after chunk processing is complete, immediately before analysis_findings upsert
   - diagnostic_kind = chunk_final
 
@@ -45,7 +48,7 @@ Main write paths:
   - Chunk id associated with this diagnostic record.
 
 - diagnostic_kind
-  - judge_call or chunk_final.
+  - judge_call, understanding_snapshot, or chunk_final.
 
 - prompt_hash
   - SHA256 of the exact Judge prompt payload (system + user) for judge_call rows.

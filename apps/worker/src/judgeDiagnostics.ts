@@ -15,7 +15,7 @@ export type JudgeDiagnosticInsert = {
   parsed_judge_response?: unknown;
   raw_finding_count?: number | null;
   parsed_finding_count?: number | null;
-  diagnostic_kind?: "judge_call" | "chunk_final" | "validated_snapshot" | "pass_output_snapshot" | "raw_judge_snapshot";
+  diagnostic_kind?: "judge_call" | "chunk_final" | "validated_snapshot" | "pass_output_snapshot" | "raw_judge_snapshot" | "understanding_snapshot";
   pass_name?: string | null;
   findings_json?: unknown;
   finding_count?: number | null;

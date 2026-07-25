@@ -23,13 +23,15 @@ function testPromptContract(): void {
   assert(prompt.includes("The action must always be the central observable action"), "user prompt should define action clearly");
   assert(prompt.includes("dominant_meaning must be a short objective description"), "user prompt should constrain dominant meaning");
   assert(prompt.includes("If two reasonable readers could describe the same event differently"), "user prompt should require objective descriptions");
+  assert(!prompt.includes("chunk_start:"), "user prompt should not ask the model to regenerate chunk_start");
+  assert(!prompt.includes("chunk_end:"), "user prompt should not ask the model to regenerate chunk_end");
   console.log("✓ event understanding prompt contract");
 }
 
 function testParseEventUnderstandingOutput(): void {
   const raw = JSON.stringify({
-    chunk_start: 120,
-    chunk_end: 156,
+    chunk_start: 999,
+    chunk_end: 888,
     event_count: 1,
     events: [
       {
