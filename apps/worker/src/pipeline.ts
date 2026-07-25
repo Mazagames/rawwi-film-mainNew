@@ -3001,6 +3001,8 @@ export async function processChunkJudge(
         errorHint: error.hint,
         errorCode: error.code,
       });
+      await setChunkFailed(chunk.id, `AI findings upsert failed: ${error.message}`);
+      throw new Error(`AI findings upsert failed: ${error.message}`);
     } else {
       await persistLineageEvents(
         rows.map((row) =>

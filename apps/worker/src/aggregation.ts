@@ -2200,6 +2200,7 @@ export async function runAggregation(jobId: string): Promise<void> {
       status: reportStatus,
       reportId,
     });
+    throw new Error(`Aggregation report upsert failed: ${reportErr instanceof Error ? reportErr.message : String(reportErr)}`);
   }
 
   if (!savedReport || !reportId) {
@@ -2216,6 +2217,7 @@ export async function runAggregation(jobId: string): Promise<void> {
       status: reportStatus,
       reportId,
     });
+    throw new Error("Aggregation report upsert returned no usable row");
   }
 
   if (reportId) {
