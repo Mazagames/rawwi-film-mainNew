@@ -1,15 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { logger } from "./logger.js";
-import { getPolicyArticle } from "./policyMap.js";
 
 export type V5ReviewerDefinition = {
-  name: string;
+  articleNumber: number;
+  articleTitle: string;
+  filename: string;
+  prompt: string;
   displayLabel: string;
-  fileName: string;
-  filePath: string;
-  articleIds: number[];
-  markdown: string;
 };
 
 type LoadedV5Pack = {
@@ -22,98 +20,216 @@ type DirectoryEntryLike = {
   name: string;
 };
 
+type ParsedV5ReviewerMarkdown = {
+  articleNumber: number;
+  articleTitle: string;
+  prompt: string;
+};
+
+const EXPECTED_V5_REVIEWER_COUNT = 24;
+const EXPECTED_ARTICLE_MIN = 1;
+const EXPECTED_ARTICLE_MAX = 24;
+
 let cachedPack: LoadedV5Pack | null = null;
 
-function resolveReviewerDirectory(): string {
-  const candidates = [
-    resolve(process.cwd(), "apps", "worker", "V5"),
-    resolve(process.cwd(), "V5"),
-    resolve(process.cwd(), "..", "V5"),
-    resolve("/app", "apps", "worker", "V5"),
-    resolve("/app", "V5"),
-  ];
-
-  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+function failV5ReviewerLoad(message: string, extra?: Record<string, unknown>): never {
+  logger.error("Loaded Reviewer Pack V5 validation failed", {
+    message,
+    ...extra,
+  });
+  throw new Error(message);
 }
 
-function compareFileNames(a: string, b: string): number {
-  return a.localeCompare(b, "en", { sensitivity: "base", numeric: true });
+function compareNumericArticleIds(a: number, b: number): number {
+  return a - b;
 }
 
-function extractArticleIds(fileName: string, fallbackIndex: number): number[] {
-  const matches = fileName.match(/\d+/g) ?? [];
-  const ids = [...new Set(matches.map((match) => Number.parseInt(match, 10)).filter((value) => Number.isFinite(value)))];
-  if (ids.length > 0) return ids;
-  return [fallbackIndex + 1];
+function isMarkdownFile(fileName: string): boolean {
+  return /\.md$/i.test(fileName);
 }
 
-function buildReviewerDisplayLabel(articleIds: number[], fileName: string): string {
-  const labels = articleIds
-    .map((articleId) => {
-      const article = getPolicyArticle(articleId);
-      if (!article?.title_ar?.trim()) return null;
-      return `المادة ${articleId}: ${article.title_ar.trim()}`;
-    })
-    .filter((value): value is string => Boolean(value));
+function normalizeMarkdown(markdown: string): string {
+  return markdown.replace(/\r\n?/g, "\n");
+}
 
-  if (labels.length > 0) {
-    return labels.join(" • ");
+function formatArticleLabel(articleNumber: number, articleTitle: string): string {
+  return `المادة ${String(articleNumber).padStart(2, "0")}: ${articleTitle}`;
+}
+
+function parseV5ReviewerMarkdown(filename: string, markdown: string): ParsedV5ReviewerMarkdown {
+  const normalized = normalizeMarkdown(markdown);
+  if (!normalized.trim()) {
+    failV5ReviewerLoad("V5 reviewer markdown file is empty", { filename });
   }
 
-  const fallbackArticle = articleIds[0];
-  if (typeof fallbackArticle === "number" && Number.isFinite(fallbackArticle)) {
-    return `المادة ${fallbackArticle}`;
+  const lines = normalized.split("\n");
+  if (lines.length < 2) {
+    failV5ReviewerLoad("V5 reviewer markdown is missing the required two-line header", { filename });
   }
 
-  return fileName.replace(/\.md$/i, "");
+  const firstLine = lines[0];
+  const secondLine = lines[1];
+
+  const articleMatch = /^# Article (\d{2})$/.exec(firstLine);
+  if (!articleMatch) {
+    failV5ReviewerLoad("V5 reviewer markdown has an invalid # Article XX header", {
+      filename,
+      firstLine,
+    });
+  }
+
+  const articleNumber = Number.parseInt(articleMatch[1], 10);
+  if (!Number.isInteger(articleNumber) || articleNumber < EXPECTED_ARTICLE_MIN || articleNumber > EXPECTED_ARTICLE_MAX) {
+    failV5ReviewerLoad("V5 reviewer article number must be between 01 and 24", {
+      filename,
+      articleNumber,
+    });
+  }
+
+  const titleMatch = /^## (.+)$/.exec(secondLine);
+  if (!titleMatch) {
+    failV5ReviewerLoad("V5 reviewer markdown has an invalid ## <Arabic Name> header", {
+      filename,
+      secondLine,
+    });
+  }
+
+  const articleTitle = titleMatch[1].trim();
+  if (!articleTitle) {
+    failV5ReviewerLoad("V5 reviewer article title is empty", { filename });
+  }
+
+  return {
+    articleNumber,
+    articleTitle,
+    prompt: normalized,
+  };
 }
 
-function loadReviewerPack(): LoadedV5Pack {
-  const reviewerDirectory = resolveReviewerDirectory();
+function resolveReviewerDirectory(baseDir = process.cwd()): string {
+  const canonical = resolve(baseDir, "reviewers", "v5");
+  if (existsSync(canonical)) {
+    return canonical;
+  }
+
+  failV5ReviewerLoad("V5 reviewer directory not found", {
+    canonical,
+  });
+}
+
+function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack {
   const reviewerFiles: string[] = readdirSync(reviewerDirectory, { withFileTypes: true })
     .filter((entry: DirectoryEntryLike) => entry.isFile())
     .map((entry: DirectoryEntryLike) => entry.name)
-    .filter((fileName: string) => /^article[_-]?\d.*\.md$/i.test(fileName))
-    .sort(compareFileNames);
+    .filter(isMarkdownFile);
 
-  const reviewerDefinitions: V5ReviewerDefinition[] = reviewerFiles.map((fileName: string, index: number) => {
-    const filePath = resolve(reviewerDirectory, fileName);
-    const markdown = readFileSync(filePath, "utf8");
-    const articleIds = extractArticleIds(fileName, index);
-    return {
-      name: fileName.replace(/\.md$/i, ""),
-      displayLabel: buildReviewerDisplayLabel(articleIds, fileName),
-      fileName,
-      filePath,
-      articleIds,
-      markdown,
-    };
-  });
-
-  if (reviewerDefinitions.length === 0) {
-    throw new Error(`No V5 reviewer markdown files were found in ${reviewerDirectory}`);
+  if (reviewerFiles.length === 0) {
+    failV5ReviewerLoad("No V5 reviewer markdown files were found", {
+      reviewerDirectory,
+    });
   }
 
-  logger.info("Violation Prompt System: V5", {
+  const parsedReviewers = reviewerFiles.map((filename) => {
+    const filePath = resolve(reviewerDirectory, filename);
+    const markdown = readFileSync(filePath, "utf8");
+    const parsed = parseV5ReviewerMarkdown(filename, markdown);
+    return {
+      articleNumber: parsed.articleNumber,
+      articleTitle: parsed.articleTitle,
+      filename,
+      prompt: parsed.prompt,
+      displayLabel: formatArticleLabel(parsed.articleNumber, parsed.articleTitle),
+    } satisfies V5ReviewerDefinition;
+  });
+
+  if (parsedReviewers.length !== EXPECTED_V5_REVIEWER_COUNT) {
+    failV5ReviewerLoad("V5 reviewer pack must contain exactly 24 markdown files", {
+      reviewerDirectory,
+      reviewerCount: parsedReviewers.length,
+      expectedCount: EXPECTED_V5_REVIEWER_COUNT,
+    });
+  }
+
+  const byArticle = new Map<number, V5ReviewerDefinition>();
+  for (const reviewer of parsedReviewers) {
+    if (reviewer.articleNumber < EXPECTED_ARTICLE_MIN || reviewer.articleNumber > EXPECTED_ARTICLE_MAX) {
+      failV5ReviewerLoad("V5 reviewer article number is outside the allowed range", {
+        reviewerDirectory,
+        filename: reviewer.filename,
+        articleNumber: reviewer.articleNumber,
+      });
+    }
+
+    if (byArticle.has(reviewer.articleNumber)) {
+      const existing = byArticle.get(reviewer.articleNumber)!;
+      failV5ReviewerLoad("V5 reviewer pack contains duplicate article numbers", {
+        articleNumber: reviewer.articleNumber,
+        firstFilename: existing.filename,
+        duplicateFilename: reviewer.filename,
+      });
+    }
+
+    byArticle.set(reviewer.articleNumber, reviewer);
+  }
+
+  const missingArticleNumbers: number[] = [];
+  for (let articleNumber = EXPECTED_ARTICLE_MIN; articleNumber <= EXPECTED_ARTICLE_MAX; articleNumber += 1) {
+    if (!byArticle.has(articleNumber)) {
+      missingArticleNumbers.push(articleNumber);
+    }
+  }
+  if (missingArticleNumbers.length > 0) {
+    failV5ReviewerLoad("V5 reviewer pack is missing one or more article numbers", {
+      reviewerDirectory,
+      missingArticleNumbers,
+    });
+  }
+
+  const orderedReviewers = Array.from(byArticle.values()).sort((a, b) => compareNumericArticleIds(a.articleNumber, b.articleNumber));
+
+  logger.info("Loaded Reviewer Pack V5", {
     reviewerDirectory,
-    reviewerCount: reviewerDefinitions.length,
-    reviewerFilesLoaded: reviewerDefinitions.map((reviewer) => reviewer.fileName),
-    reviewerLabelsLoaded: reviewerDefinitions.map((reviewer) => reviewer.displayLabel),
+    reviewerCount: orderedReviewers.length,
+    reviewerFilesLoaded: orderedReviewers.map((reviewer) => reviewer.filename),
+    reviewerArticlesLoaded: orderedReviewers.map((reviewer) => reviewer.articleNumber),
+    reviewerLabelsLoaded: orderedReviewers.map((reviewer) => reviewer.displayLabel),
+  });
+
+  logger.info("Reviewer pack validation passed", {
+    reviewerDirectory,
+    reviewerCount: orderedReviewers.length,
+    articleChecks: orderedReviewers.map((reviewer) => `Article ${String(reviewer.articleNumber).padStart(2, "0")} ✓`),
   });
 
   return {
     reviewerDirectory,
-    reviewerDefinitions,
+    reviewerDefinitions: orderedReviewers,
   };
 }
 
 export function getV5ReviewerPack(): LoadedV5Pack {
   if (!cachedPack) {
-    cachedPack = loadReviewerPack();
+    cachedPack = loadReviewerPackFromDirectory(resolveReviewerDirectory());
   }
   return cachedPack;
 }
 
 export function getV5ReviewerDefinitions(): V5ReviewerDefinition[] {
   return getV5ReviewerPack().reviewerDefinitions;
+}
+
+export function clearV5ReviewerPackCacheForTests(): void {
+  cachedPack = null;
+}
+
+export function resolveV5ReviewerDirectoryForTests(baseDir: string): string {
+  return resolveReviewerDirectory(baseDir);
+}
+
+export function parseV5ReviewerMarkdownForTests(filename: string, markdown: string): ParsedV5ReviewerMarkdown {
+  return parseV5ReviewerMarkdown(filename, markdown);
+}
+
+export function loadV5ReviewerPackFromDirectoryForTests(reviewerDirectory: string): LoadedV5Pack {
+  return loadReviewerPackFromDirectory(reviewerDirectory);
 }

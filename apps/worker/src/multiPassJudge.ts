@@ -1601,12 +1601,12 @@ const ACTIVE_SUBJECT_PASSES: PassDefinition[] = [
 
 function buildV5DetectionPasses(): PassDefinition[] {
   return getV5ReviewerDefinitions().map((reviewer) => ({
-    name: reviewer.name,
+    name: `v5_article_${String(reviewer.articleNumber).padStart(2, "0")}`,
     displayLabel: reviewer.displayLabel,
-    articleIds: reviewer.articleIds,
-    buildPrompt: () => reviewer.markdown,
+    articleIds: [reviewer.articleNumber],
+    buildPrompt: () => reviewer.prompt,
     model: config.OPENAI_JUDGE_MODEL,
-    sourceFileName: reviewer.fileName,
+    sourceFileName: reviewer.filename,
   }));
 }
 

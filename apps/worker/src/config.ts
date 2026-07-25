@@ -70,7 +70,7 @@ export const config = {
    * - v2: current live prompts
    * - v3: new policy-driven prompt overlay built from the updated violation handbook
    * - v4: film-commission regulation pack (new regulation.md)
-   * - v5: markdown reviewers loaded from apps/worker/V5
+   * - v5: markdown reviewers loaded from reviewers/v5
    */
   VIOLATION_SYSTEM_VERSION: ((): "v2" | "v3" | "v4" | "v5" => {
     const value = (process.env.VIOLATION_SYSTEM_VERSION ?? "v3").toLowerCase();
