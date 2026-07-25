@@ -128,10 +128,12 @@ function testVerificationPromptContract(): void {
     ],
   };
 
-  const prompt = buildEventUnderstandingVerifierUserPrompt(understanding, "تسرب الوثيقة ثم انتشر الخبر");
+  const prompt = buildEventUnderstandingVerifierUserPrompt(understanding);
   assert(EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT.includes("screenplay understanding verifier"), "verifier system prompt should define its role");
-  assert(prompt.includes("Compare the screenplay chunk with the structured events."), "verifier user prompt should compare chunk and events");
+  assert(EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT.includes("JSON"), "verifier system prompt should explicitly require JSON");
+  assert(prompt.includes("Compare the structured events with the understanding criteria."), "verifier user prompt should compare events only");
   assert(prompt.includes("Did any event merge unrelated actions?"), "verifier user prompt should check for merged events");
+  assert(prompt.includes("Return only valid JSON"), "verifier user prompt should explicitly require JSON");
   assert(prompt.includes("Do not add policy language."), "verifier user prompt should remain domain neutral");
 
   const ok = parseEventUnderstandingVerificationOutput('{ "status": "ok" }');

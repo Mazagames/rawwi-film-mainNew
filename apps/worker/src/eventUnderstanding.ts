@@ -431,10 +431,17 @@ You must compare the screenplay chunk with the structured events and correct onl
 Do not invent new policy language.
 Do not classify content.
 Do not assign articles.
-Do not add GCAM reasoning.`;
+Do not add GCAM reasoning.
 
-export function buildEventUnderstandingVerifierUserPrompt(result: EventUnderstandingPassResult, chunkText: string): string {
-  return `Compare the screenplay chunk with the structured events.
+Return only valid JSON.
+The response must be a single JSON object.
+Do not include markdown.
+Do not include explanations.
+Do not include prose.
+Output only JSON matching the required schema.`;
+
+export function buildEventUnderstandingVerifierUserPrompt(result: EventUnderstandingPassResult): string {
+  return `Compare the structured events with the understanding criteria.
 
 Check only these questions:
 - Did any event merge unrelated actions?
@@ -442,13 +449,9 @@ Check only these questions:
 - Was any meaningful event omitted?
 - Are event summaries objective?
 
-Use the screenplay only to verify the structured events.
 Do not add policy language.
 Do not classify anything.
 Do not invent new events unless the structured events are incomplete or objectively wrong.
-
-Screenplay chunk:
-${chunkText}
 
 Structured events:
 ${canonicalStringify({
@@ -458,7 +461,7 @@ ${canonicalStringify({
     events: result.events,
   })}
 
-Return only one of these shapes:
+Return only valid JSON matching one of these shapes:
 { "status": "ok" }
 
 or:
@@ -547,7 +550,7 @@ async function callEventUnderstandingOpenAI(chunkText: string, chunkStart: numbe
   return content;
 }
 
-async function callEventUnderstandingVerificationOpenAI(result: EventUnderstandingPassResult, chunkText: string): Promise<{
+async function callEventUnderstandingVerificationOpenAI(result: EventUnderstandingPassResult): Promise<{
   rawResponse: string;
   responseId: string | null;
   responseTimestamp: string;
@@ -558,14 +561,13 @@ async function callEventUnderstandingVerificationOpenAI(result: EventUnderstandi
     total_tokens?: number;
   } | null;
 }> {
-  const userPrompt = buildEventUnderstandingVerifierUserPrompt(result, chunkText);
+  const userPrompt = buildEventUnderstandingVerifierUserPrompt(result);
 
   logger.info("[DEBUG] Event understanding verifier request prepared", {
     model: config.OPENAI_JUDGE_MODEL,
     chunkStart: result.chunk_start,
     chunkEnd: result.chunk_end,
     eventCount: result.event_count,
-    chunkLength: chunkText.length,
   });
 
   const response = await openai.chat.completions.create({
@@ -610,7 +612,7 @@ export async function buildEventUnderstandingPass(
   try {
     const raw = await callEventUnderstandingOpenAI(chunkText, chunkStart, chunkEnd);
     const parsed = parseEventUnderstandingOutput(raw, chunkStart, chunkEnd);
-    const verification = await callEventUnderstandingVerificationOpenAI(parsed, chunkText);
+    const verification = await callEventUnderstandingVerificationOpenAI(parsed);
     const parsedVerification = parseEventUnderstandingVerificationOutput(verification.rawResponse);
     const finalEvents = parsedVerification.status === "corrected" ? parsedVerification.events : parsed.events;
     const finalResult: EventUnderstandingPassResult = {
