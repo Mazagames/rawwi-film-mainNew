@@ -101,6 +101,7 @@ export const config = {
    * but findings continue through persistence and reporting.
    */
   VALIDATOR_AUDIT_MODE: (process.env.VALIDATOR_AUDIT_MODE ?? "false").toLowerCase() === "true",
+  TITLE_NORMALIZATION_AUDIT: (process.env.TITLE_NORMALIZATION_AUDIT ?? "false").toLowerCase() === "true",
   /**
    * Enable deep GPT auditor pass for canonical findings.
    * Kept for legacy evaluation jobs and report generation.

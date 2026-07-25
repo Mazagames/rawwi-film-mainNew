@@ -7,6 +7,119 @@ export const GLOSSARY_PASS_TITLE_PLACEHOLDER = "لفظ محظور من المع�
 const GLOSSARY_STYLE_TITLE = /^مخالفة\s+معجمية\s*:\s*(.+)$/;
 const GLOSSARY_CANONICAL_TITLE = /^مطابقة\s+من\s+قاموس\s+المصطلحات\s*:\s*(.+)$/;
 
+export type TitleNormalizationDecision = {
+  originalTitle: string;
+  technicalTitle: string;
+  title: string;
+  ruleName: string;
+  reason: string;
+  changed: boolean;
+  technicalChanged: boolean;
+  semanticChanged: boolean;
+};
+
+export function normalizeTitleTechnical(value: string | undefined | null): string {
+  return (value ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
+}
+
+function buildTechnicalDecision(originalTitleValue: string | undefined | null): TitleNormalizationDecision {
+  const originalTitle = originalTitleValue ?? "";
+  const technicalTitle = normalizeTitleTechnical(originalTitleValue);
+  const technicalChanged = technicalTitle !== originalTitle;
+  return {
+    originalTitle,
+    technicalTitle,
+    title: technicalTitle,
+    ruleName: technicalChanged ? "technical_cleanup" : "technical_preserve",
+    reason: technicalChanged
+      ? "Applied technical normalization only (whitespace / Unicode cleanup)."
+      : "Title preserved with no technical normalization needed.",
+    changed: technicalChanged,
+    technicalChanged,
+    semanticChanged: false,
+  };
+}
+
+export function normalizeTitleForPersistence(params: {
+  titleAr: string | undefined | null;
+}): TitleNormalizationDecision {
+  return buildTechnicalDecision(params.titleAr);
+}
+
+export function normalizeFindingTitleDecision(params: {
+  titleAr: string | undefined | null;
+  rationaleAr?: string | null;
+  descriptionAr?: string | null;
+  evidenceSnippet?: string | null;
+  source?: string | null;
+  detectionPass?: string | null;
+  articleId?: number | null;
+  allowSemanticRewrite?: boolean;
+}): TitleNormalizationDecision {
+  const originalTitle = params.titleAr ?? "";
+  const technicalTitle = normalizeTitleTechnical(originalTitle);
+  const allowSemanticRewrite = params.allowSemanticRewrite ?? true;
+
+  if (!allowSemanticRewrite) {
+    const title = technicalTitle || originalTitle.trim() || "مخالفة محتوى";
+    const technicalChanged = title !== originalTitle;
+    return {
+      originalTitle,
+      technicalTitle,
+      title,
+      ruleName: technicalChanged ? "technical_cleanup" : "technical_preserve",
+      reason: technicalChanged
+        ? "Applied technical normalization only (whitespace / Unicode cleanup)."
+        : "Title preserved with no technical normalization needed.",
+      changed: technicalChanged,
+      technicalChanged,
+      semanticChanged: false,
+    };
+  }
+
+  const glossarySafeTitle = normalizeMisusedGlossaryPassTitle({
+    titleAr: originalTitle,
+    rationaleAr: params.rationaleAr ?? null,
+    detectionPass: params.detectionPass ?? null,
+    evidenceSnippet: params.evidenceSnippet ?? "",
+    articleId: params.articleId ?? 0,
+  });
+  const semanticTitle = normalizeFindingTitleAgainstRationale({
+    titleAr: glossarySafeTitle,
+    rationaleAr: params.rationaleAr ?? null,
+    descriptionAr: params.descriptionAr ?? null,
+    evidenceSnippet: params.evidenceSnippet ?? null,
+    source: params.source ?? null,
+  });
+  const semanticChanged = semanticTitle !== technicalTitle;
+  const glossaryChanged = glossarySafeTitle !== originalTitle;
+  const technicalChanged = technicalTitle !== originalTitle;
+  const title = semanticTitle || technicalTitle || originalTitle.trim() || "مخالفة محتوى";
+
+  let ruleName = "technical_preserve";
+  let reason = "Title preserved with no technical normalization needed.";
+  if (semanticChanged) {
+    ruleName = glossaryChanged && glossarySafeTitle !== semanticTitle
+      ? "legacy_semantic_title_normalization:glossary_then_category"
+      : "legacy_semantic_title_normalization";
+    reason = "Applied legacy semantic title normalization against rationale / evidence.";
+  } else if (technicalChanged) {
+    ruleName = "technical_cleanup";
+    reason = "Applied technical normalization only (whitespace / Unicode cleanup).";
+  }
+
+  return {
+    originalTitle,
+    technicalTitle,
+    title,
+    ruleName,
+    reason,
+    changed: title !== originalTitle,
+    technicalChanged,
+    semanticChanged,
+  };
+}
+
 export function normalizeMisusedGlossaryPassTitle(params: {
   titleAr: string | undefined;
   rationaleAr?: string | null;

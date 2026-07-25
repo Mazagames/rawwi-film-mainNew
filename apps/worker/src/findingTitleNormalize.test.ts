@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { normalizeFindingTitleAgainstRationale } from "./findingTitleNormalize.js";
+import {
+  normalizeFindingTitleAgainstRationale,
+  normalizeFindingTitleDecision,
+} from "./findingTitleNormalize.js";
 
 function normalize(input: {
   titleAr: string;
@@ -48,6 +51,17 @@ assert.equal(
     rationaleAr: "هناك تحريض صريح على قلب نظام الحكم والدعوة إلى الفوضى.",
   }),
   "المساس بالقيادة السياسية",
+);
+
+assert.equal(
+  normalizeFindingTitleDecision({
+    titleAr: "المساس بالثوابت الدينية",
+    rationaleAr: "العبارة تتضمن إساءة صريحة للوالدين وتحريض الطفل على عقوق والديه.",
+    evidenceSnippet: "إذا جبت درجة ناقصة مرة ثانية، العن والديك انت فاهم",
+    source: "ai",
+    allowSemanticRewrite: false,
+  }).title,
+  "المساس بالثوابت الدينية",
 );
 
 console.log("All finding title normalization tests passed.");

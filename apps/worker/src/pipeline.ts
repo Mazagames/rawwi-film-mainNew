@@ -21,7 +21,7 @@ import { getScriptStandardRouterList } from "./gcam.js";
 import { ROUTER_SYSTEM_MSG, JUDGE_SYSTEM_MSG, injectLexiconIntoPrompts, PROMPT_VERSIONS } from "./aiConstants.js";
 import { runMultiPassDetection, DETECTION_PASSES, planDetectionPassExecution, type LexiconTerm } from "./multiPassJudge.js";
 import { PASS_GATING_VERSION } from "./passGating.js";
-import { normalizeFindingTitleAgainstRationale, normalizeMisusedGlossaryPassTitle } from "./findingTitleNormalize.js";
+import { normalizeFindingTitleDecision } from "./findingTitleNormalize.js";
 import { persistJudgeDiagnostic } from "./judgeDiagnostics.js";
 import { buildReviewerBenchmarkHtml, buildReviewerBenchmarkReport, toReviewerBenchmarkLog } from "./reviewerBenchmark.js";
 import { buildValidatorAuditHtml, buildValidatorAuditReport, toValidatorAuditLog } from "./validatorAudit.js";
@@ -3009,20 +3009,33 @@ export async function processChunkJudge(
         explicitScenePassedCount++;
       }
 
-      const glossarySafeTitle = normalizeMisusedGlossaryPassTitle({
+      const titleNormalizationDecision = normalizeFindingTitleDecision({
         titleAr: f.title_ar,
-        rationaleAr: f.rationale_ar ?? null,
-        detectionPass: (f as { detection_pass?: string }).detection_pass ?? null,
-        evidenceSnippet: excerpt,
-        articleId: f.article_id,
-      });
-      const title_ar = normalizeFindingTitleAgainstRationale({
-        titleAr: glossarySafeTitle,
         rationaleAr: f.rationale_ar ?? null,
         descriptionAr: f.description_ar ?? null,
         evidenceSnippet: excerpt,
         source: f.source ?? "ai",
+        detectionPass: (f as { detection_pass?: string }).detection_pass ?? null,
+        articleId: f.article_id,
+        allowSemanticRewrite: config.VIOLATION_SYSTEM_VERSION !== "v5",
       });
+      if (config.TITLE_NORMALIZATION_AUDIT) {
+        logger.info("Title normalization audit", {
+          jobId,
+          chunkId: chunk.id,
+          articleId: f.article_id,
+          passName: (f as { detection_pass?: string }).detection_pass ?? null,
+          source: f.source ?? "ai",
+          reviewerTitle: titleNormalizationDecision.originalTitle,
+          normalizedTitle: titleNormalizationDecision.title,
+          reason: titleNormalizationDecision.reason,
+          ruleName: titleNormalizationDecision.ruleName,
+          technicalChanged: titleNormalizationDecision.technicalChanged,
+          semanticChanged: titleNormalizationDecision.semanticChanged,
+          changed: titleNormalizationDecision.changed,
+        });
+      }
+      const title_ar = titleNormalizationDecision.title;
       const h = evidenceHash(
         f.article_id,
         f.atom_id ?? null,
