@@ -84,6 +84,9 @@ First understand the complete sequence of actions and interactions.
 
 Only after understanding the entire chunk, identify every independent narrative event.
 
+If two reasonable readers could describe the same event differently, choose the most objective observable description rather than the most specific interpretation.
+Always describe what is explicitly happening before describing why it is happening.
+
 An event is a continuous action involving:
 
 - one dominant actor
@@ -179,9 +182,14 @@ export function renderStructuredEventContext(result: EventUnderstandingPassResul
 
   return [
     "Event Understanding Pass",
-    "This is a deterministic pre-review understanding layer, not a GCAM reviewer.",
-    "Use only the structured events below. Do not rediscover events from prose.",
-    "One event may support at most one finding.",
+    "This is a semantic understanding layer, not a GCAM reviewer.",
+    "Use ONLY the structured events below.",
+    "Do NOT rediscover events from the screenplay.",
+    "Do NOT reinterpret the screenplay text.",
+    "Each finding must originate from exactly one structured event.",
+    "A reviewer may ignore events that do not belong to its assigned article.",
+    "A reviewer must never merge multiple events into one finding.",
+    "The structured events below are the single source of truth for narrative understanding.",
     payload,
   ].join("\n\n");
 }

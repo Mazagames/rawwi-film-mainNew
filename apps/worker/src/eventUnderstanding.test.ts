@@ -22,6 +22,7 @@ function testPromptContract(): void {
   assert(prompt.includes("Do not create events for:"), "user prompt should exclude non-events");
   assert(prompt.includes("The action must always be the central observable action"), "user prompt should define action clearly");
   assert(prompt.includes("dominant_meaning must be a short objective description"), "user prompt should constrain dominant meaning");
+  assert(prompt.includes("If two reasonable readers could describe the same event differently"), "user prompt should require objective descriptions");
   console.log("✓ event understanding prompt contract");
 }
 
@@ -82,6 +83,8 @@ function testStructuredContextWrapsEvents(): void {
   assert(context.includes("one_event_one_finding"), "context should preserve the one-event-one-finding invariant");
   assert(context.includes("domain_neutrality"), "context should reinforce domain neutrality");
   assert(context.includes("تسرب الوثيقة ثم انتشر الخبر"), "context should include the structured event quote");
+  assert(context.includes("Each finding must originate from exactly one structured event."), "context should use the strengthened reviewer contract");
+  assert(context.includes("The structured events below are the single source of truth for narrative understanding."), "context should declare the events as the source of truth");
   assert(!context.includes("raw chunk"), "context should not describe the raw chunk as the payload");
   console.log("✓ structured reviewer context is rendered");
 }
