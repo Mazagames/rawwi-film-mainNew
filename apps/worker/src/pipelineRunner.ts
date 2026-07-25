@@ -1,9 +1,15 @@
 import type { AnalysisChunk, AnalysisJob } from "./jobs.js";
 import { logger } from "./logger.js";
 import { processChunkJudge as processChunkJudgeV1 } from "./pipeline.js";
+import { processChunkJudge as processChunkJudgeV2 } from "./pipelineV2.js";
 
-export function resolvePipelineVersion(_job: AnalysisJob): "v1" {
-  return "v1";
+function getJobPipelineVersion(job: AnalysisJob): "v1" | "v2" {
+  const pipelineVersion = (job.config_snapshot as { pipeline_version?: string } | null | undefined)?.pipeline_version;
+  return pipelineVersion === "v2" ? "v2" : "v1";
+}
+
+export function resolvePipelineVersion(job: AnalysisJob): "v1" | "v2" {
+  return getJobPipelineVersion(job);
 }
 
 export async function processChunkForJob(
@@ -19,6 +25,11 @@ export async function processChunkForJob(
     chunkId: chunk.id,
     pipelineVersion,
   });
+
+  if (pipelineVersion === "v2") {
+    await processChunkJudgeV2(job, chunk, normalizedText, signal);
+    return;
+  }
 
   await processChunkJudgeV1(job, chunk, normalizedText, signal);
 }
