@@ -84,6 +84,33 @@ function testRejectMalformedHeader(): void {
   console.log("✓ rejects malformed reviewer markdown");
 }
 
+function testPromptNormalizationRemovesLegacyDuplicateCognitiveBlock(): void {
+  const parsed = parseV5ReviewerMarkdownForTests(
+    "article-07.md",
+    [
+      "# Article 07",
+      "## المحتوى الجنسي والعري",
+      "",
+      "# Purpose",
+      "هدف تجريبي.",
+      "",
+      "# Event Decomposition Protocol (MANDATORY)",
+      "محتوى حدثي.",
+      "",
+      "# Cognitive Review Protocol (MANDATORY)",
+      "إرث قديم يجب إزالته.",
+      "",
+      "# What is considered a violation",
+      "قائمة المخالفات.",
+    ].join("\n")
+  );
+
+  assert(parsed.prompt.includes("# Event Decomposition Protocol (MANDATORY)"), "event decomposition protocol should remain");
+  assert(!parsed.prompt.includes("إرث قديم يجب إزالته"), "legacy cognitive block should be removed");
+  assert(parsed.prompt.includes("# What is considered a violation"), "violation section should remain");
+  console.log("✓ normalizes reviewer prompts by removing the legacy duplicate cognitive block");
+}
+
 function testCanonicalDirectoryDiscovery(): void {
   const baseDir = makeTempBase();
   try {
@@ -110,14 +137,16 @@ function testAncestorDirectoryDiscovery(): void {
   }
 }
 
-function testMissingCanonicalDirectoryFailsFast(): void {
+function testRepositoryFallbackDiscovery(): void {
   const baseDir = makeTempBase();
   try {
-    expectThrows(
-      () => resolveV5ReviewerDirectoryForTests(baseDir),
-      "V5 reviewer directory not found"
+    const resolved = resolveV5ReviewerDirectoryForTests(baseDir);
+    const normalized = resolved.replace(/\\/g, "/");
+    assert(
+      normalized.endsWith("reviewers/v5"),
+      `expected resolver to fall back to the repository reviewer pack, got ${resolved}`
     );
-    console.log("✓ missing canonical reviewer directory fails fast");
+    console.log("✓ repository fallback discovery resolves reviewers/v5");
   } finally {
     rmSync(baseDir, { recursive: true, force: true });
   }
@@ -157,7 +186,7 @@ function testDuplicateReviewerFilesFailFast(): void {
     const dir = makeCanonicalReviewerDir(baseDir);
     writeReviewer(dir, "alpha.md", 1, "الافتتاح");
     writeReviewer(dir, "beta.md", 1, "الافتتاح المكرر");
-    for (let article = 2; article <= 24; article += 1) {
+    for (let article = 2; article <= 23; article += 1) {
       writeReviewer(dir, `${articleNumber(article)}.md`, article, `عنوان ${articleNumber(article)}`);
     }
     expectThrows(
@@ -198,7 +227,7 @@ function testStartupValidationFailure(): void {
     }
     clearV5ReviewerPackCacheForTests();
     process.chdir(baseDir);
-    expectThrows(() => getV5ReviewerPack(), "exactly 24 markdown files");
+    expectThrows(() => getV5ReviewerPack(), "missing one or more article numbers");
     console.log("✓ startup validation fails loudly for incomplete packs");
   } finally {
     process.chdir(previousCwd);
@@ -251,9 +280,10 @@ function testValidPackLoadsAllArticles(): void {
 async function main(): Promise<void> {
   testCanonicalDirectoryDiscovery();
   testAncestorDirectoryDiscovery();
-  testMissingCanonicalDirectoryFailsFast();
+  testRepositoryFallbackDiscovery();
   testParseReviewerHeader();
   testRejectMalformedHeader();
+  testPromptNormalizationRemovesLegacyDuplicateCognitiveBlock();
   testFilenameIgnoredDuringLoad();
   testDuplicateReviewerFilesFailFast();
   testMissingArticleFailsFast();

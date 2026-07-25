@@ -16,11 +16,12 @@
     "test:lexicon": "tsx src/lexiconCache.test.ts",
     "test:pass-gating": "tsx src/passGating.test.ts",
     "test:review-consistency": "tsx src/reviewFindingConsistency.test.ts",
+    "test:reviewer-trace": "tsx src/reviewerTrace.test.ts",
     "test:severity": "tsx src/severityRulebook.test.ts",
     "test:text-normalize": "tsx src/textDetectionNormalize.test.ts",
     "test:offset-page": "tsx src/offsetToPage.test.ts",
     "test:v5-reviewers": "tsx src/v5PromptPack.test.ts",
-    "test": "tsx src/aggregation.test.ts && tsx src/pipeline.atom-enforcement.test.ts && tsx src/audit.test.ts && tsx src/lexiconCache.test.ts && tsx src/passGating.test.ts && tsx src/reviewFindingConsistency.test.ts && tsx src/severityRulebook.test.ts && tsx src/textDetectionNormalize.test.ts && tsx src/offsetToPage.test.ts && tsx src/v5PromptPack.test.ts && tsx src/scriptSummary.test.ts"
+    "test": "tsx src/aggregation.test.ts && tsx src/pipeline.atom-enforcement.test.ts && tsx src/audit.test.ts && tsx src/lexiconCache.test.ts && tsx src/passGating.test.ts && tsx src/reviewFindingConsistency.test.ts && tsx src/reviewerTrace.test.ts && tsx src/severityRulebook.test.ts && tsx src/textDetectionNormalize.test.ts && tsx src/offsetToPage.test.ts && tsx src/v5PromptPack.test.ts && tsx src/scriptSummary.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

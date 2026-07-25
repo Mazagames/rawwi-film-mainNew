@@ -41,6 +41,7 @@ import {
   V4_SUBJECT_DEFINITIONS,
   type V4SubjectDefinition,
 } from "./v4PromptPack.js";
+import { buildEventUnderstandingPass, renderStructuredEventContext, type EventUnderstandingPassResult } from "./eventUnderstanding.js";
 import { getV5ReviewerDefinitions } from "./v5PromptPack.js";
 import type { AnalysisExecutionSignatureInput } from "./executionSignature.js";
 
@@ -1583,7 +1584,7 @@ function buildV5DetectionPasses(): PassDefinition[] {
     name: `v5_article_${String(reviewer.articleNumber).padStart(2, "0")}`,
     displayLabel: reviewer.displayLabel,
     articleIds: [reviewer.articleNumber],
-    buildPrompt: () => reviewer.prompt,
+    buildPrompt: () => `${reviewer.prompt}\n\n# Runtime Input (Structured Events Only)\n\nThe raw chunk is not provided to the reviewer. The reviewer receives deterministic structured events extracted from the chunk.\n\n- Do not rediscover events from prose.\n- Do not classify raw chunk text directly.\n- Decide which structured events belong to your article.\n- One event may produce at most one finding.`,
     model: config.OPENAI_JUDGE_MODEL,
     sourceFileName: reviewer.filename,
   }));
@@ -1603,7 +1604,7 @@ export const DETECTION_PASSES: PassDefinition[] = (() => {
 // EXECUTION ENGINE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-interface PassResult {
+export interface PassResult {
   passName: string;
   findings: JudgeFinding[];
   duration: number;
@@ -1857,6 +1858,9 @@ async function runSinglePass(
       : promptContext && promptContext.trim().length > 0
         ? `${promptVersioned}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nسياق إضافي للمراجعة (Pipeline V2)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${promptContext.trim()}`
         : promptVersioned;
+    const reviewerInputOverride = isV5Reviewer && promptContext && promptContext.trim().length > 0
+      ? promptContext.trim()
+      : null;
     if (isV5Reviewer) {
       logger.info("V5 reviewer prompt prepared", {
         chunkId: diagnosticContext?.chunkId ?? null,
@@ -1864,13 +1868,12 @@ async function runSinglePass(
         reviewerLabel: pass.displayLabel ?? pass.sourceFileName ?? null,
         markdownFile: pass.sourceFileName ?? null,
         promptCharacters: promptBase.length,
+        reviewerInputOverrideCharacters: reviewerInputOverride?.length ?? 0,
       });
     }
     const userPromptAddition =
       isV5Reviewer
-        ? promptContext && promptContext.trim().length > 0
-          ? promptContext.trim()
-          : null
+        ? null
         : pass.name === "insults"
         ? buildInsultsUserPromptAddition()
         : pass.name === "violence"
@@ -1910,7 +1913,7 @@ async function runSinglePass(
       { judge_model: model, temperature: jobConfig.temperature, seed: jobConfig.seed, analysis_signature_context: jobConfig.analysis_signature_context ?? null },
       prompt,
       userPromptAddition,
-      { signal }
+      { signal, userContentOverride: reviewerInputOverride }
     );
     throwIfAborted(signal);
     if (diagnosticContext) {
@@ -2174,11 +2177,18 @@ export async function runMultiPassDetection(
   totalDuration: number;
   executedPassCount: number;
   skippedPassCount: number;
+  eventUnderstanding: EventUnderstandingPassResult | null;
 }> {
   const startTime = Date.now();
   throwIfAborted(signal);
   const plan = executionPlan ?? planDetectionPassExecution(chunkText, allArticles, lexiconTerms);
   const totalPasses = plan.activePasses.length;
+  const eventUnderstanding = config.VIOLATION_SYSTEM_VERSION === "v5"
+      ? await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd)
+      : null;
+  const reviewerPromptContext = eventUnderstanding
+    ? renderStructuredEventContext(eventUnderstanding)
+    : promptContext;
 
   logger.info("[DEBUG] runMultiPassDetection started", {
     chunkTextLength: chunkText.length,
@@ -2190,7 +2200,7 @@ export async function runMultiPassDetection(
     passCount: DETECTION_PASSES.length,
     activePassCount: plan.activePasses.length,
     skippedPassCount: plan.skippedPasses.length,
-    hasPromptContext: Boolean(promptContext && promptContext.trim().length > 0),
+    hasPromptContext: Boolean(reviewerPromptContext && reviewerPromptContext.trim().length > 0),
   });
   
   logger.info("Starting multi-pass detection", { 
@@ -2200,8 +2210,17 @@ export async function runMultiPassDetection(
     activePassCount: plan.activePasses.length,
     skippedPassCount: plan.skippedPasses.length,
     lexiconTermsCount: lexiconTerms.length,
-    hasPromptContext: Boolean(promptContext && promptContext.trim().length > 0),
+    hasPromptContext: Boolean(reviewerPromptContext && reviewerPromptContext.trim().length > 0),
   });
+
+  if (eventUnderstanding) {
+    logger.info("Event understanding pass completed", {
+      chunkStart,
+      chunkEnd,
+      eventCount: eventUnderstanding.event_count,
+      sampleQuotes: eventUnderstanding.events.slice(0, 3).map((event) => event.quote),
+    });
+  }
 
   for (const skipped of plan.skippedPasses) {
     logger.info("Pass skipped by execution planner", {
@@ -2248,7 +2267,7 @@ export async function runMultiPassDetection(
         allArticles,
         lexiconTerms,
         jobConfig,
-        promptContext,
+        reviewerPromptContext,
         signal,
         diagnosticContext
       ).then(
@@ -2405,5 +2424,6 @@ export async function runMultiPassDetection(
     totalDuration,
     executedPassCount: activeResults.length,
     skippedPassCount: plan.skippedPasses.length,
+    eventUnderstanding,
   };
 }

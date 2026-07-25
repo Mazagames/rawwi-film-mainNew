@@ -72,6 +72,18 @@ function normalizeMarkdown(markdown: string): string {
   return markdown.replace(/\r\n?/g, "\n");
 }
 
+function normalizeV5ReviewerPrompt(markdown: string): string {
+  const legacyMarker = "# Cognitive Review Protocol (MANDATORY)";
+  const violationHeading = "# What is considered a violation";
+  const markerIndex = markdown.indexOf(legacyMarker);
+  if (markerIndex < 0) return markdown;
+
+  const violationIndex = markdown.indexOf(violationHeading, markerIndex + legacyMarker.length);
+  if (violationIndex < 0) return markdown;
+
+  return `${markdown.slice(0, markerIndex).trimEnd()}\n\n${markdown.slice(violationIndex)}`;
+}
+
 function formatArticleLabel(articleNumber: number, articleTitle: string): string {
   return `المادة ${String(articleNumber).padStart(2, "0")}: ${articleTitle}`;
 }
@@ -122,7 +134,7 @@ function parseV5ReviewerMarkdown(filename: string, markdown: string): ParsedV5Re
   return {
     articleNumber,
     articleTitle,
-    prompt: normalized,
+    prompt: normalizeV5ReviewerPrompt(normalized),
   };
 }
 
@@ -184,14 +196,6 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
     } satisfies V5ReviewerDefinition;
   });
 
-  if (parsedReviewers.length !== EXPECTED_V5_REVIEWER_COUNT) {
-    failV5ReviewerLoad("V5 reviewer pack must contain exactly 24 markdown files", {
-      reviewerDirectory,
-      reviewerCount: parsedReviewers.length,
-      expectedCount: EXPECTED_V5_REVIEWER_COUNT,
-    });
-  }
-
   const byArticle = new Map<number, V5ReviewerDefinition>();
   for (const reviewer of parsedReviewers) {
     if (reviewer.articleNumber < EXPECTED_ARTICLE_MIN || reviewer.articleNumber > EXPECTED_ARTICLE_MAX) {
@@ -224,6 +228,16 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
     failV5ReviewerLoad("V5 reviewer pack is missing one or more article numbers", {
       reviewerDirectory,
       missingArticleNumbers,
+      reviewerCount: parsedReviewers.length,
+      expectedCount: EXPECTED_V5_REVIEWER_COUNT,
+    });
+  }
+
+  if (parsedReviewers.length !== EXPECTED_V5_REVIEWER_COUNT) {
+    failV5ReviewerLoad("V5 reviewer pack must contain exactly 24 markdown files", {
+      reviewerDirectory,
+      reviewerCount: parsedReviewers.length,
+      expectedCount: EXPECTED_V5_REVIEWER_COUNT,
     });
   }
 

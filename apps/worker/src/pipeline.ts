@@ -23,6 +23,9 @@ import { runMultiPassDetection, DETECTION_PASSES, planDetectionPassExecution, ty
 import { PASS_GATING_VERSION } from "./passGating.js";
 import { normalizeFindingTitleAgainstRationale, normalizeMisusedGlossaryPassTitle } from "./findingTitleNormalize.js";
 import { persistJudgeDiagnostic } from "./judgeDiagnostics.js";
+import { buildReviewerBenchmarkHtml, buildReviewerBenchmarkReport, toReviewerBenchmarkLog } from "./reviewerBenchmark.js";
+import { buildValidatorAuditHtml, buildValidatorAuditReport, toValidatorAuditLog } from "./validatorAudit.js";
+import { buildReviewerTraceReport, toReviewerTraceLog } from "./reviewerTrace.js";
 import { upsertFindingPolicyLinks } from "./policyLinks.js";
 import { calculateSeverity } from "./severityRulebook.js";
 import { getPrimaryCanonicalAtomForGcam } from "./canonicalAtomMapping.js";
@@ -36,6 +39,7 @@ import { PIPELINE_V2_MEMORY_VERSION } from "./pipelineV2/contextMemory.js";
 import { PIPELINE_V2_SCENE_MEMORY_VERSION } from "./pipelineV2/sceneMemory.js";
 import { PIPELINE_V2_SCRIPT_MEMORY_VERSION } from "./pipelineV2/scriptMemory.js";
 import { PIPELINE_EVIDENCE_GROUNDING_VERSION, groundFindingEvidenceToChunk } from "./evidenceGrounding.js";
+import { getEventConsistencyIssue } from "./eventConsistency.js";
 import { V3_SUBJECT_DEFINITIONS } from "./v3PromptPack.js";
 import { buildLineageEvent, ensureFindingLineageId, persistLineageEvents } from "./findingLineage.js";
 import { canonicalStringify } from "./canonicalJson.js";
@@ -2262,22 +2266,41 @@ export async function processChunkJudge(
       afterOverlap: afterOverlapCount,
       afterArticleFourCollapse: afterArticleFourCollapseCount,
     });
-    logger.info("Dedupe + overlap stats", {
-      chunkId: chunk.id,
-      runKey,
-      beforeDedupe: beforeDedupeCount,
-      afterDedupe: afterDedupeCount,
+      logger.info("Dedupe + overlap stats", {
+        chunkId: chunk.id,
+        runKey,
+        beforeDedupe: beforeDedupeCount,
+        afterDedupe: afterDedupeCount,
       dedupeDropped: beforeDedupeCount - afterDedupeCount,
       afterOverlap: afterOverlapCount,
       overlapDropped: afterDedupeCount - afterOverlapCount,
-      afterArticleFourCollapse: afterArticleFourCollapseCount,
-      articleFourDropped: afterOverlapCount - afterArticleFourCollapseCount,
-      finalAiFindings: afterArticleFourCollapseCount,
-      lexiconFindings: mandatoryFindings.length,
-    });
-    const canonicalizationKept = new Set(
-      allFindings.map((finding) => ensureFindingLineageId(finding, {
-        jobId,
+        afterArticleFourCollapse: afterArticleFourCollapseCount,
+        articleFourDropped: afterOverlapCount - afterArticleFourCollapseCount,
+        finalAiFindings: afterArticleFourCollapseCount,
+        lexiconFindings: mandatoryFindings.length,
+      });
+      if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassResult.eventUnderstanding) {
+        const reviewerBenchmarkReport = buildReviewerBenchmarkReport({
+          chunkStart,
+          chunkEnd,
+          eventUnderstanding: multiPassResult.eventUnderstanding,
+          passResults: multiPassResult.passResults,
+          finalFindings: allFindings,
+        });
+        const reviewerBenchmarkHtml = buildReviewerBenchmarkHtml(reviewerBenchmarkReport);
+        logger.info("Reviewer benchmark report", toReviewerBenchmarkLog(reviewerBenchmarkReport));
+        logger.info("Reviewer benchmark dashboard generated", {
+          chunkId: chunk.id,
+          htmlLength: reviewerBenchmarkHtml.length,
+          reviewerCount: reviewerBenchmarkReport.summary.totalReviewers,
+          eventCount: reviewerBenchmarkReport.eventCount,
+          falsePositiveCount: reviewerBenchmarkReport.falsePositives.length,
+          falseNegativeCount: reviewerBenchmarkReport.falseNegatives.length,
+        });
+      }
+      const canonicalizationKept = new Set(
+        allFindings.map((finding) => ensureFindingLineageId(finding, {
+          jobId,
         chunkId: chunk.id,
         passName: finding.detection_pass ?? null,
         index: null,
@@ -2533,6 +2556,46 @@ export async function processChunkJudge(
     });
   }
 
+  if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassResult.eventUnderstanding) {
+    const validatorAuditReport = buildValidatorAuditReport({
+      chunkStart,
+      chunkEnd,
+      chunkText,
+      eventUnderstanding: multiPassResult.eventUnderstanding,
+      passResults: multiPassResult.passResults,
+      finalFindings: resolvedFindings,
+      memory2Enabled: isMemory2Mode(job),
+      useEventConsistencyChecks: config.VIOLATION_SYSTEM_VERSION === "v5",
+    });
+    const validatorAuditHtml = buildValidatorAuditHtml(validatorAuditReport);
+    logger.info("Validator audit report", toValidatorAuditLog(validatorAuditReport));
+    logger.info("Validator audit dashboard generated", {
+      chunkId: chunk.id,
+      htmlLength: validatorAuditHtml.length,
+      rejectedFindings: validatorAuditReport.summary.totalRejectedFindings,
+      falseRejects: validatorAuditReport.summary.totalFalseRejects,
+    });
+    if (config.ENABLE_REVIEWER_TRACE) {
+      const reviewerTraceReport = buildReviewerTraceReport({
+        chunkStart,
+        chunkEnd,
+        eventUnderstanding: multiPassResult.eventUnderstanding,
+        passResults: multiPassResult.passResults,
+        finalFindings: resolvedFindings,
+        validatorAuditReport,
+      });
+      logger.info("Reviewer trace report", toReviewerTraceLog(reviewerTraceReport));
+      logger.info("Reviewer trace enabled", {
+        chunkId: chunk.id,
+        reviewerCount: reviewerTraceReport.summary.totalReviewers,
+        eventCount: reviewerTraceReport.summary.totalEvents,
+        findingsEmitted: reviewerTraceReport.summary.totalFindingsEmitted,
+        verifierAccepted: reviewerTraceReport.summary.totalVerifierAccepted,
+        verifierRejected: reviewerTraceReport.summary.totalVerifierRejected,
+      });
+    }
+  }
+
   throwIfAborted(signal);
   await setChunkPhase(chunk.id, "aggregating");
 
@@ -2586,20 +2649,44 @@ export async function processChunkJudge(
         return [];
       }
 
-      const passSpecificEvidenceIssue = getPassSpecificEvidenceIssue(f, excerpt, normalizedText, sceneIndex);
-      if (passSpecificEvidenceIssue) {
+      const eventConsistencyResult =
+        config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassResult.eventUnderstanding
+          ? getEventConsistencyIssue(f, multiPassResult.eventUnderstanding.events)
+          : null;
+      if (eventConsistencyResult?.issue) {
         postCanonicalEvidenceDroppedCount++;
-        logger.warn("Pass-specific final evidence issue (dropping finding before insert)", {
+        logger.warn("Event consistency issue (dropping finding before insert)", {
           jobId,
           chunkId: chunk.id,
           runKey,
           article: f.article_id,
           pass: f.detection_pass ?? null,
           canonicalAtom: f.canonical_atom ?? null,
-          issue: passSpecificEvidenceIssue,
+          issue: eventConsistencyResult.issue,
+          matchedEventId: eventConsistencyResult.matchedEvent?.event_id ?? null,
+          matchedScore: eventConsistencyResult.matchedScore,
+          runnerUpScore: eventConsistencyResult.runnerUpScore,
           excerpt: excerpt.slice(0, 120),
         });
         return [];
+      }
+
+      if (config.VIOLATION_SYSTEM_VERSION !== "v5") {
+        const passSpecificEvidenceIssue = getPassSpecificEvidenceIssue(f, excerpt, normalizedText, sceneIndex);
+        if (passSpecificEvidenceIssue) {
+          postCanonicalEvidenceDroppedCount++;
+          logger.warn("Pass-specific final evidence issue (dropping finding before insert)", {
+            jobId,
+            chunkId: chunk.id,
+            runKey,
+            article: f.article_id,
+            pass: f.detection_pass ?? null,
+            canonicalAtom: f.canonical_atom ?? null,
+            issue: passSpecificEvidenceIssue,
+            excerpt: excerpt.slice(0, 120),
+          });
+          return [];
+        }
       }
 
       if (canonicalSnippet.length > 0 && modelSnippet.length > 0 && !snippetsReasonablyAlign(modelSnippet, canonicalSnippet)) {
