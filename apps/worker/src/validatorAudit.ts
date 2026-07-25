@@ -13,6 +13,7 @@ export type ValidatorAuditRuleRow = {
   functionName: string;
   rule: string;
   originalAssumption: string;
+  category: "KEEP" | "MIGRATE";
   compatibleWithV5: boolean;
   recommendation: ValidatorAuditRecommendation;
   falseRejects: number;
@@ -77,6 +78,10 @@ type ValidatorIssue = {
   compatibleWithV5: boolean;
   originalAssumption: string;
 };
+
+function getValidatorAuditCategory(recommendation: ValidatorAuditRecommendation): "KEEP" | "MIGRATE" {
+  return recommendation === "keep" ? "KEEP" : "MIGRATE";
+}
 
 function makeRuleKey(functionName: string, validationStage: string, rule: string): string {
   return `${validationStage}|${functionName}|${rule}`;
@@ -1143,6 +1148,7 @@ export function buildValidatorAuditReport(args: {
 
   const ruleRows = RULE_CATALOG.map((rule) => ({
     ...rule,
+    category: getValidatorAuditCategory(rule.recommendation),
     falseRejects: falseRejectCounts.get(makeRuleKey(rule.functionName, rule.validationStage, rule.rule)) ?? 0,
   }));
 
@@ -1176,6 +1182,7 @@ export function toValidatorAuditLog(report: ValidatorAuditReport): Record<string
       functionName: row.functionName,
       rule: row.rule,
       originalAssumption: row.originalAssumption,
+      category: row.category,
       compatibleWithV5: row.compatibleWithV5,
       recommendation: row.recommendation,
       falseRejects: row.falseRejects,
@@ -1205,8 +1212,8 @@ function renderRuleRows(rows: ValidatorAuditRuleRow[]): string {
         <td>${escapeHtml(row.functionName)}</td>
         <td>${escapeHtml(row.rule)}</td>
         <td>${escapeHtml(row.originalAssumption)}</td>
-        <td>${escapeHtml(row.compatibleWithV5 ? "Yes" : "No")}</td>
-        <td>${escapeHtml(row.recommendation)}</td>
+        <td>${escapeHtml(row.category)}</td>
+        <td>${escapeHtml(row.category === "KEEP" ? "Integrity check" : "Semantic migration")}</td>
         <td>${formatInteger(row.falseRejects)}</td>
       </tr>
     `)
@@ -1396,14 +1403,14 @@ export function buildValidatorAuditHtml(report: ValidatorAuditReport): string {
     <section class="summary-grid">
       ${renderMetricCard("Rejected findings", formatInteger(report.summary.totalRejectedFindings), "Findings rejected by the current validator path")}
       ${renderMetricCard("False rejects", formatInteger(report.summary.totalFalseRejects), "Rejected findings that still look correct to the event layer")}
-      ${renderMetricCard("Compatible rules", formatInteger(report.summary.compatibleRuleCount), "Rules that already fit the V5 cognition model")}
-      ${renderMetricCard("Incompatible rules", formatInteger(report.summary.incompatibleRuleCount), "Rules that still assume older keyword-first behavior")}
+      ${renderMetricCard("KEEP rules", formatInteger(report.summary.compatibleRuleCount), "Integrity checks that remain safe to keep")}
+      ${renderMetricCard("MIGRATE rules", formatInteger(report.summary.incompatibleRuleCount), "Semantic checks that should become advisory or be removed")}
     </section>
 
     <section class="panels">
       <div class="panel">
         <h2>Validator Rules</h2>
-        <p class="subtitle">Every observed validator rule, its original assumption, and how many demonstrably correct findings it rejected.</p>
+        <p class="subtitle">Every observed validator rule, its original assumption, its KEEP/MIGRATE classification, and how many demonstrably correct findings it rejected.</p>
         <table>
           <thead>
             <tr>
@@ -1411,8 +1418,8 @@ export function buildValidatorAuditHtml(report: ValidatorAuditReport): string {
               <th>Function</th>
               <th>Rule</th>
               <th>Original Assumption</th>
-              <th>V5?</th>
-              <th>Recommendation</th>
+              <th>Category</th>
+              <th>Interpretation</th>
               <th>False Rejects</th>
             </tr>
           </thead>

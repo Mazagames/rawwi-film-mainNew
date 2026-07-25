@@ -973,10 +973,7 @@ export function applyMemory2SanityGuards(
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -998,10 +995,7 @@ export function applyMemory2SanityGuards(
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -1023,10 +1017,7 @@ export function applyMemory2SanityGuards(
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -1048,10 +1039,7 @@ export function applyMemory2SanityGuards(
         rationale: rationale.slice(0, 180),
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -1069,10 +1057,7 @@ export function applyMemory2SanityGuards(
         rationale: rationale.slice(0, 180),
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -1091,10 +1076,7 @@ export function applyMemory2SanityGuards(
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -1115,10 +1097,7 @@ export function applyMemory2SanityGuards(
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -1136,10 +1115,7 @@ export function applyMemory2SanityGuards(
         rationale: rationale.slice(0, 180),
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -1157,10 +1133,7 @@ export function applyMemory2SanityGuards(
         rationale: rationale.slice(0, 180),
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
-      if (auditMode) {
-        guarded.push(finding);
-        continue;
-      }
+      guarded.push(finding);
       continue;
     }
 
@@ -2997,6 +2970,11 @@ export async function processChunkJudge(
     let canonicalModelPassedCount = 0;
     let explicitScenePassedCount = 0;
     const rows = resolvedFindings.flatMap((f) => {
+      const reviewerArticleId = parseReviewerArticleId((f as { detection_pass?: string | null }).detection_pass ?? null, f.article_id ?? null);
+      const traceId = (f as { lineage_id?: string | null }).lineage_id ?? "";
+      const validatorBypassReasons: string[] = [];
+      let validatorDecision: "accepted" | "rejected" = "accepted";
+      let validatorDropReason: string | null = null;
       const initialStart = f.start_offset_global ?? 0;
       const initialEnd = f.end_offset_global ?? initialStart;
       let start = initialStart;
