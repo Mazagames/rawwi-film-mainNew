@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { logger } from "./logger.js";
 
 export type V5ReviewerDefinition = {
@@ -29,6 +30,8 @@ type ParsedV5ReviewerMarkdown = {
 const EXPECTED_V5_REVIEWER_COUNT = 24;
 const EXPECTED_ARTICLE_MIN = 1;
 const EXPECTED_ARTICLE_MAX = 24;
+const MODULE_URL = import.meta.url;
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
 let cachedPack: LoadedV5Pack | null = null;
 
@@ -38,6 +41,23 @@ function failV5ReviewerLoad(message: string, extra?: Record<string, unknown>): n
     ...extra,
   });
   throw new Error(message);
+}
+
+function collectAncestorDirectories(startDir: string): string[] {
+  const resolvedStartDir = resolve(startDir);
+  const ancestors: string[] = [];
+  let currentDir = resolvedStartDir;
+
+  while (!ancestors.includes(currentDir)) {
+    ancestors.push(currentDir);
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) {
+      break;
+    }
+    currentDir = parentDir;
+  }
+
+  return ancestors;
 }
 
 function compareNumericArticleIds(a: number, b: number): number {
@@ -107,13 +127,35 @@ function parseV5ReviewerMarkdown(filename: string, markdown: string): ParsedV5Re
 }
 
 function resolveReviewerDirectory(baseDir = process.cwd()): string {
-  const canonical = resolve(baseDir, "reviewers", "v5");
-  if (existsSync(canonical)) {
-    return canonical;
+  const searchAnchors = [baseDir, process.cwd(), MODULE_DIR];
+  const triedDirectories = new Set<string>();
+
+  for (const anchor of searchAnchors) {
+    for (const ancestor of collectAncestorDirectories(anchor)) {
+      const candidate = resolve(ancestor, "reviewers", "v5");
+      if (triedDirectories.has(candidate)) {
+        continue;
+      }
+      triedDirectories.add(candidate);
+      if (existsSync(candidate)) {
+        logger.info("V5 reviewer discovery", {
+          cwd: process.cwd(),
+          importMetaUrl: MODULE_URL,
+          moduleDir: MODULE_DIR,
+          resolvedReviewerDirectory: candidate,
+          searchAnchors,
+        });
+        return candidate;
+      }
+    }
   }
 
   failV5ReviewerLoad("V5 reviewer directory not found", {
-    canonical,
+    cwd: process.cwd(),
+    importMetaUrl: MODULE_URL,
+    moduleDir: MODULE_DIR,
+    searchAnchors,
+    triedDirectories: Array.from(triedDirectories),
   });
 }
 
@@ -188,16 +230,22 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
   const orderedReviewers = Array.from(byArticle.values()).sort((a, b) => compareNumericArticleIds(a.articleNumber, b.articleNumber));
 
   logger.info("Loaded Reviewer Pack V5", {
-    reviewerDirectory,
+    cwd: process.cwd(),
+    importMetaUrl: MODULE_URL,
+    moduleDir: MODULE_DIR,
+    Directory: reviewerDirectory,
     reviewerCount: orderedReviewers.length,
     reviewerFilesLoaded: orderedReviewers.map((reviewer) => reviewer.filename),
     reviewerArticlesLoaded: orderedReviewers.map((reviewer) => reviewer.articleNumber),
     reviewerLabelsLoaded: orderedReviewers.map((reviewer) => reviewer.displayLabel),
   });
 
-  logger.info("Reviewer pack validation passed", {
-    reviewerDirectory,
-    reviewerCount: orderedReviewers.length,
+  logger.info(`${orderedReviewers.length} reviewers loaded`, {
+    Directory: reviewerDirectory,
+  });
+
+  logger.info("Validation passed", {
+    Directory: reviewerDirectory,
     articleChecks: orderedReviewers.map((reviewer) => `Article ${String(reviewer.articleNumber).padStart(2, "0")} ✓`),
   });
 

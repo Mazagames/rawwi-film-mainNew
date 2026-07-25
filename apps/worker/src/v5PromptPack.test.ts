@@ -96,6 +96,20 @@ function testCanonicalDirectoryDiscovery(): void {
   }
 }
 
+function testAncestorDirectoryDiscovery(): void {
+  const baseDir = makeTempBase();
+  try {
+    const canonicalDir = makeCanonicalReviewerDir(baseDir);
+    const nestedWorkerDir = join(baseDir, "apps", "worker", "src");
+    mkdirSync(nestedWorkerDir, { recursive: true });
+    const resolved = resolveV5ReviewerDirectoryForTests(nestedWorkerDir);
+    assert(resolved === canonicalDir, `expected ancestor discovery to resolve ${canonicalDir}, got ${resolved}`);
+    console.log("✓ ancestor traversal finds reviewers/v5 from nested worker paths");
+  } finally {
+    rmSync(baseDir, { recursive: true, force: true });
+  }
+}
+
 function testMissingCanonicalDirectoryFailsFast(): void {
   const baseDir = makeTempBase();
   try {
@@ -236,6 +250,7 @@ function testValidPackLoadsAllArticles(): void {
 
 async function main(): Promise<void> {
   testCanonicalDirectoryDiscovery();
+  testAncestorDirectoryDiscovery();
   testMissingCanonicalDirectoryFailsFast();
   testParseReviewerHeader();
   testRejectMalformedHeader();

@@ -11,6 +11,7 @@ COPY apps/worker/package.json ./apps/worker/
 RUN pnpm install --frozen-lockfile
 
 COPY apps/worker ./apps/worker
+COPY reviewers ./reviewers
 COPY ["docs/V3 prompts", "./docs/V3 prompts"]
 
 WORKDIR /app/apps/worker
