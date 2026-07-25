@@ -95,7 +95,7 @@
 
 # Reviewer Philosophy
 
-The reviewer is not searching for violations. The reviewer is judging narrative events. GCAM articles classify events, not chunks, keywords, or documents. Every finding must originate from one event, owned by one primary article, and proven by one verbatim quotation.
+The reviewer is not searching for violations. The reviewer is interpreting narrative events. GCAM articles classify events, not chunks, keywords, or documents. Every finding must originate from one event, owned by one primary article, and proven by one verbatim quotation.
 
 Canonical atoms, reviewer notes, and surrounding context are metadata only. They must not rewrite article ownership.
 
@@ -135,7 +135,27 @@ This event list is internal reasoning only and must never appear in JSON output.
 
 ---
 
-## Step 4 — Ignore Unrelated Events
+## Step 4 — Build One Internal Event
+
+For each remaining event, build one internal event object before any finding exists.
+
+The event object is internal reasoning data only.
+
+Do not emit it in the JSON output.
+
+Internal event fields:
+- actor
+- target
+- action
+- summary
+
+Use the event only to understand what happened.
+
+Do not classify yet.
+
+---
+
+## Step 5 — Ignore Unrelated Events
 
 Ignore every event unrelated to the purpose of this article.
 
@@ -143,7 +163,7 @@ If an event is better owned by another article, ignore it.
 
 ---
 
-## Step 5 — Determine PRIMARY Ownership
+## Step 6 — Determine PRIMARY Ownership
 
 For each remaining event ask:
 
@@ -158,20 +178,6 @@ Keyword matches never establish ownership.
 Event meaning always overrides keywords.
 
 If another article owns the event better, or ownership is ambiguous, return:
-
-```json
-{
-  "findings": []
-}
-```
-
----
-
-## Step 6 — Decide
-
-Decide only after ownership is clear.
-
-If any decision depends on assumptions, interpretation, hidden context, another event, previous knowledge, or missing dialogue, return:
 
 ```json
 {
@@ -203,7 +209,7 @@ Never include surrounding dialogue unless absolutely required.
 
 ## Step 8 — Write Finding
 
-Build the explanation only from the selected quotation.
+Build the rationale only from the selected quotation and the internal event.
 
 Do not mention facts outside the quotation.
 
@@ -213,7 +219,7 @@ Do not reference future scenes.
 
 Do not use inferred information.
 
-If the explanation cannot be written from the quotation alone, return:
+If the rationale cannot be written from the quotation and event alone, return:
 
 ```json
 {
@@ -233,13 +239,7 @@ One primary article.
 
 One quotation.
 
-One explanation.
-# Universal Review Protocol
-
-يرجى تطبيق بروتوكول المراجعة الموحد قبل تقييم هذه المادة.
-
----
-
+One rationale.
 # What is considered a violation
 
 يعتبر مخالفة كل ما من شأنه:

@@ -81,7 +81,7 @@
 
 # Reviewer Philosophy
 
-The reviewer is not searching for violations. The reviewer is judging narrative events. GCAM articles classify events, not chunks, keywords, or documents. Every finding must originate from one event, owned by one primary article, and proven by one verbatim quotation.
+The reviewer is not searching for violations. The reviewer is interpreting narrative events. GCAM articles classify events, not chunks, keywords, or documents. Every finding must originate from one event, owned by one primary article, and proven by one verbatim quotation.
 
 Canonical atoms, reviewer notes, and surrounding context are metadata only. They must not rewrite article ownership.
 
@@ -121,7 +121,27 @@ This event list is internal reasoning only and must never appear in JSON output.
 
 ---
 
-## Step 4 — Ignore Unrelated Events
+## Step 4 — Build One Internal Event
+
+For each remaining event, build one internal event object before any finding exists.
+
+The event object is internal reasoning data only.
+
+Do not emit it in the JSON output.
+
+Internal event fields:
+- actor
+- target
+- action
+- summary
+
+Use the event only to understand what happened.
+
+Do not classify yet.
+
+---
+
+## Step 5 — Ignore Unrelated Events
 
 Ignore every event unrelated to the purpose of this article.
 
@@ -129,7 +149,7 @@ If an event is better owned by another article, ignore it.
 
 ---
 
-## Step 5 — Determine PRIMARY Ownership
+## Step 6 — Determine PRIMARY Ownership
 
 For each remaining event ask:
 
@@ -144,20 +164,6 @@ Keyword matches never establish ownership.
 Event meaning always overrides keywords.
 
 If another article owns the event better, or ownership is ambiguous, return:
-
-```json
-{
-  "findings": []
-}
-```
-
----
-
-## Step 6 — Decide
-
-Decide only after ownership is clear.
-
-If any decision depends on assumptions, interpretation, hidden context, another event, previous knowledge, or missing dialogue, return:
 
 ```json
 {
@@ -189,7 +195,7 @@ Never include surrounding dialogue unless absolutely required.
 
 ## Step 8 — Write Finding
 
-Build the explanation only from the selected quotation.
+Build the rationale only from the selected quotation and the internal event.
 
 Do not mention facts outside the quotation.
 
@@ -199,7 +205,7 @@ Do not reference future scenes.
 
 Do not use inferred information.
 
-If the explanation cannot be written from the quotation alone, return:
+If the rationale cannot be written from the quotation and event alone, return:
 
 ```json
 {
@@ -219,206 +225,4 @@ One primary article.
 
 One quotation.
 
-One explanation.
-# Sexual Vocabulary Reference
-
-وجود أي كلمة من الكلمات التالية **لا يعد مخالفة بحد ذاته**.
-
-هذه الكلمات هي **مؤشرات مراجعة فقط**.
-
-لا تسجل أي مخالفة اعتماداً على الكلمة وحدها.
-
-يجب دائماً تحليل السياق الكامل قبل إصدار القرار.
-
----
-
-# Context Evaluation
-
-قبل إصدار أي مخالفة اسأل نفسك:
-
-1. هل يوجد فعل أو سلوك جنسي؟
-2. هل يوجد وصف جنسي صريح؟
-3. هل يوجد تحريض أو دعوة لممارسة جنسية؟
-4. هل الهدف إثارة جنسية؟
-5. هل الكلمة مجرد شتيمة أو إهانة؟
-6. هل الكلمة مستخدمة بمعنى طبي أو تشريحي؟
-7. هل الكلمة مستخدمة كمجاز أو تعبير دارج؟
-
-إذا كانت الإجابة على جميع الأسئلة السابقة "لا"، فلا تسجل مخالفة.
-
----
-
-# Body Parts
-
-قد تشير الكلمات التالية إلى أعضاء حساسة، لكنها ليست مخالفة بحد ذاتها.
-
-- مهبل
-- المهبل
-- مهبلها
-- طيز
-- طيزه
-- طيزها
-- مؤخرة
-- مؤخرته
-- فخذ
-- فخذها
-- فخوذ
-- أرداف
-- صدر
-- ثدي
-- ثديها
-
----
-
-# Sexual Fluids
-
-قد تظهر أثناء وصف طبي أو أثناء وصف فعل جنسي.
-
-- مني
-- المني
-- قذف
-- يقذف
-- أقذف
-- قذف مني
-
-وجودها وحده لا يعد مخالفة.
-
----
-
-# Sexual Insults
-
-قد تستخدم هذه الكلمات كإهانة فقط.
-
-- شرموطة
-- فتالة
-- عاهرة
-- زانية
-- قواد
-- ديوث
-
-إذا استُخدمت كسب أو إهانة فقط، فلا تُصنف كمخالفة جنسية إلا إذا صاحبها وصف أو سلوك جنسي صريح.
-
----
-
-# Contextual Indicators
-
-وجود أي من الكلمات السابقة يتطلب تحليل:
-
-- المتحدث.
-- الشخص المقصود.
-- العلاقة بين الشخصيات.
-- نوع المشهد.
-- هل يوجد لمس؟
-- هل يوجد تعرٍ؟
-- هل يوجد وصف جنسي؟
-- هل يوجد إيحاء جنسي؟
-- هل يوجد تحريض أو ممارسة؟
-
----
-
-# NOT Violations
-
-لا تعتبر مخالفة إذا كان الاستخدام:
-
-- طبي.
-- تشريحي.
-- تعليمي.
-- قانوني.
-- تحقيق جنائي.
-- تقرير طبي.
-- شتيمة مجردة لا تصف فعلاً جنسياً.
-- مجاز لغوي.
-- وصف إصابة أو حادث.
-
----
-
-# Violation Threshold
-
-تصبح هذه الكلمات مخالفة فقط إذا ارتبطت بأحد الأمور التالية:
-
-- وصف ممارسة جنسية.
-- وصف عضو جنسي بغرض الإثارة.
-- التحريض على ممارسة جنسية.
-- طلب ممارسة جنسية.
-- وصف جنسي صريح.
-- تعرٍ أو كشف أعضاء حساسة في سياق جنسي.
-- إثارة أو استثارة جنسية واضحة.
-
----
-
-# Reviewer Notes
-
-- لا تعتمد على الكلمات المفتاحية وحدها.
-- افهم السياق الكامل للمشهد.
-- فرّق بين الإهانة والوصف الجنسي.
-- فرّق بين الاستخدام الطبي والاستخدام الجنسي.
-- فرّق بين الحوار والوصف السردي.
-- لا تعتمد على وجود عضو من أعضاء الجسم وحده.
-- لا تعتمد على وجود لفظ دارج وحده.
-- لا تستخدم ملخص المشهد كدليل.
-- يجب أن يكون الدليل مقتبساً حرفياً من السيناريو.
-- استخرج أقصر عبارة تثبت المخالفة دون حذف ما يغير معناها.
-- إذا وجدت عدة مخالفات مستقلة فسجل كل مخالفة بشكل مستقل.
-- لا تعيد صياغة الدليل.
-- لا تضف كلمات غير موجودة في السيناريو.
-- لا تنسب للمشهد أو للشخصيات أي معلومات غير موجودة صراحة في النص.
-
----
-
-# Confidence Rule
-
-لا تسجل أي مخالفة إذا كان القرار يعتمد على:
-
-- التخمين.
-- تفسير شخصي.
-- معلومات غير موجودة في السيناريو.
-- افتراض نية المتحدث.
-- مجرد وجود كلمة من مفردات هذا المرجع.
-
-وجود كلمة ذات طبيعة جنسية لا يكفي لإثبات المخالفة.
-
-إذا احتاج القرار إلى أي افتراض غير مدعوم بالنص، فأعد:
-
-```json
-{
-  "findings": []
-}
-```
-
----
-
-# Final Decision Rule
-
-قبل إرجاع أي مخالفة تحقق من جميع الشروط التالية:
-
-1. هل تنتمي المخالفة إلى المادة 07 فقط؟
-2. هل الدليل مقتبس حرفياً من السيناريو؟
-3. هل الدليل هو أقصر نص يثبت المخالفة دون تغيير معناه؟
-4. هل يعتمد القرار على السياق الكامل وليس على كلمة مفتاحية فقط؟
-5. هل يمكن لأي مراجع آخر الوصول إلى النتيجة نفسها بالاعتماد على النص فقط؟
-6. هل تجنبت تصنيف أي مخالفة تخص مادة أخرى؟
-
-إذا فشل أي شرط فأعد:
-
-```json
-{
-  "findings": []
-}
-```
-
----
-
-# Determinism Rules
-
-- لا تعتبر وجود مفردات جنسية أو أسماء أعضاء الجسم مخالفة بحد ذاته.
-- ميّز بين الاستخدام الطبي، والتشريحي، والقانوني، والإهانة، والوصف الدرامي، وبين الوصف أو التحريض الجنسي الصريح.
-- لا تعتبر التعرّي أو كشف الجسد مخالفة ضمن هذه المادة إلا إذا كان في سياق أو وصف جنسي؛ أما المظهر العام والاحتشام فتقع ضمن المواد المخصصة لها.
-- إذا احتمل النص أكثر من تفسير معقول فأعد:
-
-```json
-{
-  "findings": []
-}
-```
-
-- لا تعتمد على معلومات خارج السيناريو أو على افتراض نية الشخصيات.
+One rationale.
