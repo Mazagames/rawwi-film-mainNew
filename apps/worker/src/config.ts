@@ -90,6 +90,12 @@ export const config = {
    */
   ANALYSIS_EVAL_LOG: (process.env.ANALYSIS_EVAL_LOG ?? "true").toLowerCase() !== "false",
   /**
+   * Temporary diagnostic mode for validator tracing.
+   * When enabled, selected validator drops are logged but allowed to persist
+   * so we can prove whether the loss happens before insert or inside validation.
+   */
+  VALIDATOR_DEBUG_MODE: (process.env.VALIDATOR_DEBUG_MODE ?? "false").toLowerCase() === "true",
+  /**
    * Enable deep GPT auditor pass for canonical findings.
    * Kept for legacy evaluation jobs and report generation.
    */

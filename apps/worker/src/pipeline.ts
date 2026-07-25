@@ -1613,6 +1613,8 @@ export async function processChunkJudge(
   const chunkText = chunk.text;
   const chunkStart = chunk.start_offset;
   const chunkEnd = chunk.end_offset;
+  const validatorDebugMode = config.VALIDATOR_DEBUG_MODE;
+  const validatorDebugBypassRules = new Set(["event_rationale_mismatch", "missing_offsets", "evidence_mismatch"]);
 
   throwIfAborted(signal);
   if (await isJobCancelled(jobId)) {
@@ -2729,6 +2731,17 @@ export async function processChunkJudge(
     let postCanonicalEvidenceDroppedCount = 0;
     let canonicalModelMismatchDroppedCount = 0;
     let explicitSceneMismatchDroppedCount = 0;
+    let storedEvidencePassedCount = 0;
+    let storedEvidenceDroppedCount = 0;
+    let storedEvidenceBypassedCount = 0;
+    let eventConsistencyPassedCount = 0;
+    let eventConsistencyDroppedCount = 0;
+    let eventConsistencyBypassedCount = 0;
+    let passSpecificPassedCount = 0;
+    let passSpecificDroppedCount = 0;
+    let passSpecificBypassedCount = 0;
+    let canonicalModelPassedCount = 0;
+    let explicitScenePassedCount = 0;
     const rows = resolvedFindings.flatMap((f) => {
       const initialStart = f.start_offset_global ?? 0;
       const initialEnd = f.end_offset_global ?? initialStart;
@@ -2753,7 +2766,7 @@ export async function processChunkJudge(
         hasSaneGlobalOffsets ? end : null,
       );
       if (finalEvidenceIssue) {
-        postCanonicalEvidenceDroppedCount++;
+        const bypass = validatorDebugMode && validatorDebugBypassRules.has(finalEvidenceIssue);
         logger.warn("Low-quality final evidence excerpt (dropping finding before insert)", {
           jobId,
           chunkId: chunk.id,
@@ -2763,8 +2776,19 @@ export async function processChunkJudge(
           excerpt: excerpt.slice(0, 80),
           modelSnippet: modelSnippet.slice(0, 80),
           canonicalSnippet: canonicalSnippet.slice(0, 80),
+          bypassed: bypass,
         });
-        return [];
+        if (bypass) {
+          storedEvidencePassedCount++;
+          storedEvidenceBypassedCount++;
+        } else {
+          postCanonicalEvidenceDroppedCount++;
+          storedEvidenceDroppedCount++;
+          return [];
+        }
+      }
+      if (!finalEvidenceIssue) {
+        storedEvidencePassedCount++;
       }
 
       const eventConsistencyResult =
@@ -2772,7 +2796,7 @@ export async function processChunkJudge(
           ? getEventConsistencyIssue(f, multiPassEventUnderstanding.events)
           : null;
       if (eventConsistencyResult?.issue) {
-        postCanonicalEvidenceDroppedCount++;
+        const bypass = validatorDebugMode && validatorDebugBypassRules.has(eventConsistencyResult.issue);
         logger.warn("Event consistency issue (dropping finding before insert)", {
           jobId,
           chunkId: chunk.id,
@@ -2785,14 +2809,25 @@ export async function processChunkJudge(
           matchedScore: eventConsistencyResult.matchedScore,
           runnerUpScore: eventConsistencyResult.runnerUpScore,
           excerpt: excerpt.slice(0, 120),
+          bypassed: bypass,
         });
-        return [];
+        if (bypass) {
+          eventConsistencyPassedCount++;
+          eventConsistencyBypassedCount++;
+        } else {
+          postCanonicalEvidenceDroppedCount++;
+          eventConsistencyDroppedCount++;
+          return [];
+        }
+      } else {
+        eventConsistencyPassedCount++;
       }
 
+      let passedPassSpecific = true;
       if (config.VIOLATION_SYSTEM_VERSION !== "v5") {
         const passSpecificEvidenceIssue = getPassSpecificEvidenceIssue(f, excerpt, normalizedText, sceneIndex);
         if (passSpecificEvidenceIssue) {
-          postCanonicalEvidenceDroppedCount++;
+          const bypass = validatorDebugMode && validatorDebugBypassRules.has(passSpecificEvidenceIssue);
           logger.warn("Pass-specific final evidence issue (dropping finding before insert)", {
             jobId,
             chunkId: chunk.id,
@@ -2802,9 +2837,20 @@ export async function processChunkJudge(
             canonicalAtom: f.canonical_atom ?? null,
             issue: passSpecificEvidenceIssue,
             excerpt: excerpt.slice(0, 120),
+            bypassed: bypass,
           });
-          return [];
+          if (bypass) {
+            passSpecificBypassedCount++;
+          } else {
+            postCanonicalEvidenceDroppedCount++;
+            passSpecificDroppedCount++;
+            passedPassSpecific = false;
+            return [];
+          }
         }
+      }
+      if (passedPassSpecific) {
+        passSpecificPassedCount++;
       }
 
       if (canonicalSnippet.length > 0 && modelSnippet.length > 0 && !snippetsReasonablyAlign(modelSnippet, canonicalSnippet)) {
@@ -2819,6 +2865,7 @@ export async function processChunkJudge(
         });
         return [];
       }
+      canonicalModelPassedCount++;
 
       if (hasExplicitSceneMismatch(f.rationale_ar ?? null, sceneIndex, f.start_offset_global ?? null)) {
         explicitSceneMismatchDroppedCount++;
@@ -2833,6 +2880,7 @@ export async function processChunkJudge(
         });
         return [];
       }
+      explicitScenePassedCount++;
 
       const glossarySafeTitle = normalizeMisusedGlossaryPassTitle({
         titleAr: f.title_ar,
@@ -2927,6 +2975,29 @@ export async function processChunkJudge(
           documentContent: normalizedText,
         }),
       }];
+    });
+
+    logger.info("Validator lifecycle summary before insert", {
+      jobId,
+      chunkId: chunk.id,
+      runKey,
+      resolvedFindingsCount: resolvedFindings.length,
+      storedEvidencePassedCount,
+      storedEvidenceBypassedCount,
+      storedEvidenceDroppedCount,
+      eventConsistencyPassedCount,
+      eventConsistencyBypassedCount,
+      eventConsistencyDroppedCount,
+      passSpecificPassedCount,
+      passSpecificBypassedCount,
+      passSpecificDroppedCount,
+      canonicalModelPassedCount,
+      explicitScenePassedCount,
+      rowsCount: rows.length,
+      validatorDebugMode,
+      postCanonicalEvidenceDroppedCount,
+      canonicalModelMismatchDroppedCount,
+      explicitSceneMismatchDroppedCount,
     });
 
     // Log first row shape for debugging column mismatch
