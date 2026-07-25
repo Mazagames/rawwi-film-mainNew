@@ -2255,6 +2255,9 @@ export async function processChunkJudge(
         return;
       }
 
+      const multiPassEventUnderstanding = multiPassResult.eventUnderstanding;
+      const multiPassPassResults = multiPassResult.passResults;
+
     // 4) Micro-windows (DISABLED for multi-pass - full chunk coverage is sufficient)
     // Multi-pass already provides comprehensive coverage, micro-windows add redundancy
     logger.info("Micro-windows skipped (multi-pass provides full coverage)", { chunkId: chunk.id });
@@ -2290,7 +2293,7 @@ export async function processChunkJudge(
         finalAiFindings: afterArticleFourCollapseCount,
         lexiconFindings: mandatoryFindings.length,
       });
-        if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassResult.eventUnderstanding) {
+        if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
           if (config.ANALYSIS_EVAL_LOG) {
             await persistJudgeDiagnostic({
               diagnostic_kind: "understanding_snapshot",
@@ -2299,10 +2302,10 @@ export async function processChunkJudge(
               pass_name: "event_understanding",
               prompt_hash: "",
               router_candidates: null,
-              raw_judge_response: JSON.stringify(multiPassResult.eventUnderstanding),
+              raw_judge_response: JSON.stringify(multiPassEventUnderstanding),
               rendered_system_prompt: null,
               rendered_user_prompt: null,
-              parsed_judge_response: multiPassResult.eventUnderstanding,
+              parsed_judge_response: multiPassEventUnderstanding,
               raw_finding_count: 0,
               parsed_finding_count: 0,
               finding_count: 0,
@@ -2314,15 +2317,15 @@ export async function processChunkJudge(
             });
             logger.info("Understanding snapshot persisted", {
               chunkId: chunk.id,
-              eventCount: multiPassResult.eventUnderstanding.event_count,
+              eventCount: multiPassEventUnderstanding.event_count,
             });
           }
 
           const reviewerBenchmarkReport = buildReviewerBenchmarkReport({
             chunkStart,
             chunkEnd,
-            eventUnderstanding: multiPassResult.eventUnderstanding,
-            passResults: multiPassResult.passResults,
+            eventUnderstanding: multiPassEventUnderstanding,
+            passResults: multiPassPassResults,
           finalFindings: allFindings,
         });
         const reviewerBenchmarkHtml = buildReviewerBenchmarkHtml(reviewerBenchmarkReport);
@@ -2594,13 +2597,13 @@ export async function processChunkJudge(
     });
   }
 
-  if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassResult.eventUnderstanding) {
+  if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
     const validatorAuditReport = buildValidatorAuditReport({
       chunkStart,
       chunkEnd,
       chunkText,
-      eventUnderstanding: multiPassResult.eventUnderstanding,
-      passResults: multiPassResult.passResults,
+      eventUnderstanding: multiPassEventUnderstanding,
+      passResults: multiPassPassResults,
       finalFindings: resolvedFindings,
       memory2Enabled: isMemory2Mode(job),
       useEventConsistencyChecks: config.VIOLATION_SYSTEM_VERSION === "v5",
@@ -2617,8 +2620,8 @@ export async function processChunkJudge(
       const reviewerTraceReport = buildReviewerTraceReport({
         chunkStart,
         chunkEnd,
-        eventUnderstanding: multiPassResult.eventUnderstanding,
-        passResults: multiPassResult.passResults,
+        eventUnderstanding: multiPassEventUnderstanding,
+        passResults: multiPassPassResults,
         finalFindings: resolvedFindings,
         validatorAuditReport,
       });
@@ -2688,8 +2691,8 @@ export async function processChunkJudge(
       }
 
       const eventConsistencyResult =
-        config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassResult.eventUnderstanding
-          ? getEventConsistencyIssue(f, multiPassResult.eventUnderstanding.events)
+        config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding
+          ? getEventConsistencyIssue(f, multiPassEventUnderstanding.events)
           : null;
       if (eventConsistencyResult?.issue) {
         postCanonicalEvidenceDroppedCount++;
