@@ -96,6 +96,12 @@ export const config = {
    */
   VALIDATOR_DEBUG_MODE: (process.env.VALIDATOR_DEBUG_MODE ?? "false").toLowerCase() === "true",
   /**
+   * Temporary audit mode for validators.
+   * When enabled, semantic validator disagreements are recorded as warnings
+   * but findings continue through persistence and reporting.
+   */
+  VALIDATOR_AUDIT_MODE: (process.env.VALIDATOR_AUDIT_MODE ?? "false").toLowerCase() === "true",
+  /**
    * Enable deep GPT auditor pass for canonical findings.
    * Kept for legacy evaluation jobs and report generation.
    */

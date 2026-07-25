@@ -855,6 +855,7 @@ export function applyMemory2SanityGuards(
   findings: FindingWithGlobal[],
   normalizedText: string | null,
   chunkText: string,
+  auditMode = false,
 ): { accepted: FindingWithGlobal[]; rejected: Memory2GuardRejection[] } {
   const guarded: FindingWithGlobal[] = [];
   const rejected: Memory2GuardRejection[] = [];
@@ -880,11 +881,15 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped political/security finding without governance anchors", {
+      logger.warn("Memory2 sanity guard advisory: political/security finding without governance anchors", {
         article: finding.article_id,
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -901,11 +906,15 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped political/security finding in school context", {
+      logger.warn("Memory2 sanity guard advisory: political/security finding in school context", {
         article: finding.article_id,
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -922,11 +931,15 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped political/security finding due to school-order context", {
+      logger.warn("Memory2 sanity guard advisory: political/security finding due to school-order context", {
         article: finding.article_id,
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -942,12 +955,16 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped finding due to ungrounded political/security rationale", {
+      logger.warn("Memory2 sanity guard advisory: finding due to ungrounded political/security rationale", {
         article: finding.article_id,
         title: finding.title_ar,
         rationale: rationale.slice(0, 180),
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -959,12 +976,16 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped finding due to unsupported local rationale", {
+      logger.warn("Memory2 sanity guard advisory: finding due to unsupported local rationale", {
         article: finding.article_id,
         title: finding.title_ar,
         rationale: rationale.slice(0, 180),
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -978,11 +999,15 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped sexual finding without sexual anchors", {
+      logger.warn("Memory2 sanity guard advisory: sexual finding without sexual anchors", {
         article: finding.article_id,
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -998,11 +1023,15 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped drift-prone finding without article anchor", {
+      logger.warn("Memory2 sanity guard advisory: drift-prone finding without article anchor", {
         article: finding.article_id,
         title: finding.title_ar,
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -1014,12 +1043,16 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped finding due to rationale/local-window mismatch", {
+      logger.warn("Memory2 sanity guard advisory: finding due to rationale/local-window mismatch", {
         article: finding.article_id,
         title: finding.title_ar,
         rationale: rationale.slice(0, 180),
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -1031,12 +1064,16 @@ export function applyMemory2SanityGuards(
         evidence: (finding.evidence_snippet ?? "").slice(0, 220),
         rationale: rationale.slice(0, 260),
       });
-      logger.warn("Memory2 sanity guard dropped finding due to ungrounded rationale quote", {
+      logger.warn("Memory2 sanity guard advisory: finding due to ungrounded rationale quote", {
         article: finding.article_id,
         title: finding.title_ar,
         rationale: rationale.slice(0, 180),
         evidence: (finding.evidence_snippet ?? "").slice(0, 120),
       });
+      if (auditMode) {
+        guarded.push(finding);
+        continue;
+      }
       continue;
     }
 
@@ -1613,7 +1650,7 @@ export async function processChunkJudge(
   const chunkText = chunk.text;
   const chunkStart = chunk.start_offset;
   const chunkEnd = chunk.end_offset;
-  const validatorDebugMode = config.VALIDATOR_DEBUG_MODE;
+  const validatorAuditMode = config.VALIDATOR_AUDIT_MODE || config.VALIDATOR_DEBUG_MODE;
   const validatorAdvisoryIssues = new Set([
     "event_not_supported",
     "event_evidence_mismatch",
@@ -2751,11 +2788,11 @@ export async function processChunkJudge(
 
     if (isMemory2Mode(job)) {
       const beforeGuard = resolvedFindings.length;
-      const guardResult = applyMemory2SanityGuards(resolvedFindings, normalizedText, chunk.text);
+      const guardResult = applyMemory2SanityGuards(resolvedFindings, normalizedText, chunk.text, validatorAuditMode);
       resolvedFindings = sortFindingsStable(guardResult.accepted);
     const droppedByGuard = guardResult.rejected.length;
     if (droppedByGuard > 0) {
-      logger.warn("Memory2 sanity guards dropped findings before persistence", {
+      logger.warn("Memory2 sanity guards flagged findings before persistence", {
         jobId,
         chunkId: chunk.id,
         droppedByGuard,
@@ -3084,7 +3121,7 @@ export async function processChunkJudge(
       canonicalModelPassedCount,
       explicitScenePassedCount,
       rowsCount: rows.length,
-      validatorDebugMode,
+      validatorAuditMode,
       postCanonicalEvidenceDroppedCount,
       canonicalModelMismatchDroppedCount,
       explicitSceneMismatchDroppedCount,
