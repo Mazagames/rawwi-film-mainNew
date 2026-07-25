@@ -54,6 +54,7 @@ function buildSyntheticUnderstanding(): EventUnderstandingPassResult {
     events: [
       {
         event_id: 1,
+        event_summary: "Explosion shakes a neighborhood.",
         actor: "انفجار",
         target: "الحي",
         action: "هز",

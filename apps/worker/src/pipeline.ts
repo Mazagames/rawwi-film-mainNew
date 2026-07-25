@@ -94,7 +94,13 @@ const HARD_FALLBACK_INSULTS = [
 
 async function isPartialFinalizeRequested(jobId: string): Promise<boolean> {
   try {
-    const { data, error } = await withOperationTimeout(
+    const result: {
+      data: { partial_finalize_requested?: boolean | null } | null;
+      error: { message: string } | null;
+    } = await withOperationTimeout<{
+      data: { partial_finalize_requested?: boolean | null } | null;
+      error: { message: string } | null;
+    }>(
       "Read job partial finalize state",
       NON_CRITICAL_DB_TIMEOUT_MS,
       supabase
@@ -103,6 +109,7 @@ async function isPartialFinalizeRequested(jobId: string): Promise<boolean> {
         .eq("id", jobId)
         .maybeSingle()
     );
+    const { data, error } = result;
 
     if (error) {
       logger.warn("Failed to read job partial finalize state during chunk processing", {
@@ -129,6 +136,20 @@ async function runBenchmarkInstrumentation(args: BenchmarkInstrumentationArgs): 
   }
 
   try {
+    const originalUnderstanding = {
+      chunk_start: args.multiPassEventUnderstanding.chunk_start,
+      chunk_end: args.multiPassEventUnderstanding.chunk_end,
+      event_count: args.multiPassEventUnderstanding.original_event_count ?? args.multiPassEventUnderstanding.event_count,
+      events: args.multiPassEventUnderstanding.original_events ?? args.multiPassEventUnderstanding.events,
+    };
+    const verificationResult = args.multiPassEventUnderstanding.verification ?? null;
+    const finalCorrectedUnderstanding = {
+      chunk_start: args.multiPassEventUnderstanding.chunk_start,
+      chunk_end: args.multiPassEventUnderstanding.chunk_end,
+      event_count: args.multiPassEventUnderstanding.event_count,
+      events: args.multiPassEventUnderstanding.events,
+    };
+
     if (config.ANALYSIS_EVAL_LOG) {
       await persistJudgeDiagnostic({
         diagnostic_kind: "understanding_snapshot",
@@ -137,10 +158,18 @@ async function runBenchmarkInstrumentation(args: BenchmarkInstrumentationArgs): 
         pass_name: "event_understanding",
         prompt_hash: "",
         router_candidates: null,
-        raw_judge_response: JSON.stringify(args.multiPassEventUnderstanding),
+        raw_judge_response: JSON.stringify({
+          original_understanding: originalUnderstanding,
+          verification_result: verificationResult,
+          final_corrected_json: finalCorrectedUnderstanding,
+        }),
         rendered_system_prompt: null,
         rendered_user_prompt: null,
-        parsed_judge_response: args.multiPassEventUnderstanding,
+        parsed_judge_response: {
+          original_understanding: originalUnderstanding,
+          verification_result: verificationResult,
+          final_corrected_json: finalCorrectedUnderstanding,
+        },
         raw_finding_count: 0,
         parsed_finding_count: 0,
         finding_count: 0,
@@ -153,6 +182,8 @@ async function runBenchmarkInstrumentation(args: BenchmarkInstrumentationArgs): 
       logger.info("Understanding snapshot persisted", {
         chunkId: args.chunk.id,
         eventCount: args.multiPassEventUnderstanding.event_count,
+        originalEventCount: originalUnderstanding.event_count,
+        verificationStatus: verificationResult?.status ?? "none",
       });
     }
 
@@ -1741,7 +1772,7 @@ export async function processChunkJudge(
       logger.error("Lexicon finding upsert FAILED", { jobId, chunkId: chunk.id, error: lexErr });
     } else {
       await upsertFindingPolicyLinks(
-        (lexData ?? []).map((r) => ({
+        (lexData ?? []).map((r: { id: string; article_id: number; atom_id: string | null; confidence?: number | null }) => ({
           id: (r as { id: string }).id,
           article_id: (r as { article_id: number }).article_id,
           atom_id: (r as { atom_id: string | null }).atom_id,
@@ -1821,12 +1852,12 @@ export async function processChunkJudge(
       } else {
         hardFallbackInserted += fbData?.length ?? 0;
         await upsertFindingPolicyLinks(
-          (fbData ?? []).map((r) => ({
-            id: (r as { id: string }).id,
-            article_id: (r as { article_id: number }).article_id,
-            atom_id: (r as { atom_id: string | null }).atom_id,
-            confidence: (r as { confidence?: number | null }).confidence ?? 1,
-          }))
+        (fbData ?? []).map((r: { id: string; article_id: number; atom_id: string | null; confidence?: number | null }) => ({
+          id: (r as { id: string }).id,
+          article_id: (r as { article_id: number }).article_id,
+          atom_id: (r as { atom_id: string | null }).atom_id,
+          confidence: (r as { confidence?: number | null }).confidence ?? 1,
+        }))
         );
       }
     }
@@ -2037,7 +2068,7 @@ export async function processChunkJudge(
           throwIfAborted(signal);
           routerOutputJson = routerOut;
           const routerTrace = buildRouterTraceSummary(routerOut);
-          const candidateIds = routerOut.candidate_articles.map((a) => a.article_id);
+          const candidateIds = routerOut.candidate_articles.map((a: { article_id: number }) => a.article_id);
           selectedIds = [...new Set([...ALWAYS_CHECK_ARTICLES, ...candidateIds])].sort((a, b) => a - b).slice(0, 25);
 
           logger.info("[DEBUG] Router trace summary", {
@@ -2457,7 +2488,7 @@ export async function processChunkJudge(
     });
     let runErr: { message: string } | null = null;
     try {
-      const result = await withOperationTimeout(
+      const result: { error: { message: string } | null } = await withOperationTimeout<{ error: { message: string } | null }>(
         "Persist advisory analysis_chunk_run",
         NON_CRITICAL_DB_TIMEOUT_MS,
         supabase.from("analysis_chunk_runs").upsert({
@@ -2933,13 +2964,16 @@ export async function processChunkJudge(
       rows: rows.length,
       timeoutMs: CRITICAL_DB_TIMEOUT_MS,
     });
-    const { data, error } = await withOperationTimeout(
-      "Upsert analysis_findings",
-      CRITICAL_DB_TIMEOUT_MS,
-      supabase
-        .from("analysis_findings")
-        .upsert(rows, { onConflict: "job_id,evidence_hash", ignoreDuplicates: true })
-        .select("id,article_id,atom_id,confidence")
+      const { data, error } = await withOperationTimeout<{
+        data: Array<{ id: string; article_id: number; atom_id: string | null; confidence?: number | null }> | null;
+        error: { message: string } | null;
+      }>(
+        "Upsert analysis_findings",
+        CRITICAL_DB_TIMEOUT_MS,
+        supabase
+          .from("analysis_findings")
+          .upsert(rows, { onConflict: "job_id,evidence_hash", ignoreDuplicates: true })
+          .select("id,article_id,atom_id,confidence")
     );
     throwIfAborted(signal);
 
@@ -2980,7 +3014,7 @@ export async function processChunkJudge(
         )
       );
       await upsertFindingPolicyLinks(
-        (data ?? []).map((r) => ({
+        (data ?? []).map((r: { id: string; article_id: number; atom_id: string | null; confidence?: number | null }) => ({
           id: (r as { id: string }).id,
           article_id: (r as { article_id: number }).article_id,
           atom_id: (r as { atom_id: string | null }).atom_id,

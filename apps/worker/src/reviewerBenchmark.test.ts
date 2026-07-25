@@ -17,6 +17,7 @@ function buildSyntheticEvents(): EventUnderstandingPassResult {
     events: [
       {
         event_id: 1,
+        event_summary: "Physical assault.",
         actor: "سامي",
         target: "خالد",
         action: "يضرب",
@@ -29,6 +30,7 @@ function buildSyntheticEvents(): EventUnderstandingPassResult {
       },
       {
         event_id: 2,
+        event_summary: "Verbal threat.",
         actor: "ليلى",
         target: "مازن",
         action: "تهدد",
@@ -41,6 +43,7 @@ function buildSyntheticEvents(): EventUnderstandingPassResult {
       },
       {
         event_id: 3,
+        event_summary: "Loud shouting in a street.",
         actor: "الشارع",
         target: "",
         action: "صراخ",

@@ -39,11 +39,18 @@ export type ReviewerBenchmarkReviewerRow = {
   articleNumber: number;
   articleTitle: string;
   passName: string;
+  eventIdsReceived: number[];
   eventsReceived: number;
   eventsAccepted: number;
   eventsRejected: number;
   eventsIgnored: number;
   findingsEmitted: number;
+  promptTokenCount: number;
+  completionTokenCount: number;
+  promptSizeCharacters: number;
+  completionSizeCharacters: number;
+  executionTimeMs: number;
+  acceptanceRate: number;
   verifierAccepted: number;
   verifierRejected: number;
   precision: number;
@@ -54,6 +61,24 @@ export type ReviewerBenchmarkReviewerRow = {
   averageConfidence: number;
   acceptedEventIds: number[];
   ignoredEventIds: number[];
+};
+
+export type ReviewerInputAuditRow = {
+  articleNumber: number;
+  articleTitle: string;
+  passName: string;
+  eventIdsReceived: number[];
+  eventCount: number;
+  promptTokenCount: number;
+  completionTokenCount: number;
+  promptSizeCharacters: number;
+  completionSizeCharacters: number;
+  executionTimeMs: number;
+  findingsGenerated: number;
+  acceptedEventIds: number[];
+  ignoredEventIds: number[];
+  acceptanceRate: number;
+  ownershipAccuracy: number;
 };
 
 export type ReviewerDecisionAudit = {
@@ -80,6 +105,7 @@ export type ReviewerBenchmarkReport = {
   chunkEnd: number;
   eventCount: number;
   reviewerRows: ReviewerBenchmarkReviewerRow[];
+  reviewerInputAudits: ReviewerInputAuditRow[];
   reviewerRanking: ReviewerBenchmarkReviewerRow[];
   decisionAudits: ReviewerDecisionAudit[];
   falsePositives: ReviewerBenchmarkIssue[];
@@ -96,6 +122,12 @@ export type ReviewerBenchmarkReport = {
     averageSnippetAccuracy: number;
     averageExplanationAccuracy: number;
     averageConfidence: number;
+    averagePromptTokens: number;
+    averageCompletionTokens: number;
+    averagePromptSizeCharacters: number;
+    averageCompletionSizeCharacters: number;
+    averageExecutionTimeMs: number;
+    averageAcceptanceRate: number;
   };
 };
 
@@ -438,6 +470,7 @@ export function buildReviewerBenchmarkReport(args: {
   );
   const events = args.eventUnderstanding?.events ?? [];
   const eventCount = events.length;
+  const eventIdsReceived = uniqueSortedNumbers(events.map((event) => event.event_id));
   const decisionAudits = buildReviewerDecisionAudits({
     eventUnderstanding: args.eventUnderstanding,
     passResults: args.passResults,
@@ -446,6 +479,7 @@ export function buildReviewerBenchmarkReport(args: {
   });
 
   const reviewerRows: ReviewerBenchmarkReviewerRow[] = [];
+  const reviewerInputAudits: ReviewerInputAuditRow[] = [];
   const falsePositives: ReviewerBenchmarkIssue[] = [];
   const falseNegatives: ReviewerBenchmarkMiss[] = [];
   const falsePositiveKeys = new Set<string>();
@@ -459,6 +493,12 @@ export function buildReviewerBenchmarkReport(args: {
     const rejectedDecisionAudits = reviewerAudits.filter((audit) => audit.decision === "rejected");
     const acceptedEventIds = uniqueSortedNumbers(acceptedDecisionAudits.map((audit) => audit.eventId));
     const ignoredEventIds = uniqueSortedNumbers(rejectedDecisionAudits.map((audit) => audit.eventId));
+    const promptTokenCount = passResult.promptTokens ?? 0;
+    const completionTokenCount = passResult.completionTokens ?? 0;
+    const promptSizeCharacters = passResult.promptCharacters ?? 0;
+    const completionSizeCharacters = passResult.completionCharacters ?? 0;
+    const executionTimeMs = passResult.duration;
+    const acceptanceRate = eventCount > 0 ? acceptedEventIds.length / eventCount : 0;
 
     const verifierAccepted = acceptedDecisionAudits.length;
     const findingsEmitted = passResult.findings.length;
@@ -472,11 +512,18 @@ export function buildReviewerBenchmarkReport(args: {
       articleNumber,
       articleTitle: meta.articleTitle,
       passName: passResult.passName,
+      eventIdsReceived,
       eventsReceived: eventCount,
       eventsAccepted: acceptedEventIds.length,
       eventsRejected: rejectedDecisionAudits.length,
       eventsIgnored: rejectedDecisionAudits.length,
       findingsEmitted,
+      promptTokenCount,
+      completionTokenCount,
+      promptSizeCharacters,
+      completionSizeCharacters,
+      executionTimeMs,
+      acceptanceRate,
       verifierAccepted,
       verifierRejected,
       precision: findingsEmitted > 0 ? verifierAccepted / findingsEmitted : 0,
@@ -487,6 +534,24 @@ export function buildReviewerBenchmarkReport(args: {
       averageConfidence,
       acceptedEventIds,
       ignoredEventIds,
+    });
+
+    reviewerInputAudits.push({
+      articleNumber,
+      articleTitle: meta.articleTitle,
+      passName: passResult.passName,
+      eventIdsReceived,
+      eventCount,
+      promptTokenCount,
+      completionTokenCount,
+      promptSizeCharacters,
+      completionSizeCharacters,
+      executionTimeMs,
+      findingsGenerated: findingsEmitted,
+      acceptedEventIds,
+      ignoredEventIds,
+      acceptanceRate,
+      ownershipAccuracy,
     });
   }
 
@@ -546,6 +611,12 @@ export function buildReviewerBenchmarkReport(args: {
     averageSnippetAccuracy: average(reviewerRows.map((row) => row.snippetAccuracy)),
     averageExplanationAccuracy: average(reviewerRows.map((row) => row.explanationAccuracy)),
     averageConfidence: average(reviewerRows.map((row) => row.averageConfidence)),
+    averagePromptTokens: average(reviewerRows.map((row) => row.promptTokenCount)),
+    averageCompletionTokens: average(reviewerRows.map((row) => row.completionTokenCount)),
+    averagePromptSizeCharacters: average(reviewerRows.map((row) => row.promptSizeCharacters)),
+    averageCompletionSizeCharacters: average(reviewerRows.map((row) => row.completionSizeCharacters)),
+    averageExecutionTimeMs: average(reviewerRows.map((row) => row.executionTimeMs)),
+    averageAcceptanceRate: average(reviewerRows.map((row) => row.acceptanceRate)),
   };
 
   return {
@@ -554,6 +625,7 @@ export function buildReviewerBenchmarkReport(args: {
     chunkEnd: args.chunkEnd,
     eventCount,
     reviewerRows,
+    reviewerInputAudits,
     reviewerRanking,
     decisionAudits,
     falsePositives,
@@ -572,11 +644,18 @@ export function toReviewerBenchmarkLog(report: ReviewerBenchmarkReport): Record<
       articleNumber: row.articleNumber,
       articleTitle: row.articleTitle,
       passName: row.passName,
+      eventIdsReceived: row.eventIdsReceived,
       eventsReceived: row.eventsReceived,
       eventsAccepted: row.eventsAccepted,
       eventsRejected: row.eventsRejected,
       eventsIgnored: row.eventsIgnored,
       findingsEmitted: row.findingsEmitted,
+      promptTokenCount: row.promptTokenCount,
+      completionTokenCount: row.completionTokenCount,
+      promptSizeCharacters: row.promptSizeCharacters,
+      completionSizeCharacters: row.completionSizeCharacters,
+      executionTimeMs: row.executionTimeMs,
+      acceptanceRate: row.acceptanceRate,
       verifierAccepted: row.verifierAccepted,
       verifierRejected: row.verifierRejected,
       precision: row.precision,
@@ -587,6 +666,23 @@ export function toReviewerBenchmarkLog(report: ReviewerBenchmarkReport): Record<
       averageConfidence: row.averageConfidence,
       acceptedEventIds: row.acceptedEventIds,
       ignoredEventIds: row.ignoredEventIds,
+    })),
+    reviewerInputAudits: report.reviewerInputAudits.map((row) => ({
+      articleNumber: row.articleNumber,
+      articleTitle: row.articleTitle,
+      passName: row.passName,
+      eventIdsReceived: row.eventIdsReceived,
+      eventCount: row.eventCount,
+      promptTokenCount: row.promptTokenCount,
+      completionTokenCount: row.completionTokenCount,
+      promptSizeCharacters: row.promptSizeCharacters,
+      completionSizeCharacters: row.completionSizeCharacters,
+      executionTimeMs: row.executionTimeMs,
+      findingsGenerated: row.findingsGenerated,
+      acceptedEventIds: row.acceptedEventIds,
+      ignoredEventIds: row.ignoredEventIds,
+      acceptanceRate: row.acceptanceRate,
+      ownershipAccuracy: row.ownershipAccuracy,
     })),
     reviewerRanking: report.reviewerRanking.map((row) => ({
       articleNumber: row.articleNumber,
@@ -637,11 +733,18 @@ function renderReviewerRows(rows: ReviewerBenchmarkReviewerRow[]): string {
         <td>${escapeHtml(String(row.articleNumber).padStart(2, "0"))}</td>
         <td>${escapeHtml(row.articleTitle)}</td>
         <td>${escapeHtml(row.passName)}</td>
+        <td>${escapeHtml(row.eventIdsReceived.join(", "))}</td>
         <td>${formatInteger(row.eventsReceived)}</td>
         <td>${formatInteger(row.eventsAccepted)}</td>
         <td>${formatInteger(row.eventsRejected)}</td>
         <td>${formatInteger(row.eventsIgnored)}</td>
         <td>${formatInteger(row.findingsEmitted)}</td>
+        <td>${formatInteger(row.promptTokenCount)}</td>
+        <td>${formatInteger(row.completionTokenCount)}</td>
+        <td>${formatInteger(row.promptSizeCharacters)}</td>
+        <td>${formatInteger(row.completionSizeCharacters)}</td>
+        <td>${formatInteger(row.executionTimeMs)}</td>
+        <td>${escapeHtml(formatPercent(row.acceptanceRate))}</td>
         <td>${formatInteger(row.verifierAccepted)}</td>
         <td>${formatInteger(row.verifierRejected)}</td>
         <td>${escapeHtml(formatPercent(row.precision))}</td>
@@ -667,6 +770,32 @@ function renderReviewerRankingRows(rows: ReviewerBenchmarkReviewerRow[]): string
         <td>${escapeHtml(formatPercent(row.precision))}</td>
         <td>${escapeHtml(formatPercent(row.recall))}</td>
         <td>${escapeHtml(formatPercent(row.averageConfidence))}</td>
+      </tr>
+    `)
+    .join("");
+}
+
+function renderReviewerInputAuditRows(rows: ReviewerInputAuditRow[]): string {
+  if (rows.length === 0) {
+    return `<tr><td colspan="13" class="empty-state">No reviewer input audits recorded.</td></tr>`;
+  }
+
+  return rows
+    .map((row) => `
+      <tr>
+        <td>${escapeHtml(String(row.articleNumber).padStart(2, "0"))}</td>
+        <td>${escapeHtml(row.articleTitle)}</td>
+        <td>${escapeHtml(row.passName)}</td>
+        <td>${escapeHtml(row.eventIdsReceived.join(", "))}</td>
+        <td>${formatInteger(row.eventCount)}</td>
+        <td>${formatInteger(row.promptTokenCount)}</td>
+        <td>${formatInteger(row.completionTokenCount)}</td>
+        <td>${formatInteger(row.promptSizeCharacters)}</td>
+        <td>${formatInteger(row.completionSizeCharacters)}</td>
+        <td>${formatInteger(row.executionTimeMs)}</td>
+        <td>${formatInteger(row.findingsGenerated)}</td>
+        <td>${escapeHtml(formatPercent(row.acceptanceRate))}</td>
+        <td>${escapeHtml(formatPercent(row.ownershipAccuracy))}</td>
       </tr>
     `)
     .join("");
@@ -791,7 +920,7 @@ export function buildReviewerBenchmarkHtml(report: ReviewerBenchmarkReport): str
     }
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 14px;
       margin-bottom: 18px;
     }
@@ -927,6 +1056,12 @@ export function buildReviewerBenchmarkHtml(report: ReviewerBenchmarkReport): str
       ${renderMetricCard("Snippet accuracy", formatPercent(summary.averageSnippetAccuracy), "Evidence quote is locally supported")}
       ${renderMetricCard("Explanation accuracy", formatPercent(summary.averageExplanationAccuracy), "Rationale is event-grounded")}
       ${renderMetricCard("Average confidence", formatPercent(summary.averageConfidence), "Confidence across reviewer decisions")}
+      ${renderMetricCard("Average prompt tokens", formatInteger(summary.averagePromptTokens), "Prompt size observed during benchmark")}
+      ${renderMetricCard("Average completion tokens", formatInteger(summary.averageCompletionTokens), "Completion size observed during benchmark")}
+      ${renderMetricCard("Average prompt size", formatInteger(summary.averagePromptSizeCharacters), "Rendered prompt characters per pass")}
+      ${renderMetricCard("Average completion size", formatInteger(summary.averageCompletionSizeCharacters), "Rendered completion characters per pass")}
+      ${renderMetricCard("Average execution time", `${formatInteger(summary.averageExecutionTimeMs)} ms`, "Mean reviewer pass duration")}
+      ${renderMetricCard("Average acceptance rate", formatPercent(summary.averageAcceptanceRate), "Accepted events / received events")}
     </section>
 
     <section class="panels">
@@ -959,11 +1094,18 @@ export function buildReviewerBenchmarkHtml(report: ReviewerBenchmarkReport): str
               <th>Article</th>
               <th>Title</th>
               <th>Pass</th>
+              <th>Event IDs</th>
               <th>Received</th>
               <th>Accepted</th>
               <th>Rejected</th>
               <th>Ignored</th>
               <th>Emitted</th>
+              <th>Prompt Tokens</th>
+              <th>Completion Tokens</th>
+              <th>Prompt Size</th>
+              <th>Completion Size</th>
+              <th>Execution Time</th>
+              <th>Acceptance Rate</th>
               <th>Verifier OK</th>
               <th>Verifier Drop</th>
               <th>Precision</th>
@@ -975,6 +1117,31 @@ export function buildReviewerBenchmarkHtml(report: ReviewerBenchmarkReport): str
             </tr>
           </thead>
           <tbody>${renderReviewerRows(reviewerRows)}</tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Reviewer Input Audits</h2>
+        <p class="subtitle">Benchmark-only input diagnostics showing what each reviewer pass received from the structured event layer.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Article</th>
+              <th>Title</th>
+              <th>Pass</th>
+              <th>Event IDs</th>
+              <th>Event Count</th>
+              <th>Prompt Tokens</th>
+              <th>Completion Tokens</th>
+              <th>Prompt Size</th>
+              <th>Completion Size</th>
+              <th>Execution Time</th>
+              <th>Findings</th>
+              <th>Acceptance</th>
+              <th>Ownership</th>
+            </tr>
+          </thead>
+          <tbody>${renderReviewerInputAuditRows(report.reviewerInputAudits)}</tbody>
         </table>
       </div>
 

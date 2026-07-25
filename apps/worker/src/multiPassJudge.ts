@@ -1584,7 +1584,7 @@ function buildV5DetectionPasses(): PassDefinition[] {
     name: `v5_article_${String(reviewer.articleNumber).padStart(2, "0")}`,
     displayLabel: reviewer.displayLabel,
     articleIds: [reviewer.articleNumber],
-    buildPrompt: () => `${reviewer.prompt}\n\n# Runtime Input (Structured Events Only)\n\nThe raw chunk is not provided to the reviewer. The reviewer receives deterministic structured events extracted from the chunk.\n\n- Do not rediscover events from prose.\n- Do not classify raw chunk text directly.\n- Decide which structured events belong to your article.\n- One event may produce at most one finding.`,
+    buildPrompt: () => `${reviewer.prompt}\n\n# Runtime Input (Structured Events Only)\n\nThe screenplay has already been read and understood.\nYou are NOT responsible for understanding the screenplay.\nYou must trust the structured events below.\nEvaluate ONLY those events.\nDo not rediscover events.\nDo not reinterpret dialogue.\nDo not infer new actions.\nDo not merge events.\nDo not split events.\n\nThe reviewer receives deterministic structured events extracted from the screenplay.\nThe raw screenplay prose is not provided to the reviewer.\n\n- One finding must reference exactly one event_id.\n- A reviewer may ignore events that do not belong to its assigned article.\n- A reviewer must never merge multiple events into one finding.`,
     model: config.OPENAI_JUDGE_MODEL,
     sourceFileName: reviewer.filename,
   }));
@@ -1613,6 +1613,11 @@ export interface PassResult {
   matchedSignals?: string[];
   model?: string;
   error?: string;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
+  promptCharacters?: number | null;
+  completionCharacters?: number | null;
 }
 
 function hasGovernanceAnchor(text: string): boolean {
@@ -1841,13 +1846,13 @@ async function runSinglePass(
 
     if (!isV5Reviewer && articles.length === 0 && pass.name !== "glossary") {
       logger.warn(`[DEBUG] Pass skipped: no articles`, { passName: pass.name, articleIds, allArticleIds: allArticles.map(a => a.id) });
-      return { passName: pass.name, findings: [], duration: 0, skipped: true, reason: "no_articles", model: pass.model };
+      return { passName: pass.name, findings: [], duration: 0, skipped: true, reason: "no_articles", model: pass.model, promptTokens: null, completionTokens: null, totalTokens: null, promptCharacters: null, completionCharacters: null };
     }
 
     // Skip glossary pass if no lexicon terms
     if (!isV5Reviewer && pass.name === "glossary" && lexiconTerms.length === 0) {
       logger.info("Skipping glossary pass (no lexicon terms)");
-      return { passName: pass.name, findings: [], duration: 0, skipped: true, reason: "no_lexicon_terms", model: pass.model };
+      return { passName: pass.name, findings: [], duration: 0, skipped: true, reason: "no_lexicon_terms", model: pass.model, promptTokens: null, completionTokens: null, totalTokens: null, promptCharacters: null, completionCharacters: null };
     }
 
     // Build specialized prompt
@@ -2019,7 +2024,17 @@ async function runSinglePass(
       model
     });
 
-    return { passName: pass.name, findings: stableTagged, duration, model };
+    return {
+      passName: pass.name,
+      findings: stableTagged,
+      duration,
+      model,
+      promptTokens: judgeCall.usage?.prompt_tokens ?? null,
+      completionTokens: judgeCall.usage?.completion_tokens ?? null,
+      totalTokens: judgeCall.usage?.total_tokens ?? null,
+      promptCharacters: judgeCall.rendered_system_prompt.length + judgeCall.rendered_user_prompt.length,
+      completionCharacters: judgeCall.raw_judge_response.length,
+    };
     
   } catch (error) {
     if (

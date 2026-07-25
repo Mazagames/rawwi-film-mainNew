@@ -56,6 +56,7 @@ function buildSyntheticUnderstanding(): EventUnderstandingPassResult {
     events: [
       {
         event_id: 1,
+        event_summary: "Explosion shakes a neighborhood.",
         actor: "سامي",
         target: "الحي",
         action: "ينفجر",
@@ -68,6 +69,7 @@ function buildSyntheticUnderstanding(): EventUnderstandingPassResult {
       },
       {
         event_id: 2,
+        event_summary: "Tense shouting in an alley.",
         actor: "صراخ",
         target: "الزقاق",
         action: "متوتر",
