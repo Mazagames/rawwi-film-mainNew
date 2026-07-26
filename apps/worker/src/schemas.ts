@@ -71,6 +71,7 @@ export const judgeFindingSchema = z.object({
   detection_pass: z.string().optional().nullable().transform((v) => v ?? null),
   lineage_id: z.string().optional().nullable().transform((v) => v ?? null),
   parent_lineage_id: z.string().optional().nullable().transform((v) => v ?? null),
+  finding_uuid: z.string().optional().nullable().transform((v) => v ?? null),
   canonical_hash: z.string().optional().nullable().transform((v) => v ?? null),
   evidence_hash: z.string().optional().nullable().transform((v) => v ?? null),
   evidence_snippet: z.string().nullable().transform((v) => v ?? ""),

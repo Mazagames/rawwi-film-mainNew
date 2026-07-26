@@ -46,6 +46,7 @@ import { getV5ReviewerDefinitions } from "./v5PromptPack.js";
 import { NOTE_REVIEWER_ARTICLE_NUMBERS } from "./notePromptPack.js";
 import { traceFindingPipelineStage } from "./findingPipelineTrace.js";
 import type { AnalysisExecutionSignatureInput } from "./executionSignature.js";
+import { buildFindingUuid } from "./findingIdentity.js";
 
 export interface LexiconTerm {
   term: string;
@@ -138,6 +139,31 @@ function normalizeFindingForPass(
   return {
     ...finding,
     canonical_atom,
+  };
+}
+
+function attachFindingIdentity(
+  finding: JudgeFinding,
+  args: {
+    passName: string;
+    index: number;
+  },
+): JudgeFinding {
+  const findingUuid = finding.finding_uuid ?? buildFindingUuid({
+    pass_name: args.passName,
+    index: args.index,
+    article_id: finding.article_id ?? null,
+    atom_id: finding.atom_id ?? null,
+    canonical_atom: finding.canonical_atom ?? null,
+    title_ar: finding.title_ar ?? null,
+    description_ar: finding.description_ar ?? null,
+    evidence_snippet: finding.evidence_snippet ?? null,
+    location: finding.location ?? null,
+    detection_pass: finding.detection_pass ?? null,
+  });
+  return {
+    ...finding,
+    finding_uuid: findingUuid,
   };
 }
 
@@ -1947,25 +1973,34 @@ async function runSinglePass(
 
     // Parse findings
     const { findings, diagnostics } = await parseJudgeWithRepair(judgeCall.raw_judge_response, model, { signal });
-    if (config.DEBUG_TRACE_FINDING_PIPELINE && diagnosticContext?.jobId && diagnosticContext?.chunkId) {
-      findings.forEach((finding, index) => {
-        ensureFindingLineageId(finding, {
+    const findingsWithIdentity = findings.map((finding, index) => {
+      const identified = attachFindingIdentity(finding, {
+        passName: pass.name,
+        index,
+      });
+      if (config.DEBUG_TRACE_FINDING_PIPELINE && diagnosticContext?.jobId && diagnosticContext?.chunkId) {
+        ensureFindingLineageId(identified, {
           jobId: diagnosticContext.jobId,
           chunkId: diagnosticContext.chunkId,
           passName: pass.name,
           index,
         });
-      });
+      }
+      return identified;
+    });
+    if (config.DEBUG_TRACE_FINDING_PIPELINE && diagnosticContext?.jobId && diagnosticContext?.chunkId) {
       traceFindingPipelineStage({
         jobId: diagnosticContext.jobId,
         chunkId: diagnosticContext.chunkId,
         stageName: "Reviewer JSON parsed",
         functionName: "parseJudgeWithRepair",
-        snapshots: findings.slice(0, 5).map((finding) => ({
-          traceId: finding.lineage_id ?? "",
+        snapshots: findingsWithIdentity.slice(0, 5).map((finding) => ({
+          traceId: finding.lineage_id ?? finding.finding_uuid ?? "",
           reviewerArticleId: articleIds[0] ?? null,
           passName: pass.name,
           eventId: null,
+          findingUuid: finding.finding_uuid ?? null,
+          pageNumber: finding.page_number ?? null,
           title_ar: finding.title_ar ?? null,
           description_ar: finding.description_ar ?? null,
           rationale_ar: finding.rationale_ar ?? null,
@@ -1991,9 +2026,9 @@ async function runSinglePass(
         raw_judge_response: judgeCall.raw_judge_response,
         rendered_system_prompt: judgeCall.rendered_system_prompt,
         rendered_user_prompt: judgeCall.rendered_user_prompt,
-        parsed_judge_response: { findings },
+        parsed_judge_response: { findings: findingsWithIdentity },
         raw_finding_count: rawFindingCount,
-        parsed_finding_count: findings.length,
+        parsed_finding_count: findingsWithIdentity.length,
         parse_status: diagnostics.parse_status,
         repair_invoked: diagnostics.repair_invoked,
         repair_reason: diagnostics.repair_reason,
@@ -2003,7 +2038,7 @@ async function runSinglePass(
         parser_validation_errors: diagnostics.parser_validation_errors,
       });
     }
-    const tagged = findings.map((f) => ({
+    const tagged = findingsWithIdentity.map((f) => ({
       ...f,
       detection_pass: pass.name,
       depiction_type: f.depiction_type ?? "unknown",
@@ -2033,10 +2068,12 @@ async function runSinglePass(
         stageName: "After multi-pass refinement",
         functionName: "sortJudgeFindingsStable / normalizeFindingForPass",
         snapshots: stableTagged.slice(0, 5).map((finding) => ({
-          traceId: finding.lineage_id ?? "",
+          traceId: finding.lineage_id ?? finding.finding_uuid ?? "",
           reviewerArticleId: articleIds[0] ?? null,
           passName: pass.name,
           eventId: null,
+          findingUuid: finding.finding_uuid ?? null,
+          pageNumber: finding.page_number ?? null,
           title_ar: finding.title_ar ?? null,
           description_ar: finding.description_ar ?? null,
           rationale_ar: finding.rationale_ar ?? null,

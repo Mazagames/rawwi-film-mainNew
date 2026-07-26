@@ -4,9 +4,11 @@ import { logger } from "./logger.js";
 
 export type FindingPipelineTraceSnapshot = {
   traceId: string;
+  findingUuid: string | null;
   reviewerArticleId: number | null;
   passName: string | null;
   eventId: number | null;
+  pageNumber: number | null;
   title_ar: string | null;
   description_ar: string | null;
   rationale_ar: string | null;
@@ -95,9 +97,11 @@ function diffSnapshot(previous: FindingPipelineTraceSnapshot, current: FindingPi
   after: unknown;
 }> {
   const fields: Array<keyof FindingPipelineTraceSnapshot> = [
+    "findingUuid",
     "eventId",
     "reviewerArticleId",
     "claimedArticleId",
+    "pageNumber",
     "title_ar",
     "canonical_atom",
     "description_ar",
@@ -135,10 +139,12 @@ function resolveTraceId(snapshot: FindingPipelineTraceSnapshot, session: TraceSe
 function logSnapshot(stageName: string, traceId: string, snapshot: FindingPipelineTraceSnapshot) {
   logger.info("TRACE FINDING PIPELINE SNAPSHOT", {
     traceId,
+    findingUuid: snapshot.findingUuid,
     stage: stageName,
     reviewerArticleId: snapshot.reviewerArticleId,
     passName: snapshot.passName,
     eventId: snapshot.eventId,
+    pageNumber: snapshot.pageNumber,
     title_ar: snapshot.title_ar,
     description_ar: snapshot.description_ar,
     rationale_ar: snapshot.rationale_ar,
@@ -187,8 +193,10 @@ function logRemoval(traceId: string, stageName: string, snapshot: FindingPipelin
     `trace_id: ${traceId}`,
     `Stage: ${stageName}`,
     `Reason: ${functionName}`,
+    `LastKnownFindingUuid: ${normalizeValue(snapshot.findingUuid)}`,
     `LastKnownTitle: ${normalizeValue(snapshot.title_ar)}`,
     `LastKnownArticle: ${normalizeValue(snapshot.article_id)}`,
+    `LastKnownPage: ${normalizeValue(snapshot.pageNumber)}`,
     `LastKnownEvidence: ${normalizeValue(snapshot.evidence_snippet)}`,
     "==========================",
   ].join("\n"));

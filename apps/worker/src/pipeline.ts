@@ -45,14 +45,17 @@ import { PIPELINE_EVIDENCE_GROUNDING_VERSION, groundFindingEvidenceToChunk } fro
 import { getEventConsistencyIssue } from "./eventConsistency.js";
 import { V3_SUBJECT_DEFINITIONS } from "./v3PromptPack.js";
 import { buildLineageEvent, ensureFindingLineageId, persistLineageEvents } from "./findingLineage.js";
+import { buildFindingUuid } from "./findingIdentity.js";
 import { canonicalStringify } from "./canonicalJson.js";
 
 export type FindingWithGlobal = JudgeFinding & {
   source?: "ai" | "lexicon_mandatory" | "manual";
   start_offset_global: number;
   end_offset_global: number;
+  page_number?: number | null;
   lineage_id?: string | null;
   parent_lineage_id?: string | null;
+  finding_uuid?: string | null;
   canonical_hash?: string | null;
   evidence_hash?: string | null;
   policy_links?: Array<{ article_id: number; atom_concept_id?: string | null; role?: string | null }>;
@@ -98,9 +101,11 @@ function buildTraceSnapshotFromFinding(
 ): FindingPipelineTraceSnapshot {
   return {
     traceId: args.traceId,
+    findingUuid: finding.finding_uuid ?? finding.lineage_id ?? null,
     reviewerArticleId: args.reviewerArticleId,
     passName: args.passName,
     eventId: args.eventId ?? null,
+    pageNumber: finding.page_number ?? null,
     title_ar: finding.title_ar ?? null,
     description_ar: finding.description_ar ?? null,
     rationale_ar: finding.rationale_ar ?? null,
@@ -137,9 +142,11 @@ function buildTraceSnapshotFromRow(
 ): FindingPipelineTraceSnapshot {
   return {
     traceId: args.traceId,
+    findingUuid: row.finding_uuid ?? row.lineage_id ?? null,
     reviewerArticleId: args.reviewerArticleId,
     passName: args.passName,
     eventId: args.eventId ?? null,
+    pageNumber: typeof row.page_number === "number" ? row.page_number : null,
     title_ar: typeof row.title_ar === "string" ? row.title_ar : null,
     description_ar: typeof row.description_ar === "string" ? row.description_ar : null,
     rationale_ar: typeof row.rationale_ar === "string" ? row.rationale_ar : null,
@@ -1854,14 +1861,27 @@ export async function processChunkJudge(
     });
 
     const lexPageNumber = pageNumAt(startGlobal);
-    const lexRow = {
-      job_id: jobId,
-      script_id: scriptId,
-      version_id: versionId,
-      source: "lexicon_mandatory",
-      article_id: m.articleId,
-      atom_id: m.atomId,
-      severity: m.severity,
+      const lexRow = {
+        job_id: jobId,
+        script_id: scriptId,
+        version_id: versionId,
+        source: "lexicon_mandatory",
+        finding_uuid: buildFindingUuid({
+          kind: "lexicon_mandatory",
+          job_id: jobId,
+          chunk_id: chunk.id,
+          article_id: m.articleId,
+          atom_id: m.atomId,
+          term: m.term.term,
+          evidence_snippet,
+          start_offset_global: startGlobal,
+          end_offset_global: endGlobal,
+          line_start: m.line_start,
+          line_end: m.line_end,
+        }),
+        article_id: m.articleId,
+        atom_id: m.atomId,
+        severity: m.severity,
       confidence: 1,
       title_ar: `مخالفة من قاموس المصطلحات: ${m.term.term}`,
       description_ar: evidence_snippet,
@@ -1943,6 +1963,17 @@ export async function processChunkJudge(
         script_id: scriptId,
         version_id: versionId,
         source: "lexicon_mandatory",
+        finding_uuid: buildFindingUuid({
+          kind: "hard_fallback_insult",
+          job_id: jobId,
+          chunk_id: chunk.id,
+          article_id: rule.articleId,
+          atom_id: rule.atomId,
+          term: rule.term,
+          start_offset_global: startGlobal,
+          end_offset_global: endGlobal,
+          line_start: line,
+        }),
         article_id: rule.articleId,
         atom_id: rule.atomId,
         severity: rule.severity,
@@ -2295,14 +2326,16 @@ export async function processChunkJudge(
           chunkId: chunk.id,
           stageName: "After multi-pass refinement",
           functionName: "runMultiPassDetection",
-          snapshots: multiPassResult.findings.slice(0, 5).map((finding) => ({
-            traceId: (finding as { lineage_id?: string | null }).lineage_id ?? "",
-            reviewerArticleId: parseReviewerArticleId((finding as { detection_pass?: string | null }).detection_pass ?? null, finding.article_id ?? null),
-            passName: (finding as { detection_pass?: string | null }).detection_pass ?? null,
-            eventId: null,
-            title_ar: finding.title_ar ?? null,
-            description_ar: finding.description_ar ?? null,
-            rationale_ar: finding.rationale_ar ?? null,
+        snapshots: multiPassResult.findings.slice(0, 5).map((finding) => ({
+          traceId: (finding as { lineage_id?: string | null; finding_uuid?: string | null }).lineage_id ?? (finding as { finding_uuid?: string | null }).finding_uuid ?? "",
+          reviewerArticleId: parseReviewerArticleId((finding as { detection_pass?: string | null }).detection_pass ?? null, finding.article_id ?? null),
+          passName: (finding as { detection_pass?: string | null }).detection_pass ?? null,
+          eventId: null,
+          findingUuid: (finding as { finding_uuid?: string | null }).finding_uuid ?? null,
+          pageNumber: (finding as { page_number?: number | null }).page_number ?? null,
+          title_ar: finding.title_ar ?? null,
+          description_ar: finding.description_ar ?? null,
+          rationale_ar: finding.rationale_ar ?? null,
             canonical_atom: finding.canonical_atom ?? null,
             article_id: finding.article_id ?? null,
             claimedArticleId: finding.article_id ?? null,
@@ -2928,10 +2961,12 @@ export async function processChunkJudge(
       stageName: "Before analysis_findings row build",
       functionName: "resolvedFindings.flatMap",
       snapshots: resolvedFindings.slice(0, 5).map((finding) => ({
-        traceId: (finding as { lineage_id?: string | null }).lineage_id ?? "",
+        traceId: (finding as { lineage_id?: string | null; finding_uuid?: string | null }).lineage_id ?? (finding as { finding_uuid?: string | null }).finding_uuid ?? "",
         reviewerArticleId: parseReviewerArticleId((finding as { detection_pass?: string | null }).detection_pass ?? null, finding.article_id ?? null),
         passName: finding.detection_pass ?? null,
         eventId: null,
+        findingUuid: (finding as { finding_uuid?: string | null }).finding_uuid ?? null,
+        pageNumber: (finding as { page_number?: number | null }).page_number ?? null,
         title_ar: finding.title_ar ?? null,
         description_ar: finding.description_ar ?? null,
         rationale_ar: finding.rationale_ar ?? null,
@@ -3303,6 +3338,22 @@ export async function processChunkJudge(
         script_id: scriptId,
         version_id: versionId,
         source: f.source ?? "ai",
+        finding_uuid: f.finding_uuid ?? buildFindingUuid({
+          kind: "ai_finding",
+          job_id: jobId,
+          chunk_id: chunk.id,
+          pass_name: f.detection_pass ?? null,
+          article_id: f.article_id,
+          atom_id: f.atom_id ?? null,
+          canonical_atom: f.canonical_atom ?? null,
+          title_ar,
+          description_ar: f.description_ar ?? "",
+          evidence_snippet: excerpt,
+          start_offset_global: start,
+          end_offset_global: end,
+          page_number: findingPageNumber,
+          location: f.location ?? null,
+        }),
         article_id: f.article_id,
         atom_id: f.atom_id ?? null,
         severity: f.severity,
@@ -3379,10 +3430,12 @@ export async function processChunkJudge(
         stageName: "Before insert",
         functionName: "analysis_findings row builder",
         snapshots: rows.slice(0, 5).map((row) => ({
-          traceId: (row as { lineage_id?: string | null }).lineage_id ?? "",
+          traceId: (row as { lineage_id?: string | null; finding_uuid?: string | null }).lineage_id ?? (row as { finding_uuid?: string | null }).finding_uuid ?? "",
           reviewerArticleId: parseReviewerArticleId((row as { location?: { v3?: { detection_pass?: string | null } } }).location?.v3?.detection_pass ?? null, (row as { article_id?: number | null }).article_id ?? null),
           passName: (row as { location?: { v3?: { detection_pass?: string | null } } }).location?.v3?.detection_pass ?? null,
           eventId: null,
+          findingUuid: (row as { finding_uuid?: string | null }).finding_uuid ?? null,
+          pageNumber: (row as { page_number?: number | null }).page_number ?? null,
           title_ar: (row as { title_ar?: string | null }).title_ar ?? null,
           description_ar: (row as { description_ar?: string | null }).description_ar ?? null,
           rationale_ar: (row as { rationale_ar?: string | null }).rationale_ar ?? null,
@@ -3459,7 +3512,7 @@ export async function processChunkJudge(
       timeoutMs: CRITICAL_DB_TIMEOUT_MS,
     });
       const { data, error } = await withOperationTimeout<{
-        data: Array<{ id: string; lineage_id?: string | null; article_id: number; atom_id: string | null; confidence?: number | null }> | null;
+        data: Array<{ id: string; lineage_id?: string | null; finding_uuid?: string | null; article_id: number; atom_id: string | null; confidence?: number | null }> | null;
         error: { message: string } | null;
       }>(
         "Upsert analysis_findings",
@@ -3467,7 +3520,7 @@ export async function processChunkJudge(
         supabase
           .from("analysis_findings")
           .upsert(rows, { onConflict: "job_id,evidence_hash", ignoreDuplicates: true })
-          .select("id,lineage_id,article_id,atom_id,confidence")
+          .select("id,lineage_id,finding_uuid,article_id,atom_id,confidence")
     );
     throwIfAborted(signal);
 
@@ -3513,9 +3566,11 @@ export async function processChunkJudge(
           const lineageId = (row as { lineage_id?: string | null }).lineage_id ?? "";
           return {
             traceId: lineageId,
+            findingUuid: (row as { finding_uuid?: string | null }).finding_uuid ?? null,
             reviewerArticleId: (row as { article_id?: number | null }).article_id ?? null,
             passName: null,
             eventId: null,
+            pageNumber: (row as { page_number?: number | null }).page_number ?? null,
             title_ar: (row as { title_ar?: string | null }).title_ar ?? null,
             description_ar: (row as { description_ar?: string | null }).description_ar ?? null,
             rationale_ar: (row as { rationale_ar?: string | null }).rationale_ar ?? null,

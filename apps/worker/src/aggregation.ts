@@ -62,6 +62,8 @@ export type SummaryJson = {
       confidence: number;
       evidence_snippet: string;
       location: Record<string, unknown>;
+      finding_uuid?: string | null;
+      page_number?: number | null;
       start_offset_global?: number | null;
       end_offset_global?: number | null;
       start_line_chunk?: number | null;
@@ -89,6 +91,7 @@ export type SummaryJson = {
     evidence_snippet: string;
     severity: string;
     confidence: number;
+    finding_uuid?: string | null;
     source?: string | null;
     final_ruling?: string | null;
     rationale?: string | null;
@@ -119,6 +122,8 @@ export type SummaryJson = {
       title_ar: string;
       severity: string;
       evidence_snippet: string;
+      finding_uuid?: string | null;
+      page_number?: number | null;
     }>;
   }>;
   context_metrics?: {
@@ -140,6 +145,7 @@ export type SummaryJson = {
     evidence_snippet: string;
     severity: string;
     confidence: number;
+    finding_uuid?: string | null;
     source?: string | null;
     final_ruling?: string | null;
     rationale?: string | null;
@@ -324,6 +330,7 @@ type JobConfigMeta = {
 
 function buildTraceSnapshotFromRow(
   row: {
+    finding_uuid?: string | null;
     lineage_id?: string | null;
     article_id?: number | null;
     title_ar?: string | null;
@@ -332,6 +339,7 @@ function buildTraceSnapshotFromRow(
     evidence_snippet?: string | null;
     start_offset_global?: number | null;
     end_offset_global?: number | null;
+    page_number?: number | null;
     canonical_atom?: string | null;
     severity?: string | null;
     confidence?: number | null;
@@ -351,10 +359,12 @@ function buildTraceSnapshotFromRow(
   },
 ): FindingPipelineTraceSnapshot {
   return {
-    traceId: row.lineage_id ?? row.canonical_finding_id ?? "",
+    traceId: row.lineage_id ?? row.finding_uuid ?? row.canonical_finding_id ?? "",
+    findingUuid: row.finding_uuid ?? row.lineage_id ?? null,
     reviewerArticleId: stageMeta.reviewerArticleId ?? row.primary_article_id ?? row.article_id ?? null,
     passName: stageMeta.passName ?? null,
     eventId: null,
+    pageNumber: row.page_number ?? null,
     title_ar: row.title_ar ?? null,
     description_ar: row.description_ar ?? null,
     rationale_ar: row.rationale_ar ?? null,
@@ -402,6 +412,7 @@ type ReviewFindingInsertRow = {
   report_id: string;
   script_id: string;
   version_id: string;
+  finding_uuid?: string | null;
   canonical_finding_id: string | null;
   source_kind: "ai" | "glossary" | "manual" | "special";
   primary_article_id: number;
@@ -620,6 +631,7 @@ function buildReviewFindingRows(
       report_id: reportId,
       script_id: summary.script_id,
       version_id: versionId,
+      finding_uuid: finding.finding_uuid ?? null,
       canonical_finding_id: finding.canonical_finding_id ?? null,
       source_kind: toReviewSourceKind(finding.source),
       primary_article_id: Number.isFinite(finding.primary_article_id) ? Number(finding.primary_article_id) : 0,
@@ -657,6 +669,7 @@ function buildReviewFindingRows(
     report_id: reportId,
     script_id: summary.script_id,
     version_id: versionId,
+    finding_uuid: finding.finding_uuid ?? null,
     canonical_finding_id: finding.canonical_finding_id ?? null,
     source_kind: toReviewSourceKind(finding.source, true),
     primary_article_id: Number.isFinite(finding.primary_article_id) ? Number(finding.primary_article_id) : 0,
@@ -1170,6 +1183,8 @@ function applyReportGate(summary: SummaryJson): void {
       const sorted = [...list].sort(compareCanonicalItemsStable);
       const top_findings = sorted.slice(0, 10).map((f) => ({
         atom_id: null as string | null,
+        finding_uuid: f.finding_uuid ?? null,
+        page_number: f.page_number ?? null,
         title_ar: f.title_ar,
         severity: f.severity,
         confidence: f.confidence,
@@ -1256,6 +1271,8 @@ function applyReportGate(summary: SummaryJson): void {
       }
       const sorted = [...list].sort(compareCanonicalItemsStable);
       const top_findings = sorted.slice(0, 5).map((f) => ({
+        finding_uuid: f.finding_uuid ?? null,
+        page_number: f.page_number ?? null,
         canonical_finding_id: f.canonical_finding_id,
         title_ar: f.title_ar,
         severity: f.severity,
@@ -1295,6 +1312,7 @@ type DbFinding = {
   context_impact?: number | null;
   legal_sensitivity?: number | null;
   audience_risk?: number | null;
+  finding_uuid?: string | null;
   lineage_id?: string | null;
   parent_lineage_id?: string | null;
   evidence_hash?: string | null;
@@ -1673,6 +1691,7 @@ export function buildSummaryJson(
       ];
       canonicalMap.set(cId, {
         canonical_finding_id: cId,
+        finding_uuid: primary.finding_uuid ?? null,
         title_ar: primary.title_ar,
         evidence_snippet: primary.evidence_snippet,
         severity: primary.severity,
@@ -1717,10 +1736,12 @@ export function buildSummaryJson(
           stageName: "Aggregation canonicalization",
           functionName: "buildSummaryJson canonicalMap",
           snapshots: [{
-            traceId: primary.lineage_id ?? "",
+            traceId: primary.lineage_id ?? primary.finding_uuid ?? "",
+            findingUuid: primary.finding_uuid ?? primary.lineage_id ?? null,
             reviewerArticleId: articleId,
             passName: null,
             eventId: null,
+            pageNumber: primary.page_number ?? null,
             title_ar: primary.title_ar,
             description_ar: primary.description_ar,
             rationale_ar: primary.rationale_ar ?? null,
@@ -1780,6 +1801,8 @@ export function buildSummaryJson(
       const sorted = [...list].sort(compareCanonicalItemsStable);
       const top_findings = sorted.slice(0, 10).map((f) => ({
         atom_id: null as string | null,
+        finding_uuid: f.finding_uuid ?? null,
+        page_number: f.page_number ?? null,
         title_ar: f.title_ar,
         severity: f.severity,
         confidence: f.confidence,
@@ -1824,10 +1847,12 @@ export function buildSummaryJson(
       stageName: "Summary JSON generation",
       functionName: "buildSummaryJson canonical_findings",
       snapshots: canonical_findings.slice(0, 5).map((finding) => ({
-        traceId: "",
+        traceId: finding.finding_uuid ?? "",
+        findingUuid: finding.finding_uuid ?? null,
         reviewerArticleId: finding.primary_article_id ?? null,
         passName: null,
         eventId: null,
+        pageNumber: finding.page_number ?? null,
         title_ar: finding.title_ar,
         description_ar: null,
         rationale_ar: finding.rationale ?? null,
@@ -1850,10 +1875,12 @@ export function buildSummaryJson(
       functionName: "buildSummaryJson findings_by_article",
       snapshots: findings_by_article.flatMap((article) =>
         article.top_findings.slice(0, 5).map((finding) => ({
-          traceId: "",
+          traceId: finding.finding_uuid ?? "",
+          findingUuid: finding.finding_uuid ?? null,
           reviewerArticleId: article.article_id,
           passName: null,
           eventId: null,
+          pageNumber: finding.page_number ?? null,
           title_ar: finding.title_ar,
           description_ar: null,
           rationale_ar: finding.rationale ?? null,
@@ -1921,6 +1948,8 @@ export function buildSummaryJson(
       }
       const sorted = [...list].sort(compareCanonicalItemsStable);
       const top_findings = sorted.slice(0, 5).map((f) => ({
+        finding_uuid: f.finding_uuid ?? null,
+        page_number: f.page_number ?? null,
         canonical_finding_id: f.canonical_finding_id,
         title_ar: f.title_ar,
         severity: f.severity,
@@ -2015,10 +2044,12 @@ export function buildReportHtml(summary: SummaryJson): string {
       reportRenderedCount: s.findings_by_article.reduce((sum, article) => sum + article.top_findings.length, 0),
       snapshots: s.findings_by_article.flatMap((article) =>
         article.top_findings.slice(0, 5).map((finding) => ({
-          traceId: "",
+          traceId: finding.finding_uuid ?? "",
+          findingUuid: finding.finding_uuid ?? null,
           reviewerArticleId: article.article_id,
           passName: null,
           eventId: null,
+          pageNumber: finding.page_number ?? null,
           title_ar: finding.title_ar,
           description_ar: null,
           rationale_ar: finding.rationale ?? null,
@@ -2387,7 +2418,7 @@ export async function runAggregation(jobId: string): Promise<void> {
   const { data: findings, error: findingsErr } = await supabase
     .from("analysis_findings")
     .select(
-      "source, article_id, atom_id, severity, confidence, title_ar, description_ar, evidence_snippet, start_offset_global, end_offset_global, start_line_chunk, end_line_chunk, page_number, location, rationale_ar, canonical_atom, intensity, context_impact, legal_sensitivity, audience_risk, lineage_id, parent_lineage_id, evidence_hash, canonical_hash"
+      "source, article_id, atom_id, severity, confidence, title_ar, description_ar, evidence_snippet, start_offset_global, end_offset_global, start_line_chunk, end_line_chunk, page_number, location, rationale_ar, canonical_atom, intensity, context_impact, legal_sensitivity, audience_risk, finding_uuid, lineage_id, parent_lineage_id, evidence_hash, canonical_hash"
     )
     .eq("job_id", jobId);
 
