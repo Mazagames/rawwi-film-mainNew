@@ -454,6 +454,7 @@ type ExistingReviewFindingRow = {
   report_id: string;
   script_id: string;
   version_id: string;
+  finding_uuid: string | null;
   canonical_finding_id: string | null;
   source_kind: "ai" | "glossary" | "manual" | "special";
   primary_article_id: number;
@@ -719,7 +720,7 @@ async function loadPriorReviewFindingRows(
 ): Promise<ExistingReviewFindingRow[]> {
   const { data, error } = await supabase
     .from("analysis_review_findings")
-    .select("id, report_id, script_id, version_id, canonical_finding_id, source_kind, primary_article_id, primary_atom_id, severity, review_status, title_ar, description_ar, rationale_ar, evidence_snippet, manual_comment, page_number, start_offset_global, end_offset_global, start_offset_page, end_offset_page, anchor_status, anchor_method, anchor_text, anchor_confidence, approved_reason, include_in_report, reviewed_by, reviewed_at, edited_by, edited_at, is_hidden, is_manual, created_at, updated_at")
+    .select("id, report_id, script_id, version_id, finding_uuid, canonical_finding_id, source_kind, primary_article_id, primary_atom_id, severity, review_status, title_ar, description_ar, rationale_ar, evidence_snippet, manual_comment, page_number, start_offset_global, end_offset_global, start_offset_page, end_offset_page, anchor_status, anchor_method, anchor_text, anchor_confidence, approved_reason, include_in_report, reviewed_by, reviewed_at, edited_by, edited_at, is_hidden, is_manual, created_at, updated_at")
     .eq("script_id", scriptId)
     .eq("version_id", versionId)
     .neq("report_id", reportId)
@@ -789,6 +790,15 @@ function pickPriorReviewFindingMatch(
   row: ReviewFindingInsertRow,
   priorRows: ExistingReviewFindingRow[],
 ): ExistingReviewFindingRow | null {
+  if (row.finding_uuid) {
+    const exactFindingUuid = priorRows.find(
+      (candidate) =>
+        candidate.finding_uuid === row.finding_uuid &&
+        candidate.source_kind === row.source_kind,
+    );
+    if (exactFindingUuid) return exactFindingUuid;
+  }
+
   if (row.canonical_finding_id) {
     const exact = priorRows.find(
       (candidate) =>
@@ -814,6 +824,7 @@ function pickPriorReviewFindingMatch(
 function reviewRowDedupKey(row: ReviewFindingInsertRow): string {
   return [
     row.source_kind,
+    row.finding_uuid ?? "",
     row.canonical_finding_id ?? "",
     row.primary_article_id,
     row.primary_atom_id ?? "",
@@ -846,7 +857,7 @@ async function buildManualReviewRowsForJob(
 ): Promise<ReviewFindingInsertRow[]> {
   const { data, error } = await supabase
     .from("analysis_findings")
-    .select("id, job_id, script_id, version_id, article_id, atom_id, severity, review_status, review_reason, reviewed_by, reviewed_at, evidence_snippet, manual_comment, page_number, start_offset_global, end_offset_global, start_offset_page, end_offset_page")
+    .select("id, finding_uuid, job_id, script_id, version_id, article_id, atom_id, severity, review_status, review_reason, reviewed_by, reviewed_at, evidence_snippet, manual_comment, page_number, start_offset_global, end_offset_global, start_offset_page, end_offset_page")
     .eq("job_id", summary.job_id)
     .eq("source", "manual")
     .order("created_at", { ascending: true });
@@ -861,6 +872,7 @@ async function buildManualReviewRowsForJob(
     report_id: reportId,
     script_id: summary.script_id,
     version_id: versionId,
+    finding_uuid: (finding.finding_uuid as string | null | undefined) ?? (finding.id as string | null | undefined) ?? null,
     canonical_finding_id: null,
     source_kind: "manual",
     primary_article_id: Number(finding.article_id ?? 4),
