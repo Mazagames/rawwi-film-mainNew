@@ -1,3 +1,5 @@
+import { getAtomDefinition } from "./canonicalAtomFramework.js";
+
 /**
  * Pass 0 (glossary) prompt example uses fixed title "لفظ محظور من المعجم".
  * The model sometimes copies it for non-lexicon findings (e.g. violence). Badge stays "AI"
@@ -10,6 +12,7 @@ const GLOSSARY_CANONICAL_TITLE = /^مطابقة\s+من\s+قاموس\s+المصط
 export type TitleNormalizationDecision = {
   originalTitle: string;
   technicalTitle: string;
+  canonicalTitle: string | null;
   title: string;
   ruleName: string;
   reason: string;
@@ -29,6 +32,7 @@ function buildTechnicalDecision(originalTitleValue: string | undefined | null): 
   return {
     originalTitle,
     technicalTitle,
+    canonicalTitle: null,
     title: technicalTitle,
     ruleName: technicalChanged ? "technical_cleanup" : "technical_preserve",
     reason: technicalChanged
@@ -38,6 +42,12 @@ function buildTechnicalDecision(originalTitleValue: string | undefined | null): 
     technicalChanged,
     semanticChanged: false,
   };
+}
+
+function getCanonicalTitleAr(canonicalAtom: string | undefined | null): string | null {
+  const atom = (canonicalAtom ?? "").trim();
+  if (!atom) return null;
+  return getAtomDefinition(atom)?.title_ar ?? null;
 }
 
 export function normalizeTitleForPersistence(params: {
@@ -54,24 +64,33 @@ export function normalizeFindingTitleDecision(params: {
   source?: string | null;
   detectionPass?: string | null;
   articleId?: number | null;
+  canonicalAtom?: string | null;
   allowSemanticRewrite?: boolean;
 }): TitleNormalizationDecision {
   const originalTitle = params.titleAr ?? "";
   const technicalTitle = normalizeTitleTechnical(originalTitle);
+  const canonicalTitle = getCanonicalTitleAr(params.canonicalAtom ?? null);
   const allowSemanticRewrite = params.allowSemanticRewrite ?? true;
 
   if (!allowSemanticRewrite) {
-    const title = technicalTitle || originalTitle.trim() || "مخالفة محتوى";
+    const title = canonicalTitle ?? (technicalTitle || originalTitle.trim());
     const technicalChanged = title !== originalTitle;
     return {
       originalTitle,
       technicalTitle,
+      canonicalTitle,
       title,
-      ruleName: technicalChanged ? "technical_cleanup" : "technical_preserve",
-      reason: technicalChanged
-        ? "Applied technical normalization only (whitespace / Unicode cleanup)."
-        : "Title preserved with no technical normalization needed.",
-      changed: technicalChanged,
+      ruleName: canonicalTitle
+        ? "canonical_atom_title"
+        : technicalChanged
+          ? "technical_cleanup"
+          : "technical_preserve",
+      reason: canonicalTitle
+        ? "Derived deterministic title from canonical atom."
+        : technicalChanged
+          ? "Applied technical normalization only (whitespace / Unicode cleanup)."
+          : "Title preserved with no technical normalization needed.",
+      changed: title !== originalTitle,
       technicalChanged,
       semanticChanged: false,
     };
@@ -94,11 +113,14 @@ export function normalizeFindingTitleDecision(params: {
   const semanticChanged = semanticTitle !== technicalTitle;
   const glossaryChanged = glossarySafeTitle !== originalTitle;
   const technicalChanged = technicalTitle !== originalTitle;
-  const title = semanticTitle || technicalTitle || originalTitle.trim() || "مخالفة محتوى";
+  const title = canonicalTitle ?? (semanticTitle || technicalTitle || originalTitle.trim());
 
   let ruleName = "technical_preserve";
   let reason = "Title preserved with no technical normalization needed.";
-  if (semanticChanged) {
+  if (canonicalTitle) {
+    ruleName = "canonical_atom_title";
+    reason = "Derived deterministic title from canonical atom.";
+  } else if (semanticChanged) {
     ruleName = glossaryChanged && glossarySafeTitle !== semanticTitle
       ? "legacy_semantic_title_normalization:glossary_then_category"
       : "legacy_semantic_title_normalization";
@@ -111,6 +133,7 @@ export function normalizeFindingTitleDecision(params: {
   return {
     originalTitle,
     technicalTitle,
+    canonicalTitle,
     title,
     ruleName,
     reason,
@@ -138,7 +161,7 @@ export function normalizeMisusedGlossaryPassTitle(params: {
   const isGlossaryStyleTitle = t === GLOSSARY_PASS_TITLE_PLACEHOLDER || glossaryLeakMatch != null;
 
   if (!isGlossaryStyleTitle) {
-    return params.titleAr?.trim() || "مخالفة محتوى";
+    return params.titleAr?.trim() ?? "";
   }
 
   if ((pass === "" || pass === "glossary") && glossaryLeakMatch?.[1]?.trim()) {
@@ -306,7 +329,7 @@ export function normalizeFindingTitleAgainstRationale(params: {
   source?: string | null;
 }): string {
   const source = (params.source ?? "").trim().toLowerCase();
-  if (source === "manual" || source === "lexicon_mandatory") return params.titleAr.trim() || "مخالفة محتوى";
+  if (source === "manual" || source === "lexicon_mandatory") return params.titleAr.trim();
 
   const rationale = (params.rationaleAr ?? "").trim();
   const description = (params.descriptionAr ?? "").trim();
@@ -318,5 +341,5 @@ export function normalizeFindingTitleAgainstRationale(params: {
     if (rule.patterns.some((pattern) => pattern.test(text))) return rule.title;
   }
 
-  return current || "مخالفة محتوى";
+  return current;
 }

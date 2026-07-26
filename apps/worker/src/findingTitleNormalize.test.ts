@@ -64,4 +64,14 @@ assert.equal(
   "المساس بالثوابت الدينية",
 );
 
+assert.equal(
+  normalizeFindingTitleDecision({
+    titleAr: "أي عنوان عشوائي",
+    canonicalAtom: "PUBLIC_ORDER",
+    source: "ai",
+    allowSemanticRewrite: false,
+  }).title,
+  "الأمن والنظام",
+);
+
 console.log("All finding title normalization tests passed.");

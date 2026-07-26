@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { config } from "./config.js";
 import { canonicalStringify } from "./canonicalJson.js";
-import { extractJsonFromText, noteOutputSchema, type NoteItem, type NoteOutput } from "./schemas.js";
+import { extractJsonFromText, noteOutputSchema, noteSchema, type NoteItem, type NoteOutput } from "./schemas.js";
 import { logger } from "./logger.js";
 import { getNoteDefinitions, type NoteReviewerDefinition } from "./notePromptPack.js";
 import type { EventUnderstandingPassResult, StructuredEvent } from "./eventUnderstanding.js";
@@ -55,7 +55,7 @@ export type NoteInsertRow = {
 };
 
 const NOTE_REPAIR_SYSTEM = `You fix broken JSON. Return only valid JSON, no markdown, no explanation.
-Expected shape: { "notes": [ { "reviewer", "category", "title", "description", "snippet", "event_id", "confidence", "status", "included_in_report" } ] }
+Expected shape: { "notes": [ { "reviewer", "category", "title", "description", "paragraph", "quote", "event_id", "confidence", "status", "included_in_report" } ] }
 The response must be a single JSON object.
 Do not include any prose. Return JSON only.`;
 
@@ -87,7 +87,11 @@ Return ONLY valid JSON.
 The response must be a single JSON object.
 The response must contain the word JSON.
 Use only structured events for event_id and subject selection.
-Use the screenplay chunk only to select the surrounding paragraph for snippet.
+Use the screenplay chunk only to select the surrounding paragraph and quote.
+Each note must contain category, title, description, paragraph, quote, event_id, and confidence.
+paragraph must be the surrounding 5-10 screenplay lines.
+quote must be the shortest verbatim excerpt that supports the note.
+If any required field cannot be produced, omit that note.
 If no note exists, return {"notes":[]}.`;
 }
 
@@ -176,7 +180,7 @@ async function parseNotesWithRepair(
   raw: string,
   model: string,
   signal?: AbortSignal,
-): Promise<{ notes: NoteItem[]; repaired: boolean; parseError: string | null }> {
+): Promise<{ notes: unknown[]; repaired: boolean; parseError: string | null }> {
   try {
     const parsed = parseNotesOutput(raw);
     return { notes: parsed.notes, repaired: false, parseError: null };
@@ -195,9 +199,35 @@ async function parseNotesWithRepair(
   }
 }
 
-function normalizeNote(note: NoteItem, reviewerId: string, category: string): NoteItem | null {
+function summarizeValidationIssues(issues: Array<{ path: Array<string | number>; message: string }>): string {
+  return issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "<root>";
+      return `${path}: ${issue.message}`;
+    })
+    .join("; ");
+}
+
+function validateNoteCandidate(candidate: unknown): { note: NoteItem | null; rejectionReason: string | null } {
+  const parsed = noteSchema.safeParse(candidate);
+  if (!parsed.success) {
+    return {
+      note: null,
+      rejectionReason: summarizeValidationIssues(parsed.error.issues),
+    };
+  }
+  return {
+    note: parsed.data,
+    rejectionReason: null,
+  };
+}
+
+function normalizeNote(note: NoteItem, reviewerId: string): NoteItem | null {
   const emittedCategory = String(note.category ?? "").trim();
-  const resolvedCategory = emittedCategory ? normalizeNoteCategoryKey(emittedCategory) : normalizeNoteCategoryKey(category);
+  if (!emittedCategory) {
+    return null;
+  }
+  const resolvedCategory = normalizeNoteCategoryKey(emittedCategory);
   if (!resolvedCategory) {
     return null;
   }
@@ -207,7 +237,7 @@ function normalizeNote(note: NoteItem, reviewerId: string, category: string): No
     category: resolvedCategory,
     title: normalizeText(note.title),
     description: normalizeText(note.description),
-    snippet: note.snippet.trim(),
+    snippet: typeof note.snippet === "string" && note.snippet.trim() ? note.snippet.trim() : note.paragraph.trim(),
     status: note.status ?? "new",
     included_in_report: typeof note.included_in_report === "boolean" ? note.included_in_report : true,
     confidence: typeof note.confidence === "number" ? Math.max(0, Math.min(1, note.confidence)) : 0.7,
@@ -221,7 +251,7 @@ export function toNoteInsertRow(jobId: string, note: NoteItem): NoteInsertRow {
     category: note.category,
     title: note.title,
     description: note.description,
-    snippet: note.snippet,
+    snippet: typeof note.snippet === "string" && note.snippet.trim() ? note.snippet : note.paragraph,
     event_id: note.event_id,
     confidence: typeof note.confidence === "number" ? note.confidence : 0.7,
     status: note.status ?? "new",
@@ -277,17 +307,53 @@ export async function runNotesDetection(
         signal: options.signal,
       });
       const parsed = await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal);
+      const generatedNotes = Array.isArray(parsed.notes) ? parsed.notes : [];
       const normalizedNotes: NoteItem[] = [];
-      for (const note of parsed.notes) {
-        const normalized = normalizeNote(note, definition.id, definition.category);
+      const noteTelemetry = {
+        generated: generatedNotes.length,
+        accepted: 0,
+        rejected: 0,
+        rejectionReasons: [] as string[],
+      };
+      for (const [noteIndex, candidate] of generatedNotes.entries()) {
+        logger.info("Note reviewer note generated", {
+          jobId: options.jobId,
+          chunkId: options.chunkId,
+          reviewer: definition.id,
+          category: definition.category,
+          noteIndex,
+          generated: true,
+        });
+        const validated = validateNoteCandidate(candidate);
+        if (!validated.note) {
+          noteTelemetry.rejected += 1;
+          if (validated.rejectionReason) {
+            noteTelemetry.rejectionReasons.push(validated.rejectionReason);
+          }
+          logger.warn("Note reviewer note rejected", {
+            jobId: options.jobId,
+            chunkId: options.chunkId,
+            reviewer: definition.id,
+            category: definition.category,
+            noteIndex,
+            generated: true,
+            accepted: false,
+            rejected: true,
+            rejectionReason: validated.rejectionReason ?? "invalid note schema",
+          });
+          continue;
+        }
+        const normalized = normalizeNote(validated.note, definition.id);
         if (!normalized) {
+          noteTelemetry.rejected += 1;
+          const emittedCategory = String(validated.note.category ?? "").trim();
           logNoteCategoryMapping({
             reviewerName: definition.id,
-            persistedCategory: String(note.category ?? "").trim() || definition.category,
+            persistedCategory: emittedCategory || definition.category,
             renderedTab: null,
             jobId: options.jobId,
             chunkId: options.chunkId,
-            eventId: typeof note.event_id === "number" ? note.event_id : null,
+            eventId: typeof validated.note.event_id === "number" ? validated.note.event_id : null,
             status: "rejected",
             reason: "unknown note category",
           });
@@ -295,12 +361,17 @@ export async function runNotesDetection(
             jobId: options.jobId,
             chunkId: options.chunkId,
             reviewer: definition.id,
-            category: String(note.category ?? "").trim() || null,
+            category: emittedCategory || null,
             fallbackCategory: definition.category,
-            eventId: typeof note.event_id === "number" ? note.event_id : null,
+            eventId: typeof validated.note.event_id === "number" ? validated.note.event_id : null,
+            generated: true,
+            accepted: false,
+            rejected: true,
+            rejectionReason: "unknown note category",
           });
           continue;
         }
+        noteTelemetry.accepted += 1;
         logNoteCategoryMapping({
           reviewerName: definition.id,
           persistedCategory: normalized.category,
@@ -310,9 +381,29 @@ export async function runNotesDetection(
           eventId: normalized.event_id,
           status: "accepted",
         });
+        logger.info("Note reviewer note accepted", {
+          jobId: options.jobId,
+          chunkId: options.chunkId,
+          reviewer: definition.id,
+          category: definition.category,
+          noteIndex,
+          generated: true,
+          accepted: true,
+          rejected: false,
+        });
         normalizedNotes.push(normalized);
       }
       allNotes.push(...normalizedNotes);
+      logger.info("Note reviewer validation summary", {
+        jobId: options.jobId,
+        chunkId: options.chunkId,
+        reviewer: definition.id,
+        category: definition.category,
+        generated: noteTelemetry.generated,
+        accepted: noteTelemetry.accepted,
+        rejected: noteTelemetry.rejected,
+        rejectionReasons: noteTelemetry.rejectionReasons,
+      });
       passResults.push({
         passName: definition.id,
         reviewerId: definition.id,

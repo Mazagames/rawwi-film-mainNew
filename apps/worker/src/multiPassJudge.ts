@@ -1614,7 +1614,7 @@ function buildV5DetectionPasses(): PassDefinition[] {
     name: `v5_article_${String(reviewer.articleNumber).padStart(2, "0")}`,
     displayLabel: reviewer.displayLabel,
     articleIds: [reviewer.articleNumber],
-    buildPrompt: () => `${reviewer.prompt}\n\n# Runtime Input (Structured Events Only)\n\nThe screenplay has already been read and understood.\nYou are NOT responsible for understanding the screenplay.\nYou must trust the structured events below.\nEvaluate ONLY those events.\nDo not rediscover events.\nDo not reinterpret dialogue.\nDo not infer new actions.\nDo not merge events.\nDo not split events.\n\nThe reviewer receives deterministic structured events extracted from the screenplay.\nThe raw screenplay prose is not provided to the reviewer.\n\n- One finding must reference exactly one event_id.\n- A reviewer may ignore events that do not belong to its assigned article.\n- A reviewer must never merge multiple events into one finding.`,
+    buildPrompt: () => `${reviewer.prompt}\n\n# Runtime Input (Structured Events Only)\n\nThe screenplay has already been read and understood.\nYou are NOT responsible for understanding the screenplay.\nYou must trust the structured events below.\nEvaluate ONLY those events.\nDo not rediscover events.\nDo not reinterpret dialogue.\nDo not infer new actions.\nDo not merge events.\nDo not split events.\n\nThe reviewer receives deterministic structured events extracted from the screenplay.\nThe raw screenplay prose is not provided to the reviewer.\n\n- One finding must reference exactly one event_id.\n- A reviewer may ignore events that do not belong to its assigned article.\n- A reviewer must never merge multiple events into one finding.\n- title_ar is required and must never be null, omitted, or empty.`,
     model: config.OPENAI_JUDGE_MODEL,
     sourceFileName: reviewer.filename,
   }));
@@ -1648,6 +1648,7 @@ export interface PassResult {
   totalTokens?: number | null;
   promptCharacters?: number | null;
   completionCharacters?: number | null;
+  missingTitleCount?: number;
 }
 
 function hasGovernanceAnchor(text: string): boolean {
@@ -2166,6 +2167,7 @@ async function runSinglePass(
       totalTokens: judgeCall.usage?.total_tokens ?? null,
       promptCharacters: judgeCall.rendered_system_prompt.length + judgeCall.rendered_user_prompt.length,
       completionCharacters: judgeCall.raw_judge_response.length,
+      missingTitleCount: diagnostics.missing_title_count,
     };
     
   } catch (error) {

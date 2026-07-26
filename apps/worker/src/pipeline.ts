@@ -33,6 +33,7 @@ import { countNoteCategoriesFromArray, logNotePipelineStage } from "./notePipeli
 import { upsertFindingPolicyLinks } from "./policyLinks.js";
 import { calculateSeverity } from "./severityRulebook.js";
 import { getPrimaryCanonicalAtomForGcam } from "./canonicalAtomMapping.js";
+import { getAtomDefinition } from "./canonicalAtomFramework.js";
 import { offsetToPageNumber, computePageLocalSpan, globalOffsetForPageStart, SCRIPT_PAGE_SEPARATOR } from "./offsetToPage.js";
 import { getCachedJobResources } from "./jobAnalysisCache.js";
 import { refineAtomPrecision } from "./atomPrecision.js";
@@ -2959,6 +2960,8 @@ export async function processChunkJudge(
 
   // 7) Preserve reviewer ownership; only enrich metadata and compute severity from factors when present.
   const ownershipRejectedFindings: Array<{ article_id: number | null | undefined; detection_pass?: string | null }> = [];
+  let canonicalTitleGeneratedCount = 0;
+  let reviewerTitleUsedCount = 0;
   let resolvedFindings = sortFindingsStable(
     persistedFindings
       .map((f) => {
@@ -3516,6 +3519,7 @@ export async function processChunkJudge(
         source: f.source ?? "ai",
         detectionPass: (f as { detection_pass?: string }).detection_pass ?? null,
         articleId: f.article_id,
+        canonicalAtom: canonical_atom,
         allowSemanticRewrite: config.VIOLATION_SYSTEM_VERSION !== "v5",
       });
       if (config.TITLE_NORMALIZATION_AUDIT) {
@@ -3535,6 +3539,12 @@ export async function processChunkJudge(
         });
       }
       const title_ar = titleNormalizationDecision.title;
+      const canonicalTitleAr = f.canonical_atom ? getAtomDefinition(f.canonical_atom)?.title_ar ?? null : null;
+      if (canonicalTitleAr && title_ar === canonicalTitleAr) {
+        canonicalTitleGeneratedCount++;
+      } else if (!canonicalTitleAr && typeof title_ar === "string" && title_ar.trim().length > 0) {
+        reviewerTitleUsedCount++;
+      }
       const h = evidenceHash(
         f.article_id,
         f.atom_id ?? null,
@@ -3729,6 +3739,18 @@ export async function processChunkJudge(
       explicitSceneMismatchDroppedCount,
       rows: rows.length,
       timeoutMs: CRITICAL_DB_TIMEOUT_MS,
+    });
+    const missingTitleArCount = multiPassResult?.passResults.reduce(
+      (total, pass) => total + (pass.missingTitleCount ?? 0),
+      0,
+    ) ?? 0;
+    logger.info("Title pipeline telemetry", {
+      jobId,
+      chunkId: chunk.id,
+      missingTitleAr: missingTitleArCount,
+      canonicalTitleGenerated: canonicalTitleGeneratedCount,
+      reviewerTitleUsed: reviewerTitleUsedCount,
+      rejectedForMissingTitle: missingTitleArCount,
     });
       const { data, error } = await withOperationTimeout<{
         data: Array<{ id: string; lineage_id?: string | null; finding_uuid?: string | null; article_id: number; atom_id: string | null; confidence?: number | null }> | null;

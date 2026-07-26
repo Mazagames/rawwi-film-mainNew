@@ -175,7 +175,7 @@ export async function callJudgeRaw(
   const userContentCore = overrideContent.length > 0
     ? overrideContent
     : `${buildJudgeArticlesPayload(selectedArticles)}\n\n---\nمقطع النص (start_offset=${globalStart}، end_offset=${globalEnd}):\n${textSlice}`;
-  const userContent = `${userContentCore}\n\nقواعد تنسيق إلزامية:\n- article_id (اختياري): إذا استخدمته فيجب أن يكون رقماً صحيحاً من المواد المعروضة فقط: [${allowedArticleIds}]. إذا لم تُحدده استخدم canonical_atom.\n- canonical_atom مطلوب: واحدة من INSULT, VIOLENCE, SEXUAL, SUBSTANCES, DISCRIMINATION, CHILD_SAFETY, WOMEN, MISINFORMATION, PUBLIC_ORDER, EXTREMISM, INTERNATIONAL, ECONOMIC, PRIVACY, APPEARANCE.\n- intensity, context_impact, legal_sensitivity, audience_risk مطلوبة وكل واحدة رقماً بين 1 و 4.\n- rationale_ar مطلوبة: جملة أو جملتان بالعربية تشرح أين يظهر المقتطف، ما الذي تم رصده، ولماذا يندرج تحت المادة. امنع الشرح العام مثل \"وجود لفظ مخالف\" دون توضيح.\n- يجب أن يطابق rationale_ar المادة الأساسية المختارة، ولا تذكر مادة مختلفة عنها في الشرح.\n- لا تُرجع severity — تُحسب في الخلفية.\n- evidence_snippet يجب أن يكون أصغر اقتباس حرفي ممكن يثبت المخالفة، وليس فقرة واسعة إلا إذا تعذر غير ذلك.\n- location.start_offset و location.end_offset يجب أن يحددا نفس المقتطف القصير داخل chunk الحالي (لا تُرجع null ولا نافذة واسعة بلا حاجة).\n- confidence رقماً بين 0 و 1.\n- evidence_snippet نصاً غير null.\n${!overrideContent && userPromptAddition && userPromptAddition.trim().length > 0 ? `\n${userPromptAddition.trim()}\n` : ""}أرجع JSON بمصفوفة findings فقط.`;
+  const userContent = `${userContentCore}\n\nقواعد تنسيق إلزامية:\n- article_id (اختياري): إذا استخدمته فيجب أن يكون رقماً صحيحاً من المواد المعروضة فقط: [${allowedArticleIds}]. إذا لم تُحدده استخدم canonical_atom.\n- canonical_atom مطلوب: واحدة من INSULT, VIOLENCE, SEXUAL, SUBSTANCES, DISCRIMINATION, CHILD_SAFETY, WOMEN, MISINFORMATION, PUBLIC_ORDER, EXTREMISM, INTERNATIONAL, ECONOMIC, PRIVACY, APPEARANCE.\n- intensity, context_impact, legal_sensitivity, audience_risk مطلوبة وكل واحدة رقماً بين 1 و 4.\n- title_ar مطلوب: عنوان عربي قصير ودقيق للمخالفة، ولا تتركه null أو فارغاً.\n- rationale_ar مطلوبة: جملة أو جملتان بالعربية تشرح أين يظهر المقتطف، ما الذي تم رصده، ولماذا يندرج تحت المادة. امنع الشرح العام مثل \"وجود لفظ مخالف\" دون توضيح.\n- يجب أن يطابق rationale_ar المادة الأساسية المختارة، ولا تذكر مادة مختلفة عنها في الشرح.\n- لا تُرجع severity — تُحسب في الخلفية.\n- evidence_snippet يجب أن يكون أصغر اقتباس حرفي ممكن يثبت المخالفة، وليس فقرة واسعة إلا إذا تعذر غير ذلك.\n- location.start_offset و location.end_offset يجب أن يحددا نفس المقتطف القصير داخل chunk الحالي (لا تُرجع null ولا نافذة واسعة بلا حاجة).\n- confidence رقماً بين 0 و 1.\n- evidence_snippet نصاً غير null.\n${!overrideContent && userPromptAddition && userPromptAddition.trim().length > 0 ? `\n${userPromptAddition.trim()}\n` : ""}أرجع JSON بمصفوفة findings فقط.`;
   const promptHash = config.ENABLE_AI_DIAGNOSTICS
     ? sha256(canonicalStringify({
         system: systemPrompt,
@@ -254,6 +254,7 @@ export type JudgeParseDiagnostics = {
   parsed_findings_count: number;
   repaired_findings_count: number | null;
   salvaged_findings_count: number | null;
+  missing_title_count: number;
   parse_status: JudgeParseStatus;
   repair_invoked: boolean;
   repair_reason: string | null;
@@ -298,6 +299,10 @@ function extractRawFindingsCount(raw: string): number | null {
   }
 }
 
+function hasRequiredTitle(titleAr: unknown): boolean {
+  return typeof titleAr === "string" && titleAr.trim().length > 0;
+}
+
 /**
  * Parse judge output with repair loop: if JSON parse or zod fails, call repair and retry once.
  */
@@ -310,6 +315,7 @@ export async function parseJudgeWithRepair(
   let usedRepair = false;
   let repairReason: string | null = null;
   const parserValidationErrors: string[] = [];
+  let missingTitleCount = 0;
   const rawFindingsCount = extractRawFindingsCount(raw);
   logger.info("[DEBUG] Judge parse/repair started", {
     model,
@@ -320,17 +326,34 @@ export async function parseJudgeWithRepair(
       const json = extractJsonFromText(content);
       const parsed = JSON.parse(json) as unknown;
       const out = judgeOutputSchema.parse(parsed);
+      const keptFindings: JudgeFinding[] = [];
+      for (const finding of out.findings) {
+        if (!hasRequiredTitle(finding.title_ar)) {
+          missingTitleCount++;
+          parserValidationErrors.push("Missing required field: title_ar");
+          logger.warn("Missing required field: title_ar", {
+            articleId: finding.article_id ?? null,
+            eventId: finding.event_id ?? null,
+            findingUuid: finding.finding_uuid ?? null,
+            canonicalAtom: finding.canonical_atom ?? null,
+          });
+          continue;
+        }
+        keptFindings.push(finding);
+      }
       logger.info("[DEBUG] Judge parse succeeded", {
         model,
-        findingsCount: out.findings.length,
+        findingsCount: keptFindings.length,
+        missingTitleCount,
       });
       return {
-        findings: out.findings,
+        findings: keptFindings,
         diagnostics: {
           raw_findings_count: rawFindingsCount,
-          parsed_findings_count: out.findings.length,
-          repaired_findings_count: usedRepair ? out.findings.length : null,
+          parsed_findings_count: keptFindings.length,
+          repaired_findings_count: usedRepair ? keptFindings.length : null,
           salvaged_findings_count: null,
+          missing_title_count: missingTitleCount,
           parse_status: usedRepair ? "REPAIRED" : "SUCCESS",
           repair_invoked: usedRepair,
           repair_reason: repairReason,
@@ -361,8 +384,23 @@ export async function parseJudgeWithRepair(
               if (m) normalized.article_id = Number(m[1]);
             }
             const one = judgeFindingSchema.safeParse(normalized);
-            if (one.success) salvaged.push(one.data);
-            else dropped++;
+            if (one.success) {
+              if (!hasRequiredTitle(one.data.title_ar)) {
+                missingTitleCount++;
+                parserValidationErrors.push("Missing required field: title_ar");
+                logger.warn("Missing required field: title_ar", {
+                  articleId: one.data.article_id ?? null,
+                  eventId: one.data.event_id ?? null,
+                  findingUuid: one.data.finding_uuid ?? null,
+                  canonicalAtom: one.data.canonical_atom ?? null,
+                });
+                dropped++;
+              } else {
+                salvaged.push(one.data);
+              }
+            } else {
+              dropped++;
+            }
           }
           if (salvaged.length > 0) {
             logger.warn("Judge partial salvage applied", {
@@ -378,6 +416,7 @@ export async function parseJudgeWithRepair(
                 parsed_findings_count: 0,
                 repaired_findings_count: null,
                 salvaged_findings_count: salvaged.length,
+                missing_title_count: missingTitleCount,
                 parse_status: "SALVAGED",
                 repair_invoked: false,
                 repair_reason: String(e),
@@ -408,6 +447,7 @@ export async function parseJudgeWithRepair(
       parsed_findings_count: 0,
       repaired_findings_count: null,
       salvaged_findings_count: null,
+      missing_title_count: missingTitleCount,
       parse_status: "FAILED",
       repair_invoked: usedRepair,
       repair_reason: repairReason,

@@ -49,7 +49,7 @@ export const judgeFindingSchema = z.object({
   context_impact: factor1to4,
   legal_sensitivity: factor1to4,
   audience_risk: factor1to4,
-  title_ar: z.string().optional().nullable().transform((v) => v ?? "مخالفة محتوى"),
+  title_ar: z.string().optional().nullable().transform((v) => (typeof v === "string" ? v : null)),
   description_ar: z.string().optional().nullable().transform((v) => v ?? ""),
   // Backend computes severity from factors when canonical_atom + factors present; legacy AI may still send severity.
   severity: z.enum(["low", "medium", "high", "critical"]).optional().nullable().transform((v) => v ?? null),
@@ -96,7 +96,9 @@ export const noteSchema = z.object({
   category: z.string().min(1),
   title: z.string().min(1),
   description: z.string().min(1),
-  snippet: z.string().min(1),
+  paragraph: z.string().min(1),
+  quote: z.string().min(1),
+  snippet: z.string().min(1).optional().nullable().transform((v) => v ?? null),
   event_id: z.preprocess(toNullableNumber, z.number().int().min(1)),
   confidence: noteConfidenceSchema.optional().nullable().transform((v) => (typeof v === "number" ? Math.max(0, Math.min(1, v)) : 0.7)),
   status: z.string().optional().nullable().transform((v) => v ?? "new"),
@@ -104,7 +106,7 @@ export const noteSchema = z.object({
 });
 
 export const noteOutputSchema = z.object({
-  notes: z.array(noteSchema),
+  notes: z.array(z.unknown()),
 });
 
 export type NoteItem = z.infer<typeof noteSchema>;
@@ -116,7 +118,7 @@ const confidenceSchema = z.preprocess(toNullableNumber, z.number().min(0).max(1)
 
 export const auditorAssessmentSchema = z.object({
   canonical_finding_id: z.string().min(1),
-  title_ar: z.string().optional().nullable().transform((v) => v ?? "مخالفة محتوى"),
+  title_ar: z.string().optional().nullable().transform((v) => (typeof v === "string" ? v : null)),
   final_ruling: auditorRulingSchema,
   rationale_ar: z.string().optional().nullable().transform((v) => v ?? "يتطلب تقييم مراجع مختص."),
   rationale_quality_tags: z.array(z.string()).optional().default([]),
