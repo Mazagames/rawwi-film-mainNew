@@ -115,6 +115,14 @@ function dedupePromptVariants(values: string[]): string[] {
   return result.slice(0, 120);
 }
 
+function getLexiconModel(): string {
+  return (
+    Deno.env.get("OPENAI_GLOSSARY_MODEL")?.trim() ||
+    Deno.env.get("OPENAI_MODEL")?.trim() ||
+    "gpt-4.1-mini"
+  );
+}
+
 /** If atom is not in policy_article_map (DB drift vs PolicyMap), save article-level only instead of 400. */
 async function resolveGcamAtomForLexicon(
   supabase: ReturnType<typeof createSupabaseAdmin>,
@@ -476,7 +484,7 @@ Deno.serve(async (req: Request) => {
           "Authorization": `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: getLexiconModel(),
           messages: [{ role: "system", content: systemMsg }, { role: "user", content: userMsg }],
           temperature: 0.2,
           max_tokens: 500,
@@ -542,7 +550,7 @@ Deno.serve(async (req: Request) => {
           "Authorization": `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: getLexiconModel(),
           messages: [{ role: "system", content: systemMsg }, { role: "user", content: userMsg }],
           temperature: 0.2,
           max_tokens: 1200,
