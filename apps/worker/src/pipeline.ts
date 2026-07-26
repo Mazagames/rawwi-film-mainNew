@@ -158,6 +158,33 @@ function logEvidenceIntegrityFailure(args: {
   });
 }
 
+function logValidatorRejection(args: {
+  jobId: string;
+  chunkId: string;
+  runKey: string;
+  stage: string;
+  rule: string;
+  rejectionReason: string;
+  finding: FindingWithGlobal;
+  findingUuid?: string | null;
+  eventId?: number | null;
+}): void {
+  logger.error("Validator rejected finding", {
+    jobId: args.jobId,
+    chunkId: args.chunkId,
+    runKey: args.runKey,
+    stage: args.stage,
+    finding_uuid: args.findingUuid ?? args.finding.finding_uuid ?? args.finding.lineage_id ?? null,
+    article: args.finding.article_id ?? null,
+    validatorRule: args.rule,
+    rejectionReason: args.rejectionReason,
+    event_id: args.eventId ?? getFindingDeclaredEventId(args.finding),
+    evidenceSnippet: (args.finding.evidence_snippet ?? "").slice(0, 240),
+    title_ar: args.finding.title_ar ?? null,
+    rationale_ar: args.finding.rationale_ar ?? null,
+  });
+}
+
 function buildTraceSnapshotFromRow(
   row: Record<string, unknown>,
   args: {
@@ -1791,6 +1818,11 @@ export async function processChunkJudge(
     passName: string | null;
     message: string;
   }> = [];
+  const validatorRejectionCounts = new Map<string, number>();
+
+  const recordValidatorRejection = (rule: string): void => {
+    validatorRejectionCounts.set(rule, (validatorRejectionCounts.get(rule) ?? 0) + 1);
+  };
 
   throwIfAborted(signal);
   if (await isJobCancelled(jobId)) {
@@ -2543,6 +2575,34 @@ export async function processChunkJudge(
             passName: f.detection_pass ?? null,
             message: "Objective evidence corruption rejected before insert.",
           });
+          const findingUuid = f.finding_uuid ?? f.lineage_id ?? buildFindingUuid({
+            kind: "ai_finding",
+            job_id: jobId,
+            chunk_id: chunk.id,
+            pass_name: f.detection_pass ?? null,
+            article_id: f.article_id,
+            atom_id: f.atom_id ?? null,
+            canonical_atom: f.canonical_atom ?? null,
+            title_ar: f.title_ar ?? null,
+            description_ar: f.description_ar ?? "",
+            evidence_snippet: f.evidence_snippet ?? "",
+            start_offset_global: f.start_offset_global ?? 0,
+            end_offset_global: f.end_offset_global ?? f.start_offset_global ?? 0,
+            page_number: f.page_number ?? null,
+            location: f.location ?? null,
+          });
+          logValidatorRejection({
+            jobId,
+            chunkId: chunk.id,
+            runKey,
+            stage: "evidence_quality",
+            rule: qualityIssue,
+            rejectionReason: "Objective evidence corruption rejected before insert.",
+            finding: f,
+            findingUuid,
+            eventId: getFindingDeclaredEventId(f),
+          });
+          recordValidatorRejection(qualityIssue);
           return false;
         }
         return true;
@@ -3192,6 +3252,18 @@ export async function processChunkJudge(
         if (objectiveEvidenceIssues.has(finalEvidenceIssue) && !isValidatorAdvisoryIssue(finalEvidenceIssue)) {
           validatorDecision = "rejected";
           validatorDropReason = finalEvidenceIssue;
+          logValidatorRejection({
+            jobId,
+            chunkId: chunk.id,
+            runKey,
+            stage: "stored_evidence_quality",
+            rule: finalEvidenceIssue,
+            rejectionReason: "Objective evidence corruption rejected before insert.",
+            finding: f,
+            findingUuid: f.finding_uuid ?? f.lineage_id ?? null,
+            eventId: findingEventId,
+          });
+          recordValidatorRejection(finalEvidenceIssue);
           if (config.DEBUG_TRACE_FINDING_PIPELINE) {
             traceFindingPipelineStage({
               jobId,
@@ -3277,32 +3349,45 @@ export async function processChunkJudge(
         ) {
           const expectedEvent = findingEventId;
           const actualEvent = quoteEventId ?? pageEventId ?? null;
+          const findingUuid = f.finding_uuid ?? f.lineage_id ?? buildFindingUuid({
+            kind: "ai_finding",
+            job_id: jobId,
+            chunk_id: chunk.id,
+            pass_name: f.detection_pass ?? null,
+            article_id: f.article_id,
+            atom_id: f.atom_id ?? null,
+            canonical_atom: f.canonical_atom ?? null,
+            title_ar: f.title_ar ?? null,
+            description_ar: f.description_ar ?? "",
+            evidence_snippet: excerpt,
+            start_offset_global: start,
+            end_offset_global: end,
+            page_number: pageNumAt(start),
+            location: f.location ?? null,
+          });
           logEvidenceIntegrityFailure({
             jobId,
             chunkId: chunk.id,
             runKey,
             finding: f,
-            findingUuid: f.finding_uuid ?? f.lineage_id ?? buildFindingUuid({
-              kind: "ai_finding",
-              job_id: jobId,
-              chunk_id: chunk.id,
-              pass_name: f.detection_pass ?? null,
-              article_id: f.article_id,
-              atom_id: f.atom_id ?? null,
-              canonical_atom: f.canonical_atom ?? null,
-              title_ar: f.title_ar ?? null,
-              description_ar: f.description_ar ?? "",
-              evidence_snippet: excerpt,
-              start_offset_global: start,
-              end_offset_global: end,
-              page_number: pageNumAt(start),
-              location: f.location ?? null,
-            }),
+            findingUuid,
             expectedEvent,
             actualEvent,
           });
           validatorDecision = "rejected";
           validatorDropReason = "evidence_integrity_failure";
+          logValidatorRejection({
+            jobId,
+            chunkId: chunk.id,
+            runKey,
+            stage: "evidence_integrity",
+            rule: "evidence_integrity_failure",
+            rejectionReason: "Finding event id did not match the matched structured event.",
+            finding: f,
+            findingUuid,
+            eventId: findingEventId,
+          });
+          recordValidatorRejection("evidence_integrity_failure");
           if (config.DEBUG_TRACE_FINDING_PIPELINE) {
             traceFindingPipelineStage({
               jobId,
@@ -3598,6 +3683,7 @@ export async function processChunkJudge(
       explicitScenePassedCount,
       rowsCount: rows.length,
       validatorAuditMode,
+      rejectionsByRule: Object.fromEntries([...validatorRejectionCounts.entries()].sort(([a], [b]) => a.localeCompare(b, "en"))),
       postCanonicalEvidenceDroppedCount,
       canonicalModelMismatchDroppedCount,
       explicitSceneMismatchDroppedCount,

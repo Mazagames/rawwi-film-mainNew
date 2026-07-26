@@ -47,6 +47,7 @@ export type ValidatorAuditReport = {
     falseRejectRate: number;
     compatibleRuleCount: number;
     incompatibleRuleCount: number;
+    rejectionsByRule: Record<string, number>;
   };
 };
 
@@ -1152,6 +1153,11 @@ export function buildValidatorAuditReport(args: {
     falseRejects: falseRejectCounts.get(makeRuleKey(rule.functionName, rule.validationStage, rule.rule)) ?? 0,
   }));
 
+  const rejectionCountsByRule = rejectionRows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.rule] = (acc[row.rule] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const summary = {
     totalFindingsReviewed,
     totalRejectedFindings: rejectionRows.length,
@@ -1159,6 +1165,7 @@ export function buildValidatorAuditReport(args: {
     falseRejectRate: totalFindingsReviewed > 0 ? [...falseRejectCounts.values()].reduce((sum, value) => sum + value, 0) / totalFindingsReviewed : 0,
     compatibleRuleCount: ruleRows.filter((row) => row.compatibleWithV5).length,
     incompatibleRuleCount: ruleRows.filter((row) => !row.compatibleWithV5).length,
+    rejectionsByRule: Object.fromEntries(Object.entries(rejectionCountsByRule).sort(([a], [b]) => a.localeCompare(b, "en"))),
   };
 
   return {
