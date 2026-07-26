@@ -45,6 +45,7 @@ import { PIPELINE_V2_SCENE_MEMORY_VERSION } from "./pipelineV2/sceneMemory.js";
 import { PIPELINE_V2_SCRIPT_MEMORY_VERSION } from "./pipelineV2/scriptMemory.js";
 import { PIPELINE_EVIDENCE_GROUNDING_VERSION, groundFindingEvidenceToChunk } from "./evidenceGrounding.js";
 import { getEventConsistencyIssue } from "./eventConsistency.js";
+import type { StructuredEvent } from "./eventUnderstanding.js";
 import { V3_SUBJECT_DEFINITIONS } from "./v3PromptPack.js";
 import { buildLineageEvent, ensureFindingLineageId, persistLineageEvents } from "./findingLineage.js";
 import { buildFindingUuid } from "./findingIdentity.js";
@@ -134,6 +135,11 @@ function getFindingDeclaredEventId(finding: FindingWithGlobal): number | null {
   const nested = (finding.location as { v3?: { event_id?: unknown } } | null | undefined)?.v3?.event_id;
   if (typeof nested === "number" && Number.isInteger(nested) && nested > 0) return nested;
   return null;
+}
+
+function getStructuredEventById(events: StructuredEvent[], eventId: number | null): StructuredEvent | null {
+  if (!Number.isInteger(eventId ?? null)) return null;
+  return events.find((event) => event.event_id === eventId) ?? null;
 }
 
 function logEvidenceIntegrityFailure(args: {
@@ -3232,9 +3238,56 @@ export async function processChunkJudge(
         (end - start) <= MAX_EVIDENCE_SPAN;
 
       const modelSnippet = typeof f.evidence_snippet === "string" ? f.evidence_snippet : "";
+      const structuredEvent =
+        config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding
+          ? getStructuredEventById(multiPassEventUnderstanding.events, findingEventId)
+          : null;
+      if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding && findingEventId != null && !structuredEvent) {
+        const findingUuid = f.finding_uuid ?? f.lineage_id ?? null;
+        logValidatorRejection({
+          jobId,
+          chunkId: chunk.id,
+          runKey,
+          stage: "event_resolution",
+          rule: "event_resolution_failure",
+          rejectionReason: "Finding event id could not be resolved to a structured event.",
+          finding: f,
+          findingUuid,
+          eventId: findingEventId,
+        });
+        validatorDecision = "rejected";
+        validatorDropReason = "event_resolution_failure";
+        if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+          traceFindingPipelineStage({
+            jobId,
+            chunkId: chunk.id,
+            stageName: "Validator",
+            functionName: "getStructuredEventById",
+            stageChunkIndex: chunk.chunk_index,
+            snapshots: [buildTraceSnapshotFromFinding(f, {
+              traceId,
+              reviewerArticleId,
+              passName: f.detection_pass ?? null,
+              eventId: findingEventId,
+              validatorDecision,
+              dropReason: validatorDropReason,
+              bypassReason: null,
+            })],
+          });
+        }
+        validatorWarnings.push({
+          stage: "event_resolution",
+          issue: "event_resolution_failure",
+          articleId: f.article_id ?? null,
+          passName: f.detection_pass ?? null,
+          message: "Finding event id could not be resolved to a structured event.",
+        });
+        return [];
+      }
       let canonicalSnippet = hasSaneGlobalOffsets ? normalizedText!.slice(start, end) : "";
-      // Prefer canonical script text whenever offsets are sane so report evidence stays literal.
-      let excerpt = canonicalSnippet.length > 0 ? canonicalSnippet : modelSnippet;
+      // Prefer the structured event quote in V5 so report evidence stays rooted in the event layer.
+      let excerpt = structuredEvent?.quote ?? (canonicalSnippet.length > 0 ? canonicalSnippet : modelSnippet);
+      const evidenceAlignedFinding = structuredEvent ? { ...f, evidence_snippet: excerpt } : f;
 
       let finalEvidenceIssue = getStoredEvidenceQualityIssue(
         excerpt,
@@ -3312,7 +3365,7 @@ export async function processChunkJudge(
 
       const eventConsistencyResult =
         config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding
-          ? getEventConsistencyIssue(f, multiPassEventUnderstanding.events)
+          ? getEventConsistencyIssue(evidenceAlignedFinding, multiPassEventUnderstanding.events)
           : null;
       if (eventConsistencyResult?.issue) {
         logger.warn("Event consistency issue (advisory only)", {
@@ -3423,7 +3476,7 @@ export async function processChunkJudge(
       }
 
       if (config.VIOLATION_SYSTEM_VERSION !== "v5") {
-        const passSpecificEvidenceIssue = getPassSpecificEvidenceIssue(f, excerpt, normalizedText, sceneIndex);
+        const passSpecificEvidenceIssue = getPassSpecificEvidenceIssue(evidenceAlignedFinding, excerpt, normalizedText, sceneIndex);
         if (passSpecificEvidenceIssue) {
           logger.warn("Pass-specific final evidence issue (advisory only)", {
             jobId,
