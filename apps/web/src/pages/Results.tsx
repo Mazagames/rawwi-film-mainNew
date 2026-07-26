@@ -1072,6 +1072,121 @@ export function Results() {
     }
   };
 
+  useEffect(() => {
+    if (!report?.summaryJson) return;
+    setNotesState(report.summaryJson.notes ?? EMPTY_NOTES_BY_CATEGORY);
+  }, [report?.id]);
+
+  useEffect(() => {
+    if (!report?.id) return;
+    const firstCategoryWithNotes = NOTE_CATEGORY_ORDER.find((cat) => (notesState[cat.key]?.length ?? 0) > 0)?.key;
+    if (firstCategoryWithNotes) {
+      setNoteCategoryFilter(firstCategoryWithNotes);
+    }
+  }, [report?.id]);
+
+  const findNoteById = useCallback((noteId: string): ReportNote | null => {
+    for (const category of NOTE_CATEGORY_ORDER) {
+      const match = notesState[category.key]?.find((note) => note.id === noteId);
+      if (match) return match;
+    }
+    return null;
+  }, [notesState]);
+
+  const replaceNoteInState = useCallback((updated: ReportNote) => {
+    setNotesState((prev) => {
+      const next: Record<NoteCategoryKey, ReportNote[]> = {
+        ...prev,
+        media_credibility: [...(prev.media_credibility ?? [])],
+        medical_notes: [...(prev.medical_notes ?? [])],
+        classified_documents: [...(prev.classified_documents ?? [])],
+        security_scenes: [...(prev.security_scenes ?? [])],
+        saudi_names: [...(prev.saudi_names ?? [])],
+        commercial_entities: [...(prev.commercial_entities ?? [])],
+      };
+      for (const key of NOTE_CATEGORY_ORDER.map((item) => item.key)) {
+        next[key] = next[key].filter((note) => note.id !== updated.id);
+      }
+      next[updated.category as NoteCategoryKey] = [
+        ...(next[updated.category as NoteCategoryKey] ?? []),
+        updated,
+      ].sort((a, b) => a.event_id - b.event_id || a.title.localeCompare(b.title, lang === 'ar' ? 'ar' : 'en'));
+      return next;
+    });
+  }, [lang]);
+
+  const updateNoteRow = useCallback(async (noteId: string, patch: Partial<Pick<ReportNote, 'title' | 'description' | 'included_in_report' | 'status' | 'reviewer_comment' | 'reviewed_at'>>) => {
+    const { data, error } = await supabase
+      .from('analysis_notes')
+      .update({
+        ...patch,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', noteId)
+      .select('id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at')
+      .single();
+    if (error) throw error;
+    return data as ReportNote;
+  }, []);
+
+  const handleToggleNoteReportVisibility = async (note: NoteCardData) => {
+    const current = findNoteById(note.id);
+    if (!current) return;
+    const nextInclude = current.included_in_report === false;
+    setNoteEditSaving(true);
+    try {
+      const updated = await updateNoteRow(note.id, { included_in_report: nextInclude });
+      replaceNoteInState(updated);
+      toast.success(nextInclude
+        ? (lang === 'ar' ? 'سيتم تضمين هذه الملاحظة في التقرير' : 'This note will be included in the report')
+        : (lang === 'ar' ? 'تم استبعاد هذه الملاحظة من التقرير' : 'This note has been excluded from the report'));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast.error(message || (lang === 'ar' ? 'تعذر تحديث حالة الملاحظة' : 'Failed to update note visibility'));
+    } finally {
+      setNoteEditSaving(false);
+    }
+  };
+
+  const handleMarkNoteReviewed = async (note: NoteCardData) => {
+    const current = findNoteById(note.id);
+    if (!current) return;
+    setNoteEditSaving(true);
+    try {
+      const updated = await updateNoteRow(note.id, {
+        status: 'reviewed',
+        reviewed_at: new Date().toISOString(),
+      });
+      replaceNoteInState(updated);
+      toast.success(lang === 'ar' ? 'تم تعليم الملاحظة كمراجَعة' : 'Note marked as reviewed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast.error(message || (lang === 'ar' ? 'تعذر تحديث حالة الملاحظة' : 'Failed to mark note as reviewed'));
+    } finally {
+      setNoteEditSaving(false);
+    }
+  };
+
+  const handleSaveNoteEdit = async () => {
+    if (!noteEditModal) return;
+    setNoteEditSaving(true);
+    try {
+      const updated = await updateNoteRow(noteEditModal.id, {
+        title: noteEditForm.title.trim(),
+        description: noteEditForm.description.trim(),
+        reviewer_comment: noteEditForm.reviewerComment.trim(),
+      });
+      replaceNoteInState(updated);
+      setNoteEditModal(noteCardFromReportNote(updated));
+      toast.success(lang === 'ar' ? 'تم حفظ الملاحظة' : 'Note saved');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast.error(message || (lang === 'ar' ? 'تعذر حفظ الملاحظة' : 'Failed to save note'));
+    } finally {
+      setNoteEditSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-16 text-center flex flex-col items-center gap-4">
@@ -1130,17 +1245,6 @@ export function Results() {
   const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
   const selectedNotes = notesByCategory[noteCategoryFilter] ?? [];
   const selectedNoteCards = selectedNotes.map(noteCardFromReportNote);
-
-  useEffect(() => {
-    setNotesState(report?.summaryJson.notes ?? EMPTY_NOTES_BY_CATEGORY);
-  }, [report?.id]);
-
-  useEffect(() => {
-    const firstCategoryWithNotes = NOTE_CATEGORY_ORDER.find((cat) => (notesByCategory[cat.key]?.length ?? 0) > 0)?.key;
-    if (firstCategoryWithNotes) {
-      setNoteCategoryFilter(firstCategoryWithNotes);
-    }
-  }, [report?.id]); // reset tab selection only when the loaded report changes
 
   const checklistSubjectRows = (summary.checklist_articles ?? [])
     .map((article) => ({
@@ -1806,88 +1910,6 @@ export function Results() {
     }
   };
 
-  const findNoteById = useCallback((noteId: string): ReportNote | null => {
-    for (const category of NOTE_CATEGORY_ORDER) {
-      const match = notesState[category.key]?.find((note) => note.id === noteId);
-      if (match) return match;
-    }
-    return null;
-  }, [notesState]);
-
-  const replaceNoteInState = useCallback((updated: ReportNote) => {
-    setNotesState((prev) => {
-      const next: Record<NoteCategoryKey, ReportNote[]> = {
-        ...prev,
-        media_credibility: [...(prev.media_credibility ?? [])],
-        medical_notes: [...(prev.medical_notes ?? [])],
-        classified_documents: [...(prev.classified_documents ?? [])],
-        security_scenes: [...(prev.security_scenes ?? [])],
-        saudi_names: [...(prev.saudi_names ?? [])],
-        commercial_entities: [...(prev.commercial_entities ?? [])],
-      };
-      for (const key of NOTE_CATEGORY_ORDER.map((item) => item.key)) {
-        next[key] = next[key].filter((note) => note.id !== updated.id);
-      }
-      next[updated.category as NoteCategoryKey] = [
-        ...(next[updated.category as NoteCategoryKey] ?? []),
-        updated,
-      ].sort((a, b) => a.event_id - b.event_id || a.title.localeCompare(b.title, lang === 'ar' ? 'ar' : 'en'));
-      return next;
-    });
-  }, [lang]);
-
-  const updateNoteRow = useCallback(async (noteId: string, patch: Partial<Pick<ReportNote, 'title' | 'description' | 'included_in_report' | 'status' | 'reviewer_comment' | 'reviewed_at'>>) => {
-    const { data, error } = await supabase
-      .from('analysis_notes')
-      .update({
-        ...patch,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', noteId)
-      .select('id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at')
-      .single();
-    if (error) throw error;
-    return data as ReportNote;
-  }, []);
-
-  const handleToggleNoteReportVisibility = async (note: NoteCardData) => {
-    const current = findNoteById(note.id);
-    if (!current) return;
-    const nextInclude = current.included_in_report === false;
-    setNoteEditSaving(true);
-    try {
-      const updated = await updateNoteRow(note.id, { included_in_report: nextInclude });
-      replaceNoteInState(updated);
-      toast.success(nextInclude
-        ? (lang === 'ar' ? 'سيتم تضمين هذه الملاحظة في التقرير' : 'This note will be included in the report')
-        : (lang === 'ar' ? 'تم استبعاد هذه الملاحظة من التقرير' : 'This note has been excluded from the report'));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      toast.error(message || (lang === 'ar' ? 'تعذر تحديث حالة الملاحظة' : 'Failed to update note visibility'));
-    } finally {
-      setNoteEditSaving(false);
-    }
-  };
-
-  const handleMarkNoteReviewed = async (note: NoteCardData) => {
-    const current = findNoteById(note.id);
-    if (!current) return;
-    setNoteEditSaving(true);
-    try {
-      const updated = await updateNoteRow(note.id, {
-        status: 'reviewed',
-        reviewed_at: new Date().toISOString(),
-      });
-      replaceNoteInState(updated);
-      toast.success(lang === 'ar' ? 'تم تعليم الملاحظة كمراجَعة' : 'Note marked as reviewed');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      toast.error(message || (lang === 'ar' ? 'تعذر تحديث حالة الملاحظة' : 'Failed to mark note as reviewed'));
-    } finally {
-      setNoteEditSaving(false);
-    }
-  };
-
   const openNoteEditModal = (note: NoteCardData) => {
     setNoteEditModal(note);
     setNoteEditForm({
@@ -1897,31 +1919,6 @@ export function Results() {
     });
   };
 
-  const handleSaveNoteEdit = async () => {
-    if (!noteEditModal) return;
-    const title = noteEditForm.title.trim();
-    const description = noteEditForm.description.trim();
-    if (!title || !description) {
-      toast.error(lang === 'ar' ? 'العنوان والوصف مطلوبان' : 'Title and description are required');
-      return;
-    }
-    setNoteEditSaving(true);
-    try {
-      const updated = await updateNoteRow(noteEditModal.id, {
-        title,
-        description,
-        reviewer_comment: noteEditForm.reviewerComment.trim() || null,
-      });
-      replaceNoteInState(updated);
-      setNoteEditModal(null);
-      toast.success(lang === 'ar' ? 'تم تحديث الملاحظة' : 'Note updated');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      toast.error(message || (lang === 'ar' ? 'تعذر تحديث الملاحظة' : 'Failed to update note'));
-    } finally {
-      setNoteEditSaving(false);
-    }
-  };
 
   const handleDeleteFindingCard = async (payload: { findingId?: string; reviewFindingId?: string }) => {
     const confirmMessage = lang === 'ar'
