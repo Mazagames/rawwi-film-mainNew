@@ -5,6 +5,7 @@ import type { NoteCategoryKey, ReportNote } from "@/api/models";
 import { splitAnalysisReviewFindingsForPdf } from "../analysis/mapper";
 import { mapQuickAnalysisFindingsForPdf, type CanonicalFindingForQuickPdf } from "./mapper";
 import { QuickAnalysisPdf } from "./Pdf";
+import { countNotesByCategory, logNotePipelineStage } from "@/utils/noteTelemetry";
 
 async function toDataUrl(url: string): Promise<string | null> {
   try {
@@ -49,6 +50,14 @@ export async function downloadQuickAnalysisPdf(params: {
   dateFormat?: string;
 }): Promise<void> {
   const origin = window.location.origin;
+  logNotePipelineStage({
+    stageLabel: "Quick Analysis PDF",
+    actionLabel: "Rendered",
+    noteCounts: countNotesByCategory(params.notes),
+    reportId: params.reportId ?? null,
+    jobId: params.jobId ?? null,
+    source: "quick-analysis-pdf",
+  });
   const logoUrl = await toDataUrl(`${origin}/fclogo.png`);
   const hasReviewLayer = (params.reviewFindings?.length ?? 0) > 0;
   const reviewLayer = splitAnalysisReviewFindingsForPdf(params.reviewFindings);
