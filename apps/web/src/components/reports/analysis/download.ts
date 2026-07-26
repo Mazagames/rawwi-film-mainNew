@@ -5,6 +5,7 @@ import { mapAnalysisFindingsForPdf, splitAnalysisReviewFindingsForPdf } from "./
 import type { AnalysisFinding, AnalysisReviewFinding } from "@/api";
 import type { NoteCategoryKey, ReportNote } from "@/api/models";
 import type { ViewerPageSlice } from "@/utils/findingContext";
+import { countNotesByCategory, logNotePipelineStage } from "@/utils/noteTelemetry";
 
 async function toDataUrl(url: string): Promise<string | null> {
   try {
@@ -23,6 +24,8 @@ async function toDataUrl(url: string): Promise<string | null> {
 }
 
 export interface DownloadAnalysisPdfParams {
+  reportId?: string | null;
+  jobId?: string | null;
   scriptTitle: string;
   clientName: string;
   createdAt: string;
@@ -73,6 +76,14 @@ export interface DownloadAnalysisPdfParams {
 
 export async function downloadAnalysisPdf(params: DownloadAnalysisPdfParams): Promise<void> {
   const origin = window.location.origin;
+  logNotePipelineStage({
+    stageLabel: "PDF",
+    actionLabel: "Rendered",
+    noteCounts: countNotesByCategory(params.notes),
+    reportId: params.reportId ?? null,
+    jobId: params.jobId ?? null,
+    source: "analysis-pdf",
+  });
   const hasReviewLayer = (params.reviewFindings?.length ?? 0) > 0;
   const reviewLayer = splitAnalysisReviewFindingsForPdf(params.reviewFindings);
   const safeReportHints = Array.isArray(params.reportHints)

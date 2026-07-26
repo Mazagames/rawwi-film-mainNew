@@ -5,6 +5,7 @@ import { extractJsonFromText, noteOutputSchema, type NoteItem, type NoteOutput }
 import { logger } from "./logger.js";
 import { getNoteDefinitions, type NoteReviewerDefinition } from "./notePromptPack.js";
 import type { EventUnderstandingPassResult, StructuredEvent } from "./eventUnderstanding.js";
+import { countNoteCategoriesFromArray, logNotePipelineStage } from "./notePipelineTelemetry.js";
 
 const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 
@@ -311,6 +312,14 @@ export async function runNotesDetection(
       });
     }
   }
+
+  logNotePipelineStage({
+    jobId: options.jobId,
+    chunkId: options.chunkId,
+    stageLabel: "Note Runner",
+    actionLabel: "Generated",
+    noteCounts: countNoteCategoriesFromArray(allNotes),
+  });
 
   return {
     notes: allNotes,

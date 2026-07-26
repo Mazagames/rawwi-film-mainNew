@@ -21,6 +21,7 @@ import { normalizeReviewFindingConsistency } from "./reviewFindingConsistency.js
 import { buildLineageEvent, persistLineageEvents } from "./findingLineage.js";
 import { traceFindingPipelineStage, traceFindingPipelineSummary, type FindingPipelineTraceSnapshot } from "./findingPipelineTrace.js";
 import { emitPipelineTelemetryBlock, recordTelemetryFromSummary } from "./pipelineTelemetry.js";
+import { countNoteCategoriesFromSummary, logNotePipelineStage } from "./notePipelineTelemetry.js";
 
 export type SummaryJson = {
   job_id: string;
@@ -1764,6 +1765,13 @@ export function buildSummaryJson(
   const canonical_findings = [...canonicalMap.values()].sort(compareCanonicalItemsStable);
   const report_hints: SummaryJson["report_hints"] = [];
   const noteSummary = buildNoteSummary(notes);
+  logNotePipelineStage({
+    jobId,
+    chunkId: null,
+    stageLabel: "summary.notes",
+    actionLabel: "Aggregated",
+    noteCounts: countNoteCategoriesFromSummary(noteSummary.notes),
+  });
   logger.info("[DEBUG] Aggregation canonicalization complete", {
     jobId,
     canonicalFindingCount: canonical_findings.length,

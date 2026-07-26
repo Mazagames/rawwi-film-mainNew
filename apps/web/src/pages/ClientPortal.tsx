@@ -703,6 +703,8 @@ export function ClientPortal() {
             }));
 
       await downloadAnalysisPdf({
+        reportId: block.report.id ?? null,
+        jobId: block.report.job_id ?? null,
         scriptTitle: details.script.title || (lang === 'ar' ? 'تقرير النص' : 'Script Report'),
         clientName: profile?.company
           ? (lang === 'ar' ? profile.company.nameAr : profile.company.nameEn)
@@ -919,6 +921,8 @@ export function ClientPortal() {
         });
       } else {
         await downloadAnalysisWord({
+          reportId: payload.report.id,
+          jobId: payload.report.job_id ?? null,
           scriptTitle,
           clientName,
           createdAt: payload.report.createdAt,

@@ -25,6 +25,7 @@ import { downloadAnalysisWord } from '@/components/reports/analysis/downloadWord
 import { downloadQuickAnalysisPdf } from '@/components/reports/quick-analysis/download';
 import { resolveStorageUrl } from '@/utils/storage';
 import { getGlossarySentenceContext } from '@/utils/findingContext';
+import { countNotesByCategory, logNotePipelineStage } from '@/utils/noteTelemetry';
 import {
   ArrowLeft, CheckCircle, ShieldAlert,
   AlertTriangle, XCircle, ChevronDown, ChevronUp, Loader2,
@@ -461,6 +462,7 @@ export function Results() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const reportActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const reportLoadTokenRef = useRef(0);
+  const noteTelemetryLoggedReportIdRef = useRef<string | null>(null);
   const [editFindingForm, setEditFindingForm] = useState({
     articleId: String(DEFAULT_ACTIONABLE_ARTICLE_ID),
     atomId: '',
@@ -1076,6 +1078,20 @@ export function Results() {
     if (!report?.summaryJson) return;
     setNotesState(report.summaryJson.notes ?? EMPTY_NOTES_BY_CATEGORY);
   }, [report?.id]);
+
+  useEffect(() => {
+    if (!report?.id || !report.summaryJson?.notes) return;
+    if (noteTelemetryLoggedReportIdRef.current === report.id) return;
+    noteTelemetryLoggedReportIdRef.current = report.id;
+    logNotePipelineStage({
+      stageLabel: 'Results',
+      actionLabel: 'Rendered',
+      noteCounts: countNotesByCategory(report.summaryJson.notes),
+      reportId: report.id,
+      jobId: report.jobId ?? null,
+      source: 'results-page',
+    });
+  }, [report?.id, report?.summaryJson?.notes, report?.jobId]);
 
   useEffect(() => {
     if (!report?.id) return;
@@ -1762,6 +1778,8 @@ export function Results() {
       const safeReviewFindingsForPdf = (latestReviewFindings || []).filter((finding): finding is AnalysisReviewFinding => Boolean(finding));
       const safeReportHintsForPdf = (summary?.report_hints || []).filter((hint): hint is CanonicalSummaryFinding => Boolean(hint));
       const basePayload = {
+        reportId: report.id,
+        jobId: report.jobId,
         scriptTitle: report.scriptTitle || (isAr ? 'تحليل النص' : 'Script Analysis'),
         clientName: report.clientName || (isAr ? 'مستفيد' : 'Beneficiary'),
         createdAt: report.createdAt,

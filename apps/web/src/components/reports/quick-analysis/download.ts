@@ -34,6 +34,8 @@ type ReportHintForQuickPdf = {
 };
 
 export async function downloadQuickAnalysisPdf(params: {
+  reportId?: string | null;
+  jobId?: string | null;
   scriptTitle: string;
   clientName?: string;
   createdAt: string;

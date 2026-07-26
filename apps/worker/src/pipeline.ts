@@ -29,6 +29,7 @@ import { buildValidatorAuditHtml, buildValidatorAuditReport, toValidatorAuditLog
 import { buildReviewerTraceReport, toReviewerTraceLog } from "./reviewerTrace.js";
 import { traceFindingPipelineStage, traceFindingPipelineSummary, type FindingPipelineTraceSnapshot } from "./findingPipelineTrace.js";
 import { recordTelemetryFromFindings } from "./pipelineTelemetry.js";
+import { countNoteCategoriesFromArray, logNotePipelineStage } from "./notePipelineTelemetry.js";
 import { upsertFindingPolicyLinks } from "./policyLinks.js";
 import { calculateSeverity } from "./severityRulebook.js";
 import { getPrimaryCanonicalAtomForGcam } from "./canonicalAtomMapping.js";
@@ -3013,6 +3014,7 @@ export async function processChunkJudge(
       );
 
       const noteRows = toNoteInsertRows(jobId, noteDetectionResult.notes);
+      const noteRowCounts = countNoteCategoriesFromArray(noteRows);
       logger.info("Notes pipeline completed", {
         jobId,
         chunkId: chunk.id,
@@ -3021,6 +3023,10 @@ export async function processChunkJudge(
         skippedPassCount: noteDetectionResult.skippedPassCount,
         totalDurationMs: noteDetectionResult.totalDuration,
       });
+
+      let persistStatus: "succeeded" | "failed" | "skipped" = "skipped";
+      let persistedCount = 0;
+      let persistError: string | null = null;
 
       if (noteRows.length > 0) {
         const { data: insertedNotes, error: notesError } = await withOperationTimeout<{
@@ -3039,6 +3045,8 @@ export async function processChunkJudge(
         );
 
         if (notesError) {
+          persistStatus = "failed";
+          persistError = notesError.message;
           logger.warn("Notes upsert failed", {
             jobId,
             chunkId: chunk.id,
@@ -3046,6 +3054,8 @@ export async function processChunkJudge(
             noteCount: noteRows.length,
           });
         } else {
+          persistStatus = "succeeded";
+          persistedCount = insertedNotes?.length ?? noteRows.length;
           logger.info("Notes upsert complete", {
             jobId,
             chunkId: chunk.id,
@@ -3054,6 +3064,19 @@ export async function processChunkJudge(
           });
         }
       }
+      logNotePipelineStage({
+        jobId,
+        chunkId: chunk.id,
+        stageLabel: "analysis_notes",
+        actionLabel: "Persisted",
+        noteCounts: noteRowCounts,
+        extra: {
+          persistStatus,
+          persistedCount,
+          attemptedCount: noteRows.length,
+          ...(persistError ? { error: persistError } : {}),
+        },
+      });
     } catch (error) {
       logger.warn("Notes pipeline failed but analysis will continue", {
         jobId,

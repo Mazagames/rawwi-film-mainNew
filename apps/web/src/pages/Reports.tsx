@@ -130,6 +130,8 @@ function Reports() {
       const isAr = lang === 'ar';
 
       await downloadAnalysisPdf({
+        reportId: fullReport.id,
+        jobId: fullReport.jobId ?? null,
         scriptTitle: fullReport.scriptTitle || (isAr ? 'تحليل النص' : 'Script Analysis'),
         clientName: fullReport.clientName || (isAr ? 'مستفيد' : 'Beneficiary'),
         createdAt: fullReport.createdAt,
@@ -184,6 +186,8 @@ function Reports() {
         reviewFindings = await findingsApi.getReviewByReport(fullReport.id);
       } catch { /* export can fall back to raw/summary */ }
       await downloadAnalysisWord({
+        reportId: fullReport.id,
+        jobId: fullReport.jobId ?? null,
         scriptTitle: fullReport.scriptTitle || (lang === 'ar' ? 'تحليل النص' : 'Script Analysis'),
         clientName: fullReport.clientName || (lang === 'ar' ? 'مستفيد' : 'Beneficiary'),
         createdAt: fullReport.createdAt,

@@ -4,6 +4,7 @@ import { mapAnalysisFindingsForPdf, splitAnalysisReviewFindingsForPdf } from "./
 import { displayPageForFinding, type ViewerPageSlice } from "@/utils/viewerPageFromOffset";
 import { getGlossarySentenceContext } from "@/utils/findingContext";
 import type { NoteCategoryKey, ReportNote } from "@/api/models";
+import { countNotesByCategory, logNotePipelineStage } from "@/utils/noteTelemetry";
 
 type ReportHint = {
   canonical_finding_id: string;
@@ -80,6 +81,8 @@ function resolveWordExportFindingData(params: DownloadAnalysisWordParams) {
 }
 
 export interface DownloadAnalysisWordParams {
+  reportId?: string | null;
+  jobId?: string | null;
   scriptTitle: string;
   clientName: string;
   createdAt: string;
@@ -766,6 +769,14 @@ function updateLogoRelationship(relsXml: string): string {
 }
 
 export async function downloadAnalysisWord(params: DownloadAnalysisWordParams): Promise<void> {
+  logNotePipelineStage({
+    stageLabel: "Word",
+    actionLabel: "Rendered",
+    noteCounts: countNotesByCategory(params.notes),
+    reportId: params.reportId ?? null,
+    jobId: params.jobId ?? null,
+    source: "analysis-word",
+  });
   const response = await fetch(ANALYSIS_TEMPLATE_URL);
   if (!response.ok) {
     throw new Error("Unable to load DOCX template.");
