@@ -2454,7 +2454,7 @@ export async function runAggregation(jobId: string): Promise<void> {
     stageName: "aggregation",
     inputCount: findings.length,
     summaryArticles: summary.findings_by_article ?? [],
-    noteSummary: Object.fromEntries((noteSummary.notes_summary ?? []).map((entry) => [entry.category, entry.count])),
+    noteSummary: Object.fromEntries((summary.notes_summary ?? []).map((entry) => [entry.category, entry.count])),
   });
 
   logger.info("[DEBUG] Aggregation report payload ready", {
@@ -2550,7 +2550,7 @@ export async function runAggregation(jobId: string): Promise<void> {
     stageName: "report",
     inputCount: summary.findings_by_article?.reduce((total, article) => total + (article.top_findings?.length ?? 0), 0) ?? 0,
     summaryArticles: summary.findings_by_article ?? [],
-    noteSummary: Object.fromEntries((noteSummary.notes_summary ?? []).map((entry) => [entry.category, entry.count])),
+    noteSummary: Object.fromEntries((summary.notes_summary ?? []).map((entry) => [entry.category, entry.count])),
   });
 
   if (reportId) {
