@@ -2969,7 +2969,7 @@ export async function processChunkJudge(
         const atom_id = f.atom_id ?? null;
         let severity = f.severity ?? null;
         const canonical_atoms = (f as { canonical_atoms?: string[] | null }).canonical_atoms;
-        const canonical_atom = Array.isArray(canonical_atoms) && canonical_atoms.length > 0
+        const canonicalAtom = Array.isArray(canonical_atoms) && canonical_atoms.length > 0
           ? canonical_atoms[0] ?? (f as { canonical_atom?: string | null }).canonical_atom ?? null
           : (f as { canonical_atom?: string | null }).canonical_atom ?? null;
         const intensity = (f as { intensity?: number | null }).intensity ?? null;
@@ -2990,9 +2990,9 @@ export async function processChunkJudge(
           return null;
         }
 
-        if (severity == null && canonical_atom && (intensity != null || context_impact != null || legal_sensitivity != null || audience_risk != null)) {
+        if (severity == null && canonicalAtom && (intensity != null || context_impact != null || legal_sensitivity != null || audience_risk != null)) {
           severity = calculateSeverity({
-            canonical_atom,
+            canonical_atom: canonicalAtom,
             intensity: intensity ?? 1,
             context_impact: context_impact ?? 1,
             legal_sensitivity: legal_sensitivity ?? undefined,
@@ -3005,7 +3005,7 @@ export async function processChunkJudge(
           article_id,
           atom_id,
           severity,
-          canonical_atom,
+          canonical_atom: canonicalAtom,
           intensity,
           context_impact,
           legal_sensitivity,
@@ -3519,7 +3519,7 @@ export async function processChunkJudge(
         source: f.source ?? "ai",
         detectionPass: (f as { detection_pass?: string }).detection_pass ?? null,
         articleId: f.article_id,
-        canonicalAtom: canonical_atom,
+        canonicalAtom: f.canonical_atom ?? null,
         allowSemanticRewrite: config.VIOLATION_SYSTEM_VERSION !== "v5",
       });
       if (config.TITLE_NORMALIZATION_AUDIT) {
