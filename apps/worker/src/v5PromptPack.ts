@@ -68,6 +68,10 @@ function isMarkdownFile(fileName: string): boolean {
   return /\.md$/i.test(fileName);
 }
 
+function isV5ArticleReviewerFile(fileName: string): boolean {
+  return /^article_\d{2}_.+\.md$/i.test(fileName);
+}
+
 function normalizeMarkdown(markdown: string): string {
   return markdown.replace(/\r\n?/g, "\n");
 }
@@ -175,7 +179,8 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
   const reviewerFiles: string[] = readdirSync(reviewerDirectory, { withFileTypes: true })
     .filter((entry: DirectoryEntryLike) => entry.isFile())
     .map((entry: DirectoryEntryLike) => entry.name)
-    .filter(isMarkdownFile);
+    .filter(isMarkdownFile)
+    .filter(isV5ArticleReviewerFile);
 
   if (reviewerFiles.length === 0) {
     failV5ReviewerLoad("No V5 reviewer markdown files were found", {
