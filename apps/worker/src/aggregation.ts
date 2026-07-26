@@ -1600,6 +1600,36 @@ export function buildSummaryJson(
   });
   const report_hints: SummaryJson["report_hints"] = [];
   const noteSummary = buildNoteSummary(jobId, notes);
+  if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+    traceFindingPipelineStage({
+      jobId,
+      chunkId: jobId,
+      stageName: "Aggregation Input",
+      functionName: "buildSummaryJson input",
+      stageChunkIndex: null,
+      snapshots: canonical_findings.slice(0, 5).map((finding) => ({
+        traceId: finding.finding_uuid ?? "",
+        findingUuid: finding.finding_uuid ?? null,
+        reviewerArticleId: finding.primary_article_id ?? null,
+        passName: null,
+        eventId: null,
+        pageNumber: finding.page_number ?? null,
+        title_ar: finding.title_ar,
+        description_ar: null,
+        rationale_ar: finding.rationale ?? null,
+        canonical_atom: finding.canonical_atom ?? null,
+        article_id: finding.primary_article_id ?? null,
+        claimedArticleId: finding.primary_article_id ?? null,
+        severity: finding.severity,
+        confidence: finding.confidence,
+        evidence_snippet: finding.evidence_snippet,
+        quote: finding.evidence_snippet,
+        start_offset: finding.start_offset_global ?? null,
+        end_offset: finding.end_offset_global ?? null,
+        canonicalFindingId: finding.canonical_finding_id,
+      })),
+    });
+  }
   logNotePipelineStage({
     jobId,
     chunkId: null,
@@ -1687,8 +1717,9 @@ export function buildSummaryJson(
     traceFindingPipelineStage({
       jobId,
       chunkId: jobId,
-      stageName: "Summary JSON generation",
+      stageName: "Aggregation Output",
       functionName: "buildSummaryJson canonical_findings",
+      stageChunkIndex: null,
       snapshots: canonical_findings.slice(0, 5).map((finding) => ({
         traceId: finding.finding_uuid ?? "",
         findingUuid: finding.finding_uuid ?? null,
@@ -1714,8 +1745,9 @@ export function buildSummaryJson(
     traceFindingPipelineStage({
       jobId,
       chunkId: jobId,
-      stageName: "Summary JSON generation",
+      stageName: "Summary JSON",
       functionName: "buildSummaryJson findings_by_article",
+      stageChunkIndex: null,
       snapshots: findings_by_article.flatMap((article) =>
         article.top_findings.slice(0, 5).map((finding) => ({
           traceId: finding.finding_uuid ?? "",
@@ -2307,11 +2339,12 @@ export async function runAggregation(jobId: string): Promise<void> {
     traceFindingPipelineStage({
       jobId,
       chunkId: jobId,
-      stageName: "Aggregation input",
+      stageName: "Database Read",
       functionName: "analysis_findings load",
+      stageChunkIndex: null,
       snapshots: list.slice(0, 5).map((row) =>
         buildTraceSnapshotFromRow(row, {
-          stage: "Aggregation input",
+          stage: "Database Read",
           reviewerArticleId: row.article_id ?? null,
           passName: null,
         })
@@ -2552,6 +2585,38 @@ export async function runAggregation(jobId: string): Promise<void> {
     summaryArticles: summary.findings_by_article ?? [],
     noteSummary: Object.fromEntries((summary.notes_summary ?? []).map((entry) => [entry.category, entry.count])),
   });
+  if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+    traceFindingPipelineStage({
+      jobId,
+      chunkId: jobId,
+      stageName: "Report",
+      functionName: "buildSummaryJson report",
+      stageChunkIndex: null,
+      snapshots: summary.findings_by_article.flatMap((article) =>
+        article.top_findings.slice(0, 5).map((finding) => ({
+          traceId: finding.finding_uuid ?? "",
+          findingUuid: finding.finding_uuid ?? null,
+          reviewerArticleId: article.article_id,
+          passName: null,
+          eventId: null,
+          pageNumber: finding.page_number ?? null,
+          title_ar: finding.title_ar,
+          description_ar: null,
+          rationale_ar: finding.rationale ?? null,
+          canonical_atom: null,
+          article_id: article.article_id,
+          claimedArticleId: article.article_id,
+          severity: finding.severity,
+          confidence: finding.confidence,
+          evidence_snippet: finding.evidence_snippet,
+          quote: finding.evidence_snippet,
+          start_offset: finding.start_offset_global ?? null,
+          end_offset: finding.end_offset_global ?? null,
+          canonicalFindingId: finding.canonical_finding_id,
+        }))
+      ),
+    });
+  }
 
   if (reportId) {
     await persistLineageEvents(

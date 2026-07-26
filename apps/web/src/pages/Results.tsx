@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { FindingCard, type NoteCardData } from '@/components/ui/FindingCard';
 import { cn } from '@/utils/cn';
 import { escapeHtmlSafe } from '@/utils/escapeHtml';
+import { logFindingFlightRecorderStage } from '@/utils/findingFlightRecorder';
 import toast from 'react-hot-toast';
 import { downloadAnalysisPdf } from '@/components/reports/analysis/download';
 import { downloadAnalysisWord } from '@/components/reports/analysis/downloadWord';
@@ -463,6 +464,7 @@ export function Results() {
   const reportActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const reportLoadTokenRef = useRef(0);
   const noteTelemetryLoggedReportIdRef = useRef<string | null>(null);
+  const findingFlightRecorderLoggedReportIdRef = useRef<string | null>(null);
   const [editFindingForm, setEditFindingForm] = useState({
     articleId: String(DEFAULT_ACTIONABLE_ARTICLE_ID),
     atomId: '',
@@ -1092,6 +1094,41 @@ export function Results() {
       source: 'results-page',
     });
   }, [report?.id, report?.summaryJson?.notes, report?.jobId]);
+
+  useEffect(() => {
+    if (!report?.id || !report.summaryJson) return;
+    if (findingFlightRecorderLoggedReportIdRef.current === report.id) return;
+    findingFlightRecorderLoggedReportIdRef.current = report.id;
+    const canonicalFindings = (report.summaryJson.canonical_findings ?? []).map((finding) => {
+      const castFinding = finding as {
+        finding_uuid?: string | null;
+        article_id?: number | null;
+        primary_article_id?: number | null;
+        title_ar?: string | null;
+        evidence_snippet?: string | null;
+        confidence?: number | null;
+        page_number?: number | null;
+        event_id?: number | null;
+        chunk_index?: number | null;
+      };
+      return {
+        finding_uuid: castFinding.finding_uuid ?? null,
+        article_id: Number.isFinite(castFinding.primary_article_id) ? castFinding.primary_article_id ?? null : castFinding.article_id ?? null,
+        title: castFinding.title_ar ?? null,
+        event_id: castFinding.event_id ?? null,
+        chunk_index: castFinding.chunk_index ?? null,
+        page_number: castFinding.page_number ?? null,
+        quote: castFinding.evidence_snippet ?? null,
+        confidence: castFinding.confidence ?? null,
+      };
+    });
+    logFindingFlightRecorderStage({
+      stage: 'Results Page Model',
+      reportId: report.id,
+      jobId: report.jobId ?? null,
+      findings: canonicalFindings,
+    });
+  }, [report?.id, report?.jobId, report?.summaryJson]);
 
   useEffect(() => {
     if (!report?.id) return;

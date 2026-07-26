@@ -1973,6 +1973,35 @@ async function runSinglePass(
 
     // Parse findings
     const { findings, diagnostics } = await parseJudgeWithRepair(judgeCall.raw_judge_response, model, { signal });
+    if (config.DEBUG_TRACE_FINDING_PIPELINE && diagnosticContext?.jobId && diagnosticContext?.chunkId) {
+      traceFindingPipelineStage({
+        jobId: diagnosticContext.jobId,
+        chunkId: diagnosticContext.chunkId,
+        stageName: "Reviewer Output",
+        functionName: "callJudgeRaw / parseJudgeWithRepair",
+        stageChunkIndex: null,
+        snapshots: findings.slice(0, 5).map((finding) => ({
+          traceId: finding.lineage_id ?? finding.finding_uuid ?? "",
+          reviewerArticleId: articleIds[0] ?? null,
+          passName: pass.name,
+          eventId: null,
+          findingUuid: finding.finding_uuid ?? null,
+          pageNumber: finding.page_number ?? null,
+          title_ar: finding.title_ar ?? null,
+          description_ar: finding.description_ar ?? null,
+          rationale_ar: finding.rationale_ar ?? null,
+          canonical_atom: finding.canonical_atom ?? null,
+          article_id: finding.article_id ?? null,
+          claimedArticleId: finding.article_id ?? null,
+          severity: finding.severity ?? null,
+          confidence: finding.confidence ?? null,
+          evidence_snippet: finding.evidence_snippet ?? null,
+          quote: finding.evidence_snippet ?? null,
+          start_offset: finding.location?.start_offset ?? null,
+          end_offset: finding.location?.end_offset ?? null,
+        })),
+      });
+    }
     const findingsWithIdentity = findings.map((finding, index) => {
       const identified = attachFindingIdentity(finding, {
         passName: pass.name,
@@ -1992,8 +2021,9 @@ async function runSinglePass(
       traceFindingPipelineStage({
         jobId: diagnosticContext.jobId,
         chunkId: diagnosticContext.chunkId,
-        stageName: "Reviewer JSON parsed",
+        stageName: "Reviewer JSON Parse",
         functionName: "parseJudgeWithRepair",
+        stageChunkIndex: null,
         snapshots: findingsWithIdentity.slice(0, 5).map((finding) => ({
           traceId: finding.lineage_id ?? finding.finding_uuid ?? "",
           reviewerArticleId: articleIds[0] ?? null,
@@ -2065,8 +2095,9 @@ async function runSinglePass(
       traceFindingPipelineStage({
         jobId: diagnosticContext.jobId,
         chunkId: diagnosticContext.chunkId,
-        stageName: "After multi-pass refinement",
+        stageName: "Multi-pass Merge",
         functionName: "sortJudgeFindingsStable / normalizeFindingForPass",
+        stageChunkIndex: null,
         snapshots: stableTagged.slice(0, 5).map((finding) => ({
           traceId: finding.lineage_id ?? finding.finding_uuid ?? "",
           reviewerArticleId: articleIds[0] ?? null,

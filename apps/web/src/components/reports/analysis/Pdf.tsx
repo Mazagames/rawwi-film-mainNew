@@ -2,6 +2,7 @@ import React from "react";
 import { Document, Image, Page, Text, View } from "@react-pdf/renderer";
 import { formatDate, formatDateLong } from "@/utils/dateFormat";
 import { getGlossarySentenceContext, type ViewerPageSlice } from "@/utils/findingContext";
+import { logFindingFlightRecorderStage } from "@/utils/findingFlightRecorder";
 import { analysisStyles as s } from "./styles";
 import type { AnalysisPdfFinding } from "./mapper";
 import type { NoteCategoryKey, ReportNote } from "@/api/models";
@@ -58,6 +59,7 @@ export const AnalysisSectionPdf: React.FC<AnalysisSectionPdfProps> = ({
   logoUrl,
   coverImageDataUrl,
 }) => {
+  const findingFlightRecorderLoggedRef = React.useRef<string | null>(null);
   const isAr = data.lang === "ar";
   const rtl = isAr ? s.rtl : {};
   const safeFindings: AnalysisPdfFinding[] = (data.findings || [])
@@ -71,6 +73,25 @@ export const AnalysisSectionPdf: React.FC<AnalysisSectionPdfProps> = ({
       confidence: f.confidence ?? 0,
       evidenceSnippet: f.evidenceSnippet ?? "",
     }));
+  React.useEffect(() => {
+    const recorderKey = [data.jobId ?? "", data.scriptTitle ?? "", String(safeFindings.length)].join("|");
+    if (findingFlightRecorderLoggedRef.current === recorderKey) return;
+    findingFlightRecorderLoggedRef.current = recorderKey;
+    logFindingFlightRecorderStage({
+      stage: "PDF Model",
+      jobId: data.jobId ?? null,
+      findings: safeFindings.map((finding) => ({
+        finding_uuid: finding.id ?? null,
+        article_id: Number.isFinite(finding.articleId) ? finding.articleId : null,
+        title: finding.titleAr ?? null,
+        event_id: null,
+        chunk_index: null,
+        page_number: finding.pageNumber ?? null,
+        quote: finding.evidenceSnippet ?? null,
+        confidence: finding.confidence ?? null,
+      })),
+    });
+  }, [data.jobId, data.scriptTitle, safeFindings]);
   const safeReportHints: AnalysisPdfFinding[] = (data.reportHints || [])
     .filter((f): f is AnalysisPdfFinding => !!f)
     .map((f, idx) => ({

@@ -7,6 +7,7 @@ export type FindingPipelineTraceSnapshot = {
   findingUuid: string | null;
   reviewerArticleId: number | null;
   passName: string | null;
+  chunkIndex?: number | null;
   eventId: number | null;
   pageNumber: number | null;
   title_ar: string | null;
@@ -30,16 +31,23 @@ export type FindingPipelineTraceSnapshot = {
 
 type TraceSessionSummary = {
   reviewerCreated: number;
-  validatorRemoved: number;
-  persistenceRemoved: number;
-  aggregationChangedArticle: number;
-  aggregationChangedTitle: number;
+  merged: number;
+  rejected: number;
+  persisted: number;
+  aggregated: number;
+  rendered: number;
+  changedArticleIds: number;
+  changedTitles: number;
+  changedQuotes: number;
+  changedEventIds: number;
+  changedPages: number;
   reportRendered: number;
   functions: Set<string>;
 };
 
 type TraceSession = {
   trackedTraceIds: string[];
+  terminatedTraceIds: Set<string>;
   previousSnapshots: Map<string, FindingPipelineTraceSnapshot>;
   canonicalAlias: Map<string, string>;
   insertedAlias: Map<string, string>;
@@ -63,15 +71,22 @@ function getSession(jobId: string, chunkId: string): TraceSession {
   if (existing) return existing;
   const created: TraceSession = {
     trackedTraceIds: [],
+    terminatedTraceIds: new Set<string>(),
     previousSnapshots: new Map(),
     canonicalAlias: new Map(),
     insertedAlias: new Map(),
     summary: {
       reviewerCreated: 0,
-      validatorRemoved: 0,
-      persistenceRemoved: 0,
-      aggregationChangedArticle: 0,
-      aggregationChangedTitle: 0,
+      merged: 0,
+      rejected: 0,
+      persisted: 0,
+      aggregated: 0,
+      rendered: 0,
+      changedArticleIds: 0,
+      changedTitles: 0,
+      changedQuotes: 0,
+      changedEventIds: 0,
+      changedPages: 0,
       reportRendered: 0,
       functions: new Set<string>(),
     },
@@ -98,11 +113,13 @@ function diffSnapshot(previous: FindingPipelineTraceSnapshot, current: FindingPi
 }> {
   const fields: Array<keyof FindingPipelineTraceSnapshot> = [
     "findingUuid",
+    "chunkIndex",
     "eventId",
     "reviewerArticleId",
     "claimedArticleId",
     "pageNumber",
     "title_ar",
+    "quote",
     "canonical_atom",
     "description_ar",
     "rationale_ar",
@@ -189,15 +206,19 @@ function logMutation(
 function logRemoval(traceId: string, stageName: string, snapshot: FindingPipelineTraceSnapshot, functionName: string) {
   logger.info([
     "==========================",
-    "TRACE REMOVAL",
+    "STOP TRACE",
     `trace_id: ${traceId}`,
     `Stage: ${stageName}`,
-    `Reason: ${functionName}`,
-    `LastKnownFindingUuid: ${normalizeValue(snapshot.findingUuid)}`,
-    `LastKnownTitle: ${normalizeValue(snapshot.title_ar)}`,
-    `LastKnownArticle: ${normalizeValue(snapshot.article_id)}`,
-    `LastKnownPage: ${normalizeValue(snapshot.pageNumber)}`,
-    `LastKnownEvidence: ${normalizeValue(snapshot.evidence_snippet)}`,
+    `Reason: ${normalizeValue(snapshot.validatorDecision ?? snapshot.dropReason ?? functionName)}`,
+    `Validator Rule: ${normalizeValue(snapshot.dropReason ?? null)}`,
+    `finding_uuid: ${normalizeValue(snapshot.findingUuid)}`,
+    `article_id: ${normalizeValue(snapshot.article_id)}`,
+    `title: ${normalizeValue(snapshot.title_ar)}`,
+    `event_id: ${normalizeValue(snapshot.eventId)}`,
+    `chunk_index: ${normalizeValue(snapshot.chunkIndex)}`,
+    `page_number: ${normalizeValue(snapshot.pageNumber)}`,
+    `quote: ${normalizeValue(snapshot.quote ?? snapshot.evidence_snippet)}`,
+    `confidence: ${normalizeValue(snapshot.confidence)}`,
     "==========================",
   ].join("\n"));
 }
@@ -210,6 +231,7 @@ export function traceFindingPipelineStage(args: {
   functionName: string;
   maxTracked?: number;
   reportRenderedCount?: number;
+  stageChunkIndex?: number | null;
 }): void {
   if (!shouldTrace()) return;
   const session = getSession(args.jobId, args.chunkId);
@@ -229,24 +251,46 @@ export function traceFindingPipelineStage(args: {
 
   const trackedSnapshots = args.snapshots
     .map((snapshot) => ({ snapshot, traceId: resolveTraceId(snapshot, session) }))
-    .filter(({ traceId }) => session.trackedTraceIds.includes(traceId));
+    .filter(({ traceId }) => session.trackedTraceIds.includes(traceId) && !session.terminatedTraceIds.has(traceId));
 
   const seenTraceIds = new Set<string>();
   for (const { snapshot, traceId } of trackedSnapshots) {
     seenTraceIds.add(traceId);
     const previous = session.previousSnapshots.get(traceId);
+    if (args.stageChunkIndex != null && snapshot.chunkIndex == null) {
+      snapshot.chunkIndex = args.stageChunkIndex;
+    }
     logSnapshot(args.stageName, traceId, snapshot);
-    if (snapshot.validatorDecision === "rejected") {
-      session.summary.validatorRemoved++;
+    const stageLower = args.stageName.toLowerCase();
+    if (stageLower.includes("merge")) {
+      session.summary.merged = Math.max(session.summary.merged, trackedSnapshots.length);
+    }
+    if (stageLower.includes("insert")) {
+      session.summary.persisted = Math.max(session.summary.persisted, trackedSnapshots.length);
+    }
+    if (stageLower.includes("aggregation")) {
+      session.summary.aggregated = Math.max(session.summary.aggregated, trackedSnapshots.length);
+    }
+    if (stageLower.includes("report")) {
+      session.summary.rendered = Math.max(session.summary.rendered, trackedSnapshots.length);
     }
     if (previous) {
       for (const change of diffSnapshot(previous, snapshot)) {
         logMutation(traceId, args.stageName, change.field, change.before, change.after, args.functionName);
         if (change.field === "article_id" && normalizeValue(change.before) !== normalizeValue(change.after)) {
-          session.summary.aggregationChangedArticle++;
+          session.summary.changedArticleIds++;
         }
         if (change.field === "title_ar" && normalizeValue(change.before) !== normalizeValue(change.after)) {
-          session.summary.aggregationChangedTitle++;
+          session.summary.changedTitles++;
+        }
+        if (change.field === "quote") {
+          session.summary.changedQuotes++;
+        }
+        if (change.field === "eventId") {
+          session.summary.changedEventIds++;
+        }
+        if (change.field === "pageNumber") {
+          session.summary.changedPages++;
         }
         session.summary.functions.add(args.functionName);
       }
@@ -262,13 +306,19 @@ export function traceFindingPipelineStage(args: {
 
   const missingTraceIds = session.trackedTraceIds.filter((traceId) => !seenTraceIds.has(traceId));
   for (const traceId of missingTraceIds) {
+    if (session.terminatedTraceIds.has(traceId)) continue;
     const previous = session.previousSnapshots.get(traceId);
     if (!previous) continue;
     logRemoval(traceId, args.stageName, previous, args.functionName);
-    if (args.stageName.toLowerCase().includes("validator") && previous.validatorDecision !== "rejected") {
-      session.summary.validatorRemoved++;
+    session.terminatedTraceIds.add(traceId);
+    if (previous.validatorDecision === "rejected") {
+      session.summary.rejected++;
     } else if (args.stageName.toLowerCase().includes("insert")) {
-      session.summary.persistenceRemoved++;
+      session.summary.persisted++;
+    } else if (args.stageName.toLowerCase().includes("aggregation")) {
+      session.summary.aggregated++;
+    } else if (args.stageName.toLowerCase().includes("report")) {
+      session.summary.rendered++;
     }
   }
 
@@ -282,14 +332,20 @@ export function traceFindingPipelineSummary(jobId: string, chunkId: string): voi
   const session = SESSIONS.get(sessionKey(jobId, chunkId));
   if (!session) return;
 
-  logger.info("TRACE PIPELINE MUTATION SUMMARY", {
+  logger.info("FLIGHT RECORDER SUMMARY", {
     jobId,
     chunkId,
     reviewerCreated: session.summary.reviewerCreated,
-    validatorRemoved: session.summary.validatorRemoved,
-    persistenceRemoved: session.summary.persistenceRemoved,
-    aggregationChangedArticle: session.summary.aggregationChangedArticle,
-    aggregationChangedTitle: session.summary.aggregationChangedTitle,
+    merged: session.summary.merged,
+    rejected: session.summary.rejected,
+    persisted: session.summary.persisted,
+    aggregated: session.summary.aggregated,
+    rendered: session.summary.rendered,
+    changedArticleIds: session.summary.changedArticleIds,
+    changedTitles: session.summary.changedTitles,
+    changedQuotes: session.summary.changedQuotes,
+    changedEventIds: session.summary.changedEventIds,
+    changedPages: session.summary.changedPages,
     reportRendered: session.summary.reportRendered,
     functions: [...session.summary.functions],
   });

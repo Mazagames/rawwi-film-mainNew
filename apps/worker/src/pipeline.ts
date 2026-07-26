@@ -3053,12 +3053,13 @@ export async function processChunkJudge(
   });
 
   if (config.DEBUG_TRACE_FINDING_PIPELINE) {
-    traceFindingPipelineStage({
-      jobId,
-      chunkId: chunk.id,
-      stageName: "Before analysis_findings row build",
-      functionName: "resolvedFindings.flatMap",
-      snapshots: resolvedFindings.slice(0, 5).map((finding) => ({
+      traceFindingPipelineStage({
+        jobId,
+        chunkId: chunk.id,
+        stageName: "Auditor",
+        functionName: "resolvedFindings.flatMap",
+        stageChunkIndex: chunk.chunk_index,
+        snapshots: resolvedFindings.slice(0, 5).map((finding) => ({
         traceId: (finding as { lineage_id?: string | null; finding_uuid?: string | null }).lineage_id ?? (finding as { finding_uuid?: string | null }).finding_uuid ?? "",
         reviewerArticleId: parseReviewerArticleId((finding as { detection_pass?: string | null }).detection_pass ?? null, finding.article_id ?? null),
         passName: finding.detection_pass ?? null,
@@ -3268,8 +3269,9 @@ export async function processChunkJudge(
             traceFindingPipelineStage({
               jobId,
               chunkId: chunk.id,
-              stageName: "After validator",
+              stageName: "Validator",
               functionName: "getStoredEvidenceQualityIssue",
+              stageChunkIndex: chunk.chunk_index,
               snapshots: [buildTraceSnapshotFromFinding(f, {
                 traceId,
                 reviewerArticleId,
@@ -3392,8 +3394,9 @@ export async function processChunkJudge(
             traceFindingPipelineStage({
               jobId,
               chunkId: chunk.id,
-              stageName: "After validator",
+              stageName: "Validator",
               functionName: "evidence_integrity",
+              stageChunkIndex: chunk.chunk_index,
               snapshots: [buildTraceSnapshotFromFinding(f, {
                 traceId,
                 reviewerArticleId,
@@ -3491,8 +3494,9 @@ export async function processChunkJudge(
         traceFindingPipelineStage({
           jobId,
           chunkId: chunk.id,
-          stageName: "After validator",
+          stageName: "Validator",
           functionName: "getStoredEvidenceQualityIssue / getEventConsistencyIssue / snippetsReasonablyAlign / hasExplicitSceneMismatch",
+          stageChunkIndex: chunk.chunk_index,
           snapshots: [buildTraceSnapshotFromFinding(f, {
             traceId,
             reviewerArticleId,
@@ -3640,8 +3644,9 @@ export async function processChunkJudge(
       traceFindingPipelineStage({
         jobId,
         chunkId: chunk.id,
-        stageName: "Before insert",
+        stageName: "Database Insert",
         functionName: "analysis_findings row builder",
+        stageChunkIndex: chunk.chunk_index,
         snapshots: rows.slice(0, 5).map((row) => ({
           traceId: (row as { lineage_id?: string | null; finding_uuid?: string | null }).lineage_id ?? (row as { finding_uuid?: string | null }).finding_uuid ?? "",
           reviewerArticleId: parseReviewerArticleId((row as { location?: { v3?: { detection_pass?: string | null } } }).location?.v3?.detection_pass ?? null, (row as { article_id?: number | null }).article_id ?? null),
@@ -3774,8 +3779,9 @@ export async function processChunkJudge(
       traceFindingPipelineStage({
         jobId,
         chunkId: chunk.id,
-        stageName: "After insert",
+        stageName: "Database Insert Result",
         functionName: "analysis_findings upsert",
+        stageChunkIndex: chunk.chunk_index,
         snapshots: rows.slice(0, 5).map((row) => {
           const lineageId = (row as { lineage_id?: string | null }).lineage_id ?? "";
           return {
