@@ -105,7 +105,7 @@ function buildTraceSnapshotFromFinding(
     findingUuid: finding.finding_uuid ?? finding.lineage_id ?? null,
     reviewerArticleId: args.reviewerArticleId,
     passName: args.passName,
-    eventId: args.eventId ?? null,
+    eventId: args.eventId ?? getFindingDeclaredEventId(finding),
     pageNumber: finding.page_number ?? null,
     title_ar: finding.title_ar ?? null,
     description_ar: finding.description_ar ?? null,
@@ -127,6 +127,37 @@ function buildTraceSnapshotFromFinding(
   };
 }
 
+function getFindingDeclaredEventId(finding: FindingWithGlobal): number | null {
+  const direct = typeof finding.event_id === "number" ? finding.event_id : null;
+  if (Number.isInteger(direct) && (direct ?? 0) > 0) return direct;
+  const nested = (finding.location as { v3?: { event_id?: unknown } } | null | undefined)?.v3?.event_id;
+  if (typeof nested === "number" && Number.isInteger(nested) && nested > 0) return nested;
+  return null;
+}
+
+function logEvidenceIntegrityFailure(args: {
+  jobId: string;
+  chunkId: string;
+  runKey: string;
+  finding: FindingWithGlobal;
+  findingUuid: string;
+  expectedEvent: number | null;
+  actualEvent: number | null;
+}): void {
+  logger.error("EVIDENCE INTEGRITY FAILURE", {
+    jobId: args.jobId,
+    chunkId: args.chunkId,
+    runKey: args.runKey,
+    findingUuid: args.findingUuid,
+    expectedEvent: args.expectedEvent,
+    actualEvent: args.actualEvent,
+    pageNumber: args.finding.page_number ?? null,
+    evidenceSnippet: (args.finding.evidence_snippet ?? "").slice(0, 200),
+    title_ar: args.finding.title_ar ?? null,
+    rationale_ar: args.finding.rationale_ar ?? null,
+  });
+}
+
 function buildTraceSnapshotFromRow(
   row: Record<string, unknown>,
   args: {
@@ -146,7 +177,7 @@ function buildTraceSnapshotFromRow(
     findingUuid: row.finding_uuid ?? row.lineage_id ?? null,
     reviewerArticleId: args.reviewerArticleId,
     passName: args.passName,
-    eventId: args.eventId ?? null,
+    eventId: args.eventId ?? getRowEventId(row),
     pageNumber: typeof row.page_number === "number" ? row.page_number : null,
     title_ar: typeof row.title_ar === "string" ? row.title_ar : null,
     description_ar: typeof row.description_ar === "string" ? row.description_ar : null,
@@ -166,6 +197,12 @@ function buildTraceSnapshotFromRow(
     insertedFindingId: args.insertedFindingId ?? null,
     canonicalFindingId: args.canonicalFindingId ?? null,
   };
+}
+
+function getRowEventId(row: Record<string, unknown>): number | null {
+  const nested = (row.location as { v3?: { event_id?: unknown } } | undefined)?.v3?.event_id;
+  if (typeof nested === "number" && Number.isInteger(nested) && nested > 0) return nested;
+  return null;
 }
 
 function parseReviewerArticleId(passName: string | null | undefined, fallback: number | null = null): number | null {
@@ -2331,7 +2368,7 @@ export async function processChunkJudge(
           traceId: (finding as { lineage_id?: string | null; finding_uuid?: string | null }).lineage_id ?? (finding as { finding_uuid?: string | null }).finding_uuid ?? "",
           reviewerArticleId: parseReviewerArticleId((finding as { detection_pass?: string | null }).detection_pass ?? null, finding.article_id ?? null),
           passName: (finding as { detection_pass?: string | null }).detection_pass ?? null,
-          eventId: null,
+          eventId: getFindingDeclaredEventId(finding),
           findingUuid: (finding as { finding_uuid?: string | null }).finding_uuid ?? null,
           pageNumber: (finding as { page_number?: number | null }).page_number ?? null,
           title_ar: finding.title_ar ?? null,
@@ -2965,7 +3002,7 @@ export async function processChunkJudge(
         traceId: (finding as { lineage_id?: string | null; finding_uuid?: string | null }).lineage_id ?? (finding as { finding_uuid?: string | null }).finding_uuid ?? "",
         reviewerArticleId: parseReviewerArticleId((finding as { detection_pass?: string | null }).detection_pass ?? null, finding.article_id ?? null),
         passName: finding.detection_pass ?? null,
-        eventId: null,
+        eventId: getFindingDeclaredEventId(finding),
         findingUuid: (finding as { finding_uuid?: string | null }).finding_uuid ?? null,
         pageNumber: (finding as { page_number?: number | null }).page_number ?? null,
         title_ar: finding.title_ar ?? null,
@@ -3115,6 +3152,7 @@ export async function processChunkJudge(
     const rows = resolvedFindings.flatMap((f) => {
       const reviewerArticleId = parseReviewerArticleId((f as { detection_pass?: string | null }).detection_pass ?? null, f.article_id ?? null);
       const traceId = (f as { lineage_id?: string | null }).lineage_id ?? "";
+      const findingEventId = getFindingDeclaredEventId(f);
       const validatorBypassReasons: string[] = [];
       let validatorDecision: "accepted" | "rejected" = "accepted";
       let validatorDropReason: string | null = null;
@@ -3225,6 +3263,72 @@ export async function processChunkJudge(
         });
       } else {
         eventConsistencyPassedCount++;
+      }
+
+      if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
+        const quoteEventId = eventConsistencyResult?.matchedEvent?.event_id ?? null;
+        const pageEventId = quoteEventId;
+        if (
+          findingEventId == null ||
+          quoteEventId == null ||
+          pageEventId == null ||
+          findingEventId !== quoteEventId ||
+          findingEventId !== pageEventId
+        ) {
+          const expectedEvent = findingEventId;
+          const actualEvent = quoteEventId ?? pageEventId ?? null;
+          logEvidenceIntegrityFailure({
+            jobId,
+            chunkId: chunk.id,
+            runKey,
+            finding: f,
+            findingUuid: f.finding_uuid ?? f.lineage_id ?? buildFindingUuid({
+              kind: "ai_finding",
+              job_id: jobId,
+              chunk_id: chunk.id,
+              pass_name: f.detection_pass ?? null,
+              article_id: f.article_id,
+              atom_id: f.atom_id ?? null,
+              canonical_atom: f.canonical_atom ?? null,
+              title_ar: f.title_ar ?? null,
+              description_ar: f.description_ar ?? "",
+              evidence_snippet: excerpt,
+              start_offset_global: start,
+              end_offset_global: end,
+              page_number: pageNumAt(start),
+              location: f.location ?? null,
+            }),
+            expectedEvent,
+            actualEvent,
+          });
+          validatorDecision = "rejected";
+          validatorDropReason = "evidence_integrity_failure";
+          if (config.DEBUG_TRACE_FINDING_PIPELINE) {
+            traceFindingPipelineStage({
+              jobId,
+              chunkId: chunk.id,
+              stageName: "After validator",
+              functionName: "evidence_integrity",
+              snapshots: [buildTraceSnapshotFromFinding(f, {
+                traceId,
+                reviewerArticleId,
+                passName: f.detection_pass ?? null,
+                eventId: findingEventId,
+                validatorDecision,
+                dropReason: validatorDropReason,
+                bypassReason: null,
+              })],
+            });
+          }
+          validatorWarnings.push({
+            stage: "evidence_integrity",
+            issue: "evidence_integrity_failure",
+            articleId: f.article_id ?? null,
+            passName: f.detection_pass ?? null,
+            message: "Finding event id did not match the matched structured event.",
+          });
+          return [];
+        }
       }
 
       if (config.VIOLATION_SYSTEM_VERSION !== "v5") {
@@ -3402,6 +3506,7 @@ export async function processChunkJudge(
             final_ruling: f.final_ruling ?? null,
             narrative_consequence: f.narrative_consequence ?? "unknown",
             detection_pass: f.detection_pass ?? null,
+            event_id: findingEventId,
             policy_links: f.policy_links ?? [],
             primary_article_id: (f as { primary_article_id?: number }).primary_article_id ?? f.article_id,
             related_article_ids: (f as { related_article_ids?: number[] }).related_article_ids ?? [],
@@ -3456,7 +3561,7 @@ export async function processChunkJudge(
           traceId: (row as { lineage_id?: string | null; finding_uuid?: string | null }).lineage_id ?? (row as { finding_uuid?: string | null }).finding_uuid ?? "",
           reviewerArticleId: parseReviewerArticleId((row as { location?: { v3?: { detection_pass?: string | null } } }).location?.v3?.detection_pass ?? null, (row as { article_id?: number | null }).article_id ?? null),
           passName: (row as { location?: { v3?: { detection_pass?: string | null } } }).location?.v3?.detection_pass ?? null,
-          eventId: null,
+          eventId: getRowEventId(row),
           findingUuid: (row as { finding_uuid?: string | null }).finding_uuid ?? null,
           pageNumber: (row as { page_number?: number | null }).page_number ?? null,
           title_ar: (row as { title_ar?: string | null }).title_ar ?? null,
@@ -3592,7 +3697,7 @@ export async function processChunkJudge(
             findingUuid: (row as { finding_uuid?: string | null }).finding_uuid ?? null,
             reviewerArticleId: (row as { article_id?: number | null }).article_id ?? null,
             passName: null,
-            eventId: null,
+            eventId: getRowEventId(row),
             pageNumber: (row as { page_number?: number | null }).page_number ?? null,
             title_ar: (row as { title_ar?: string | null }).title_ar ?? null,
             description_ar: (row as { description_ar?: string | null }).description_ar ?? null,
