@@ -1,7 +1,6 @@
 import React from "react";
 import { Document, Image, Page, Text, View } from "@react-pdf/renderer";
 import { formatDate, formatDateLong } from "@/utils/dateFormat";
-import { resolveViolationTypeId, violationTypeLabel, violationTypesForChecklist, type ViolationTypeId } from "@/data/violationTypes";
 import type { NoteCategoryKey, ReportNote } from "@/api/models";
 import { quickAnalysisStyles as s } from "./styles";
 import type { QuickAnalysisPdfFinding } from "./mapper";
@@ -53,15 +52,12 @@ export const QuickAnalysisPdf: React.FC<{
     confidence: f.confidence ?? 0,
     evidenceSnippet: f.evidenceSnippet ?? "",
   }));
-  const groups = safeFindings.reduce<Partial<Record<ViolationTypeId, QuickAnalysisPdfFinding[]>>>((acc, f) => {
-    const key =
-      resolveViolationTypeId(f.titleAr) ??
-      resolveViolationTypeId(f.evidenceSnippet) ??
-      "other";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(f);
+  const groups = safeFindings.reduce<Map<number, QuickAnalysisPdfFinding[]>>((acc, f) => {
+    const articleId = Number.isFinite(f.articleId) ? f.articleId : 0;
+    if (!acc.has(articleId)) acc.set(articleId, []);
+    acc.get(articleId)!.push(f);
     return acc;
-  }, {});
+  }, new Map<number, QuickAnalysisPdfFinding[]>());
   const typeCounts = safeFindings.reduce((acc, f) => {
     if (f.source === "manual") acc.manual++;
     else if (f.source === "lexicon_mandatory" || f.source === "glossary") acc.glossary++;
@@ -71,7 +67,6 @@ export const QuickAnalysisPdf: React.FC<{
   const specialNotesCount = reportHints.length;
   const totalNotes = NOTE_CATEGORY_ORDER.reduce((sum, key) => sum + (notes[key.key]?.length ?? 0), 0);
   const sourceLabel = (source?: string) => source === "manual" ? (isAr ? "يدوي" : "Manual") : source === "lexicon_mandatory" || source === "glossary" ? (isAr ? "معجم" : "Glossary") : (isAr ? "تحليل آلي" : "AI Analysis");
-  const categoryOrder = violationTypesForChecklist();
   return (
     <Document>
       <Page size="A4" wrap={false} style={[s.cover, isAr ? s.pageAr : {}]}>
@@ -105,7 +100,7 @@ export const QuickAnalysisPdf: React.FC<{
           <View style={s.statCard}><Text style={s.statValue}>{totalNotes}</Text><Text style={s.statLabel}>{isAr ? "ملاحظات" : "Notes"}</Text></View>
         </View>
         <Text style={[s.sectionTitle, rtl]}>{isAr ? "تفاصيل القضايا" : "Findings Details"}</Text>
-        {Object.keys(groups).length === 0 ? (
+        {groups.size === 0 ? (
           <View style={s.emptyState}>
             <Text style={[s.emptyStateTitle, rtl]}>{isAr ? "لا توجد مخالفات" : "No Violations Found"}</Text>
             <Text style={[s.emptyStateText, rtl]}>
@@ -113,14 +108,15 @@ export const QuickAnalysisPdf: React.FC<{
             </Text>
           </View>
         ) : (
-          categoryOrder
-            .map((cat) => {
-              const list = groups[cat.id];
+          Array.from(groups.entries())
+            .sort(([a], [b]) => a - b)
+            .map(([articleId, list]) => {
               if (!list?.length) return null;
+              const groupTitle = list[0]?.titleAr?.trim() || (isAr ? `مادة ${articleId}` : `Article ${articleId}`);
               return (
-                <View key={cat.id} style={s.articleWrap}>
+                <View key={articleId} style={s.articleWrap}>
                   <Text style={[s.articleHeader, rtl]}>
-                    {violationTypeLabel(cat.id, isAr ? "ar" : "en")}
+                    {groupTitle}
                   </Text>
                   {list.filter(Boolean).map((f, idx) => (
                     <View key={`${f?.id ?? `quick-finding-${idx}`}-${idx}`} style={s.finding}>

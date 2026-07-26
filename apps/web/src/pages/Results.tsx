@@ -1142,49 +1142,16 @@ export function Results() {
     }
   }, [report?.id]); // reset tab selection only when the loaded report changes
 
-  const semanticCategoriesOrdered = violationTypesForChecklist();
-  const categoryViolationCounts = (() => {
-    const m = new Map<ViolationTypeId, number>();
-    const add = (id: ViolationTypeId) => {
-      m.set(id, (m.get(id) ?? 0) + 1);
-    };
-    if (hasReviewFindings) {
-      for (const f of reviewViolations) {
-        add(getViolationTypeIdFromReviewFinding(f) ?? 'other');
-      }
-      return m;
-    }
-    if (hasRealFindings) {
-      const rows = showAllFindingRows ? violations : violationsDeduped;
-      for (const f of rows) {
-        add(getViolationTypeIdFromFinding({
-          titleAr: f.titleAr,
-          descriptionAr: f.descriptionAr,
-          source: f.source,
-          location: (f as { location?: Record<string, unknown> | null }).location ?? null,
-        }) ?? 'other');
-      }
-      return m;
-    }
-    for (const cf of canonicalSummaryFindings) {
-      add(
-        getViolationTypeIdFromLegacyPolicyArticle(cf.primary_article_id, cf.primary_policy_atom_id ?? null)
-          ?? resolveViolationTypeId(cf.title_ar)
-          ?? resolveViolationTypeId(cf.rationale ?? null)
-          ?? 'other'
-      );
-    }
-    return m;
-  })();
-  const checklistSubjectRows = semanticCategoriesOrdered
-    .map((cat) => ({
-      id: cat.id,
-      titleAr: cat.titleAr,
-      titleEn: cat.titleEn,
-      order: cat.order,
-      total: categoryViolationCounts.get(cat.id) ?? 0,
+  const checklistSubjectRows = (summary.checklist_articles ?? [])
+    .map((article) => ({
+      id: article.article_id,
+      titleAr: article.title_ar,
+      titleEn: article.title_ar,
+      order: article.article_id,
+      total: Object.values(article.counts ?? {}).reduce((acc, count) => acc + (Number(count) || 0), 0),
     }))
-    .filter((row) => row.id !== 'other' || row.total > 0);
+    .filter((row) => row.total > 0 || row.id > 0)
+    .sort((a, b) => a.order - b.order);
 
   const violationsUniqueCount = violationsDeduped.length;
   const preferCanonicalFindingsUi =
@@ -1495,19 +1462,19 @@ export function Results() {
               } as unknown as AnalysisFinding))
             );
 
-      const groupsByCat = new Map<ViolationTypeId, AnalysisFinding[]>();
+      const groupsByArticle = new Map<number, AnalysisFinding[]>();
       for (const f of findingList) {
-        const cat = getViolationTypeIdFromFinding(f) ?? 'other';
-        if (!groupsByCat.has(cat)) groupsByCat.set(cat, []);
-        groupsByCat.get(cat)!.push(f);
+        const articleId = Number.isFinite(f.articleId) ? f.articleId : 0;
+        if (!groupsByArticle.has(articleId)) groupsByArticle.set(articleId, []);
+        groupsByArticle.get(articleId)!.push(f);
       }
 
-      const groupedFindingsHtml = semanticCategoriesOrdered
-        .map((cat) => {
-          const list = groupsByCat.get(cat.id);
+      const groupedFindingsHtml = Array.from(groupsByArticle.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([articleId, list]) => {
           if (!list?.length) return null;
           return {
-            articleTitle: isAr ? cat.titleAr : cat.titleEn,
+            articleTitle: articleLabel(articleId),
             count: list.length,
             findings: list.map((f) => ({
               severity:
@@ -2043,11 +2010,11 @@ export function Results() {
     return source === 'lexicon_mandatory' || source === 'glossary';
   }
 
-  function displayFindingTitle(params: {
-    title: string | null | undefined;
-    description?: string | null;
-    source?: string | null;
-    evidenceSnippet?: string | null;
+function displayFindingTitle(params: {
+  title: string | null | undefined;
+  description?: string | null;
+  source?: string | null;
+  evidenceSnippet?: string | null;
     articleId: number;
     atomId?: string | null;
     primaryPolicyAtomId?: string | null;
@@ -2056,28 +2023,16 @@ export function Results() {
     const source = params.source ?? 'ai';
     const evidenceSnippet = (params.evidenceSnippet ?? '').trim();
     const description = (params.description ?? '').trim();
-    void params.articleId;
-    void params.atomId;
-    void params.primaryPolicyAtomId;
-
-    if (source === 'lexicon_mandatory') {
-      const term = evidenceSnippet || title.replace(/^.*?:\s*/, '').trim();
-      return term
-        ? `${lang === 'ar' ? 'مطابقة من قاموس المصطلحات' : 'Glossary match'}: ${term}`
-        : (lang === 'ar' ? 'مطابقة من قاموس المصطلحات' : 'Glossary match');
-    }
-
-    const resolvedType =
-      getViolationTypeIdFromLegacyPolicyArticle(params.articleId, params.atomId ?? params.primaryPolicyAtomId ?? null)
-      ?? resolveViolationTypeId(title)
-      ?? resolveViolationTypeId(description)
-      ?? resolveViolationTypeId(evidenceSnippet);
-    if (resolvedType) {
-      return violationTypeLabel(resolvedType, lang);
-    }
-
-    return stripArticleAtomReferences(title) || (lang === 'ar' ? 'ملاحظة' : 'Finding');
+  void params.articleId;
+  void params.atomId;
+  void params.primaryPolicyAtomId;
+  if (source === 'lexicon_mandatory') {
+    const term = title || evidenceSnippet || description;
+    return term || (lang === 'ar' ? 'ملاحظة' : 'Finding');
   }
+
+  return title || description || evidenceSnippet || (lang === 'ar' ? 'ملاحظة' : 'Finding');
+}
 
   function openFindingTrace(params: {
     titleAr: string;
@@ -2601,8 +2556,8 @@ export function Results() {
   function renderFindingsFromSummary(listInput: CanonicalSummaryFinding[] = canonicalSummaryFindings) {
     type Art = (typeof summary.findings_by_article)[number];
     type F = NonNullable<Art["top_findings"]>[number];
-    const rows: { art: Art; f: F; idx: number }[] = [];
     const allowedEvidence = new Set(listInput.map((f) => (f.evidence_snippet ?? '').trim()).filter(Boolean));
+    const rows: { art: Art; f: F; idx: number }[] = [];
     for (const art of summary.findings_by_article) {
       (art.top_findings ?? []).forEach((f, idx) => {
         const evidence = (f.evidence_snippet ?? '').trim();
@@ -2610,23 +2565,18 @@ export function Results() {
         rows.push({ art, f, idx });
       });
     }
-    const byCat = new Map<ViolationTypeId, typeof rows>();
+    const byArticle = new Map<number, { art: Art; items: { f: F; idx: number }[] }>();
     for (const row of rows) {
-      const cat =
-        getViolationTypeIdFromLegacyPolicyArticle(row.art.article_id, row.f.primary_policy_atom_id ?? null)
-        ?? resolveViolationTypeId(row.f.title_ar)
-        ?? resolveViolationTypeId(row.f.evidence_snippet)
-        ?? 'other';
-      if (!byCat.has(cat)) byCat.set(cat, []);
-      byCat.get(cat)!.push(row);
+      if (!byArticle.has(row.art.article_id)) {
+        byArticle.set(row.art.article_id, { art: row.art, items: [] });
+      }
+      byArticle.get(row.art.article_id)!.items.push({ f: row.f, idx: row.idx });
     }
-    return semanticCategoriesOrdered.map((cat) => {
-      const list = byCat.get(cat.id);
-      if (!list?.length) return null;
-      const key = `sc-sum-${cat.id}`;
+    return Array.from(byArticle.values()).map(({ art, items }) => {
+      const key = `sc-sum-${art.article_id}`;
       const isExpanded = expandedArticles[key] ?? true;
       return (
-        <div key={cat.id} className="mb-8">
+        <div key={art.article_id} className="mb-8">
           <div className="border border-border rounded-xl bg-surface/50 overflow-hidden">
             <button
               type="button"
@@ -2635,18 +2585,18 @@ export function Results() {
             >
               <div className="flex items-center gap-3">
                 <span className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
-                  {semanticCategoriesOrdered.findIndex((c) => c.id === cat.id) + 1}
+                  {art.article_id}
                 </span>
-                <span className="font-bold text-text-main text-start">{lang === "ar" ? cat.titleAr : cat.titleEn}</span>
+                <span className="font-bold text-text-main text-start">{art.title_ar || articleLabel(art.article_id)}</span>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <Badge variant="outline">{list.length}</Badge>
+                <Badge variant="outline">{items.length}</Badge>
                 {isExpanded ? <ChevronUp className="w-4 h-4 text-text-muted" /> : <ChevronDown className="w-4 h-4 text-text-muted" />}
               </div>
             </button>
             {isExpanded && (
               <div className="p-4 space-y-3">
-                {list.map(({ art, f, idx }) => (
+                {items.map(({ f, idx }) => (
                   (() => {
                     const sceneLabel = formatResolvedSceneLabel(
                       resolveSceneLabelFromOffset(f.start_offset_global ?? null, reportViewerPages),
@@ -2692,23 +2642,18 @@ export function Results() {
   }
 
   function renderFindingsFromCanonicalSummary(listInput: CanonicalSummaryFinding[] = canonicalSummaryFindings) {
-    const byCat = new Map<ViolationTypeId, CanonicalSummaryFinding[]>();
+    const byArticle = new Map<number, CanonicalSummaryFinding[]>();
     for (const f of listInput) {
-      const cat =
-        getViolationTypeIdFromLegacyPolicyArticle(f.primary_article_id, f.primary_policy_atom_id ?? null)
-        ?? resolveViolationTypeId(f.title_ar)
-        ?? resolveViolationTypeId(f.rationale ?? null)
-        ?? 'other';
-      if (!byCat.has(cat)) byCat.set(cat, []);
-      byCat.get(cat)!.push(f);
+      const articleId = Number.isFinite(f.primary_article_id) ? (f.primary_article_id as number) : 0;
+      if (!byArticle.has(articleId)) byArticle.set(articleId, []);
+      byArticle.get(articleId)!.push(f);
     }
-    return semanticCategoriesOrdered.map((cat) => {
-      const artFindings = byCat.get(cat.id);
-      if (!artFindings?.length) return null;
-      const key = `sc-canon-${cat.id}`;
+    return Array.from(byArticle.entries()).map(([articleId, artFindings]) => {
+      const key = `sc-canon-${articleId}`;
       const isExpanded = expandedArticles[key] ?? true;
+      const groupTitle = artFindings[0]?.title_ar?.trim() || articleLabel(articleId);
       return (
-        <div key={cat.id} className="mb-8">
+        <div key={articleId} className="mb-8">
           <div className="border border-border rounded-xl bg-surface/50 overflow-hidden">
             <button
               type="button"
@@ -2717,9 +2662,9 @@ export function Results() {
             >
               <div className="flex items-center gap-3">
                 <span className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
-                  {semanticCategoriesOrdered.findIndex((c) => c.id === cat.id) + 1}
+                  {articleId}
                 </span>
-                <span className="font-bold text-text-main text-start">{lang === "ar" ? cat.titleAr : cat.titleEn}</span>
+                <span className="font-bold text-text-main text-start">{groupTitle}</span>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <Badge variant="outline">{artFindings.length}</Badge>
@@ -2834,20 +2779,19 @@ export function Results() {
   }
 
   function renderFindingsFromReal(list: AnalysisFinding[]) {
-    const byCat = new Map<ViolationTypeId, AnalysisFinding[]>();
+    const byArticle = new Map<number, AnalysisFinding[]>();
     for (const f of list) {
-      const cat = getViolationTypeIdFromFinding(f) ?? 'other';
-      if (!byCat.has(cat)) byCat.set(cat, []);
-      byCat.get(cat)!.push(f);
+      const articleId = Number.isFinite(f.articleId) ? f.articleId : 0;
+      if (!byArticle.has(articleId)) byArticle.set(articleId, []);
+      byArticle.get(articleId)!.push(f);
     }
 
-    return semanticCategoriesOrdered.map((cat) => {
-      const artFindings = byCat.get(cat.id);
-      if (!artFindings?.length) return null;
-      const key = `sc-real-${cat.id}`;
+    return Array.from(byArticle.entries()).map(([articleId, artFindings]) => {
+      const key = `sc-real-${articleId}`;
       const isExpanded = expandedArticles[key] ?? true;
+      const groupTitle = artFindings[0]?.titleAr?.trim() || articleLabel(articleId);
       return (
-        <div key={cat.id} className="mb-8">
+        <div key={articleId} className="mb-8">
           <div className="border border-border rounded-xl bg-surface/50 overflow-hidden">
             <button
               type="button"
@@ -2856,9 +2800,9 @@ export function Results() {
             >
               <div className="flex items-center gap-3">
                 <span className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
-                  {semanticCategoriesOrdered.findIndex((c) => c.id === cat.id) + 1}
+                  {articleId}
                 </span>
-                <span className="font-bold text-text-main text-start">{lang === "ar" ? cat.titleAr : cat.titleEn}</span>
+                <span className="font-bold text-text-main text-start">{groupTitle}</span>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <Badge variant="outline">{artFindings.length}</Badge>
@@ -2903,20 +2847,19 @@ export function Results() {
   }
 
   function renderFindingsFromReview(list: AnalysisReviewFinding[]) {
-    const byCat = new Map<ViolationTypeId, AnalysisReviewFinding[]>();
+    const byArticle = new Map<number, AnalysisReviewFinding[]>();
     for (const f of list) {
-      const cat = getViolationTypeIdFromReviewFinding(f) ?? 'other';
-      if (!byCat.has(cat)) byCat.set(cat, []);
-      byCat.get(cat)!.push(f);
+      const articleId = Number.isFinite(f.primaryArticleId) ? f.primaryArticleId : 0;
+      if (!byArticle.has(articleId)) byArticle.set(articleId, []);
+      byArticle.get(articleId)!.push(f);
     }
 
-    return semanticCategoriesOrdered.map((cat) => {
-      const artFindings = byCat.get(cat.id);
-      if (!artFindings?.length) return null;
-      const key = `sc-review-${cat.id}`;
+    return Array.from(byArticle.entries()).map(([articleId, artFindings]) => {
+      const key = `sc-review-${articleId}`;
       const isExpanded = expandedArticles[key] ?? true;
+      const groupTitle = artFindings[0]?.titleAr?.trim() || articleLabel(articleId);
       return (
-        <div key={cat.id} className="mb-8">
+        <div key={articleId} className="mb-8">
           <div className="border border-border rounded-xl bg-surface/50 overflow-hidden">
             <button
               type="button"
@@ -2925,9 +2868,9 @@ export function Results() {
             >
               <div className="flex items-center gap-3">
                 <span className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
-                  {semanticCategoriesOrdered.findIndex((c) => c.id === cat.id) + 1}
+                  {articleId}
                 </span>
-                <span className="font-bold text-text-main text-start">{lang === "ar" ? cat.titleAr : cat.titleEn}</span>
+                <span className="font-bold text-text-main text-start">{groupTitle}</span>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <Badge variant="outline">{artFindings.length}</Badge>

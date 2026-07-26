@@ -1,12 +1,6 @@
 import React from "react";
 import { Document, Image, Page, Text, View } from "@react-pdf/renderer";
 import { formatDate, formatDateLong } from "@/utils/dateFormat";
-import {
-  resolveViolationTypeId,
-  violationTypeLabel,
-  violationTypesForChecklist,
-  type ViolationTypeId,
-} from "@/data/violationTypes";
 import { getGlossarySentenceContext, type ViewerPageSlice } from "@/utils/findingContext";
 import { analysisStyles as s } from "./styles";
 import type { AnalysisPdfFinding } from "./mapper";
@@ -94,17 +88,12 @@ export const AnalysisSectionPdf: React.FC<AnalysisSectionPdfProps> = ({
       .filter((note): note is ReportNote => Boolean(note) && note.included_in_report !== false),
   })).filter((group) => group.notes.length > 0);
 
-  const groups = safeFindings.reduce<Partial<Record<ViolationTypeId, AnalysisPdfFinding[]>>>((acc, f) => {
-    const key =
-      resolveViolationTypeId(f.titleAr) ??
-      resolveViolationTypeId(f.descriptionAr) ??
-      resolveViolationTypeId(f.evidenceSnippet) ??
-      "other";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(f);
+  const groups = safeFindings.reduce<Map<number, AnalysisPdfFinding[]>>((acc, f) => {
+    const articleId = Number.isFinite(f.articleId) ? f.articleId : 0;
+    if (!acc.has(articleId)) acc.set(articleId, []);
+    acc.get(articleId)!.push(f);
     return acc;
-  }, {});
-  const categoryOrder = violationTypesForChecklist();
+  }, new Map<number, AnalysisPdfFinding[]>());
 
   const typeCounts = safeFindings.reduce(
     (acc, f) => {
@@ -166,7 +155,7 @@ export const AnalysisSectionPdf: React.FC<AnalysisSectionPdfProps> = ({
         )}
 
         <Text style={[s.sectionTitle, rtl]}>{isAr ? "تفاصيل القضايا" : "Findings Details"}</Text>
-        {Object.keys(groups).length === 0 ? (
+        {groups.size === 0 ? (
           <View style={s.emptyState}>
             <Text style={[s.emptyStateTitle, rtl]}>
               {isAr ? "لا توجد مخالفات" : "No Violations Found"}
@@ -178,64 +167,65 @@ export const AnalysisSectionPdf: React.FC<AnalysisSectionPdfProps> = ({
             </Text>
           </View>
         ) : (
-          categoryOrder
-            .map((cat) => {
-              const list = groups[cat.id];
+          Array.from(groups.entries())
+            .sort(([a], [b]) => a - b)
+            .map(([articleId, list]) => {
               if (!list?.length) return null;
+              const groupTitle = list[0]?.titleAr?.trim() || (isAr ? `مادة ${articleId}` : `Article ${articleId}`);
               return (
-          <View key={cat.id} style={s.articleWrap}>
-            <Text style={[s.articleHeader, rtl]}>
-              {violationTypeLabel(cat.id, isAr ? "ar" : "en")}
-            </Text>
-            {list.filter(Boolean).map((f, idx) => {
-              return (
-              <View key={`${f?.id ?? `finding-${idx}`}-${idx}`} style={s.finding}>
-                <Text style={[s.findingTitle, rtl]}>{f.titleAr || "—"}</Text>
-                <Text style={[s.findingSnippet, rtl]}>
-                  {isAr ? "النص المخالف: " : "Violation text: "}
-                  "{f.evidenceSnippet || "—"}"
-                </Text>
-                {((f.source === "lexicon_mandatory" || f.source === "glossary") && data.viewerPages?.length) ? (() => {
-                  const context = getGlossarySentenceContext({
-                    evidenceSnippet: f.evidenceSnippet,
-                    pageNumber: f.pageNumber ?? null,
-                    startOffsetGlobal: f.startOffsetGlobal ?? null,
-                    viewerPages: data.viewerPages ?? null,
-                  });
-                  return context ? (
-                    <Text style={[s.findingContext, rtl]}>
-                      {isAr ? "السياق: " : "Context: "}
-                      {context}
-                    </Text>
-                  ) : null;
-                })() : null}
-                {(f.pageNumber != null && f.pageNumber > 0) && (
-                  <Text style={[s.findingMeta, rtl]}>
-                    {isAr ? `صفحة ${f.pageNumber}` : `Page ${f.pageNumber}`}
+                <View key={articleId} style={s.articleWrap}>
+                  <Text style={[s.articleHeader, rtl]}>
+                    {groupTitle}
                   </Text>
-                )}
-                  {f.startLineChunk != null && (
-                    <Text style={[s.findingMeta, rtl]}>
-                      {isAr
-                        ? `السطر ${f.startLineChunk}${f.endLineChunk ? `-${f.endLineChunk}` : ""}`
-                        : `Line ${f.startLineChunk}${f.endLineChunk ? `-${f.endLineChunk}` : ""}`}
-                    </Text>
-                  )}
-                  {f.pillarId ? (
-                    <Text style={[s.findingMeta, rtl]}>
-                      {isAr ? "المحور: " : "Pillar: "}
-                      {f.pillarId}
-                    </Text>
-                  ) : null}
-                  <Text style={[s.findingRationaleLabel, rtl]}>
-                    {isAr ? "لماذا اعتُبرت مخالفة:" : "Why considered a violation:"}
-                  </Text>
-                  <Text style={[s.findingRationaleText, rtl]}>{f.rationale || "—"}</Text>
+                  {list.filter(Boolean).map((f, idx) => {
+                    return (
+                      <View key={`${f?.id ?? `finding-${idx}`}-${idx}`} style={s.finding}>
+                        <Text style={[s.findingTitle, rtl]}>{f.titleAr || "—"}</Text>
+                        <Text style={[s.findingSnippet, rtl]}>
+                          {isAr ? "النص المخالف: " : "Violation text: "}
+                          "{f.evidenceSnippet || "—"}"
+                        </Text>
+                        {((f.source === "lexicon_mandatory" || f.source === "glossary") && data.viewerPages?.length) ? (() => {
+                          const context = getGlossarySentenceContext({
+                            evidenceSnippet: f.evidenceSnippet,
+                            pageNumber: f.pageNumber ?? null,
+                            startOffsetGlobal: f.startOffsetGlobal ?? null,
+                            viewerPages: data.viewerPages ?? null,
+                          });
+                          return context ? (
+                            <Text style={[s.findingContext, rtl]}>
+                              {isAr ? "السياق: " : "Context: "}
+                              {context}
+                            </Text>
+                          ) : null;
+                        })() : null}
+                        {(f.pageNumber != null && f.pageNumber > 0) && (
+                          <Text style={[s.findingMeta, rtl]}>
+                            {isAr ? `صفحة ${f.pageNumber}` : `Page ${f.pageNumber}`}
+                          </Text>
+                        )}
+                        {f.startLineChunk != null && (
+                          <Text style={[s.findingMeta, rtl]}>
+                            {isAr
+                              ? `السطر ${f.startLineChunk}${f.endLineChunk ? `-${f.endLineChunk}` : ""}`
+                              : `Line ${f.startLineChunk}${f.endLineChunk ? `-${f.endLineChunk}` : ""}`}
+                          </Text>
+                        )}
+                        {f.pillarId ? (
+                          <Text style={[s.findingMeta, rtl]}>
+                            {isAr ? "المحور: " : "Pillar: "}
+                            {f.pillarId}
+                          </Text>
+                        ) : null}
+                        <Text style={[s.findingRationaleLabel, rtl]}>
+                          {isAr ? "لماذا اعتُبرت مخالفة:" : "Why considered a violation:"}
+                        </Text>
+                        <Text style={[s.findingRationaleText, rtl]}>{f.rationale || "—"}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
               );
-            })}
-          </View>
-        );
             })
             .filter(Boolean)
         )}
