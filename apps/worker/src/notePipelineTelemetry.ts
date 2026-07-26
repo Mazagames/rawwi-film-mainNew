@@ -1,15 +1,6 @@
 import { logger } from "./logger.js";
 
-const NOTE_CATEGORY_LABELS: Record<string, string> = {
-  security_scenes: "Security",
-  saudi_names: "SaudiNames",
-  commercial_entities: "Entities",
-  medical_notes: "Medical",
-  media_credibility: "Media",
-  classified_documents: "Classified",
-};
-
-const NOTE_CATEGORY_ORDER = [
+export const NOTE_CATEGORY_ORDER = [
   "security_scenes",
   "saudi_names",
   "commercial_entities",
@@ -18,12 +9,58 @@ const NOTE_CATEGORY_ORDER = [
   "classified_documents",
 ] as const;
 
+export type NoteCategoryKey = typeof NOTE_CATEGORY_ORDER[number];
+
+const NOTE_CATEGORY_LABELS: Record<NoteCategoryKey, string> = {
+  security_scenes: "Security",
+  saudi_names: "SaudiNames",
+  commercial_entities: "Entities",
+  medical_notes: "Medical",
+  media_credibility: "Media",
+  classified_documents: "Classified",
+};
+
+const NOTE_CATEGORY_RENDERED_TABS: Record<NoteCategoryKey, string> = {
+  security_scenes: "Security Scenes",
+  saudi_names: "Saudi Names",
+  commercial_entities: "Commercial Entities",
+  medical_notes: "Medical Notes",
+  media_credibility: "Media Credibility",
+  classified_documents: "Classified Documents",
+};
+
+const NOTE_CATEGORY_ALIASES: Record<string, NoteCategoryKey> = {
+  security_scenes: "security_scenes",
+  "Security Scenes": "security_scenes",
+  saudi_names: "saudi_names",
+  "Saudi Names": "saudi_names",
+  commercial_entities: "commercial_entities",
+  "Commercial Entities": "commercial_entities",
+  medical_notes: "medical_notes",
+  "Medical Notes": "medical_notes",
+  media_credibility: "media_credibility",
+  "Media Credibility": "media_credibility",
+  classified_documents: "classified_documents",
+  "Classified Documents": "classified_documents",
+};
+
 type NoteCounts = Record<string, number>;
+
+export function normalizeNoteCategoryKey(category: string | null | undefined): NoteCategoryKey | null {
+  const normalized = String(category ?? "").trim();
+  if (!normalized) return null;
+  return NOTE_CATEGORY_ALIASES[normalized] ?? null;
+}
+
+export function getRenderedNoteTabLabel(category: string | null | undefined): string | null {
+  const key = normalizeNoteCategoryKey(category);
+  return key ? NOTE_CATEGORY_RENDERED_TABS[key] : null;
+}
 
 export function countNoteCategoriesFromArray(notes: Array<{ category?: string | null }>): NoteCounts {
   const counts: NoteCounts = {};
   for (const note of notes) {
-    const key = String(note.category ?? "").trim();
+    const key = normalizeNoteCategoryKey(note.category);
     if (!key) continue;
     counts[key] = (counts[key] ?? 0) + 1;
   }
@@ -34,8 +71,9 @@ export function countNoteCategoriesFromSummary(notes: Partial<Record<string, Arr
   const counts: NoteCounts = {};
   if (!notes) return counts;
   for (const [category, items] of Object.entries(notes)) {
-    if (!Array.isArray(items) || items.length === 0) continue;
-    counts[category] = items.length;
+    const key = normalizeNoteCategoryKey(category);
+    if (!key || !Array.isArray(items) || items.length === 0) continue;
+    counts[key] = items.length;
   }
   return counts;
 }
@@ -79,4 +117,32 @@ export function logNotePipelineStage(args: {
     noteCounts: args.noteCounts,
     ...args.extra,
   });
+}
+
+export function logNoteCategoryMapping(args: {
+  reviewerName: string;
+  persistedCategory: string;
+  renderedTab: string | null;
+  jobId?: string | null;
+  chunkId?: string | null;
+  eventId?: number | null;
+  status?: "accepted" | "rejected";
+  reason?: string | null;
+}): void {
+  const rejected = args.status === "rejected";
+  const payload = {
+    reviewer_name: args.reviewerName,
+    persisted_category: args.persistedCategory,
+    rendered_tab: args.renderedTab,
+    jobId: args.jobId ?? null,
+    chunkId: args.chunkId ?? null,
+    event_id: args.eventId ?? null,
+    status: args.status ?? "accepted",
+    ...(args.reason ? { reason: args.reason } : {}),
+  };
+  if (rejected) {
+    logger.warn("Note category mapping", payload);
+    return;
+  }
+  logger.info("Note category mapping", payload);
 }

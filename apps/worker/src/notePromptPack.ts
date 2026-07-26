@@ -29,37 +29,37 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const NOTE_PACK_ENTRIES: NotePackEntry[] = [
   {
     id: "article_11_media_credibility",
-    category: "Media Credibility",
+    category: "media_credibility",
     displayLabel: "مصداقية الإعلام",
     filename: "article_11_media_credibility.md",
   },
   {
     id: "article_13_medical_health_misinformation",
-    category: "Medical Notes",
+    category: "medical_notes",
     displayLabel: "ملاحظات طبية وصحية",
     filename: "article_13_medical_health_misinformation.md",
   },
   {
     id: "article_21_classified_documents",
-    category: "Classified Documents",
+    category: "classified_documents",
     displayLabel: "الوثائق السرية",
     filename: "article_21_classified_documents.md",
   },
   {
     id: "note_saudi_names",
-    category: "Saudi Names",
+    category: "saudi_names",
     displayLabel: "الأسماء السعودية",
     filename: "note_saudi_names.md",
   },
   {
     id: "notes_security_scenes",
-    category: "Security Scenes",
+    category: "security_scenes",
     displayLabel: "المشاهد الأمنية",
     filename: "notes_security_scenes.md",
   },
   {
     id: "note_entities_and_brand",
-    category: "Commercial Entities",
+    category: "commercial_entities",
     displayLabel: "الكيانات والعلامات التجارية",
     filename: "note_entities_and_brands.md",
   },

@@ -20,7 +20,11 @@ import { normalizeReviewFindingConsistency } from "./reviewFindingConsistency.js
 import { buildLineageEvent, persistLineageEvents } from "./findingLineage.js";
 import { traceFindingPipelineStage, traceFindingPipelineSummary, type FindingPipelineTraceSnapshot } from "./findingPipelineTrace.js";
 import { emitPipelineTelemetryBlock, recordTelemetryFromSummary } from "./pipelineTelemetry.js";
-import { countNoteCategoriesFromSummary, logNotePipelineStage } from "./notePipelineTelemetry.js";
+import {
+  countNoteCategoriesFromSummary,
+  logNotePipelineStage,
+  normalizeNoteCategoryKey,
+} from "./notePipelineTelemetry.js";
 
 export type SummaryJson = {
   job_id: string;
@@ -1339,14 +1343,6 @@ type DbNote = {
 const SEVERITIES = ["low", "medium", "high", "critical"] as const;
 const SEVERITY_ORDER: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
 const RATIONALE_FALLBACK = "يتطلب تقييم مراجع مختص.";
-const NOTE_CATEGORY_KEYS: Record<string, keyof NonNullable<SummaryJson["notes"]>> = {
-  "Media Credibility": "media_credibility",
-  "Medical Notes": "medical_notes",
-  "Classified Documents": "classified_documents",
-  "Security Scenes": "security_scenes",
-  "Saudi Names": "saudi_names",
-  "Commercial Entities": "commercial_entities",
-};
 const NOTE_CATEGORY_ORDER: Array<keyof NonNullable<SummaryJson["notes"]>> = [
   "media_credibility",
   "medical_notes",
@@ -1383,23 +1379,27 @@ function countFindingTypes(
   return counts;
 }
 
-function normalizeNoteCategoryKey(category: string): keyof NonNullable<SummaryJson["notes"]> {
-  const normalized = String(category ?? "").trim();
-  return NOTE_CATEGORY_KEYS[normalized] ?? "commercial_entities";
-}
-
-function buildNoteSummary(notes: DbNote[]): {
+function buildNoteSummary(jobId: string, notes: DbNote[]): {
   notes_summary: NonNullable<SummaryJson["notes_summary"]>;
   notes: NonNullable<SummaryJson["notes"]>;
 } {
   const groups = new Map<keyof NonNullable<SummaryJson["notes"]>, NoteSummaryItem[]>();
   for (const note of notes) {
     const key = normalizeNoteCategoryKey(note.category);
+    if (!key) {
+      logger.warn("Aggregation skipped note with unknown category", {
+        jobId,
+        noteId: note.id ?? null,
+        reviewer: note.reviewer ?? null,
+        category: note.category ?? null,
+      });
+      continue;
+    }
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push({
       id: note.id ?? null,
       reviewer: note.reviewer ?? null,
-      category: note.category,
+      category: key,
       title: note.title,
       description: note.description,
       snippet: note.snippet,
@@ -1599,7 +1599,7 @@ export function buildSummaryJson(
     };
   });
   const report_hints: SummaryJson["report_hints"] = [];
-  const noteSummary = buildNoteSummary(notes);
+  const noteSummary = buildNoteSummary(jobId, notes);
   logNotePipelineStage({
     jobId,
     chunkId: null,

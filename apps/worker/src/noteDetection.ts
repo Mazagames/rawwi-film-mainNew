@@ -5,7 +5,13 @@ import { extractJsonFromText, noteOutputSchema, type NoteItem, type NoteOutput }
 import { logger } from "./logger.js";
 import { getNoteDefinitions, type NoteReviewerDefinition } from "./notePromptPack.js";
 import type { EventUnderstandingPassResult, StructuredEvent } from "./eventUnderstanding.js";
-import { countNoteCategoriesFromArray, logNotePipelineStage } from "./notePipelineTelemetry.js";
+import {
+  countNoteCategoriesFromArray,
+  getRenderedNoteTabLabel,
+  logNoteCategoryMapping,
+  logNotePipelineStage,
+  normalizeNoteCategoryKey,
+} from "./notePipelineTelemetry.js";
 
 const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 
@@ -189,11 +195,16 @@ async function parseNotesWithRepair(
   }
 }
 
-function normalizeNote(note: NoteItem, reviewerId: string, category: string): NoteItem {
+function normalizeNote(note: NoteItem, reviewerId: string, category: string): NoteItem | null {
+  const emittedCategory = String(note.category ?? "").trim();
+  const resolvedCategory = emittedCategory ? normalizeNoteCategoryKey(emittedCategory) : normalizeNoteCategoryKey(category);
+  if (!resolvedCategory) {
+    return null;
+  }
   return {
     ...note,
     reviewer: note.reviewer ?? reviewerId,
-    category: note.category?.trim() || category,
+    category: resolvedCategory,
     title: normalizeText(note.title),
     description: normalizeText(note.description),
     snippet: note.snippet.trim(),
@@ -266,7 +277,41 @@ export async function runNotesDetection(
         signal: options.signal,
       });
       const parsed = await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal);
-      const normalizedNotes = parsed.notes.map((note) => normalizeNote(note, definition.id, definition.category));
+      const normalizedNotes: NoteItem[] = [];
+      for (const note of parsed.notes) {
+        const normalized = normalizeNote(note, definition.id, definition.category);
+        if (!normalized) {
+          logNoteCategoryMapping({
+            reviewerName: definition.id,
+            persistedCategory: String(note.category ?? "").trim() || definition.category,
+            renderedTab: null,
+            jobId: options.jobId,
+            chunkId: options.chunkId,
+            eventId: typeof note.event_id === "number" ? note.event_id : null,
+            status: "rejected",
+            reason: "unknown note category",
+          });
+          logger.warn("Note reviewer emitted unknown category; note rejected", {
+            jobId: options.jobId,
+            chunkId: options.chunkId,
+            reviewer: definition.id,
+            category: String(note.category ?? "").trim() || null,
+            fallbackCategory: definition.category,
+            eventId: typeof note.event_id === "number" ? note.event_id : null,
+          });
+          continue;
+        }
+        logNoteCategoryMapping({
+          reviewerName: definition.id,
+          persistedCategory: normalized.category,
+          renderedTab: getRenderedNoteTabLabel(normalized.category),
+          jobId: options.jobId,
+          chunkId: options.chunkId,
+          eventId: normalized.event_id,
+          status: "accepted",
+        });
+        normalizedNotes.push(normalized);
+      }
       allNotes.push(...normalizedNotes);
       passResults.push({
         passName: definition.id,

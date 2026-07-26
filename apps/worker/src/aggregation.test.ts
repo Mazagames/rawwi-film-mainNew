@@ -157,6 +157,26 @@ function testNotesAreGroupedSeparately() {
   console.log("✓ Notes are grouped separately from violations");
 }
 
+function testUnknownNoteCategoryRejected() {
+  const notes: DbNote[] = [
+    {
+      reviewer: "note_entities_and_brand",
+      category: "Unknown Category",
+      title: "غير معروف",
+      description: "وصف",
+      snippet: "فقرة",
+      event_id: 14,
+      confidence: 0.8,
+      status: "new",
+      included_in_report: true,
+    },
+  ];
+  const summary = buildSummaryJson("job1", "script1", [], undefined, undefined, undefined, undefined, notes);
+  assert((summary.notes?.commercial_entities ?? []).length === 0, "Unknown category must not map to commercial_entities");
+  assert((summary.notes_summary ?? []).length === 0, "Unknown category should be rejected from notes_summary");
+  console.log("✓ Unknown note categories are rejected");
+}
+
 async function main() {
   testArticleOrder();
   testDedup();
@@ -164,6 +184,7 @@ async function main() {
   testSummaryHasFindingsByArticle();
   testCrossArticleOverlapKeepsOwnershipSeparate();
   testNotesAreGroupedSeparately();
+  testUnknownNoteCategoryRejected();
   console.log("\nAll aggregation tests passed.");
 }
 
