@@ -10,7 +10,6 @@ import {
   atomIdNumeric,
   OUT_OF_SCOPE_ARTICLE_ID,
 } from "./policyMap.js";
-import { clusterByOverlap, clusterCanonicalKey } from "./canonicalClustering.js";
 import { generateScriptSummary } from "./scriptSummary.js";
 import { callRevisitSpotter } from "./openai.js";
 import { clearCachedJobResources } from "./jobAnalysisCache.js";
@@ -1497,33 +1496,6 @@ function compareDbFindingStable(a: DbFinding, b: DbFinding): number {
   );
 }
 
-function primaryScoreForDb(f: DbFinding): number[] {
-  const v3 = ((f.location as Record<string, unknown>)?.v3 as Record<string, unknown> | undefined) ?? {};
-  const role = (v3.policy_links as Array<{ article_id: number; role?: string }> | undefined)?.find(
-    (l) => l.article_id === f.article_id
-  )?.role;
-  const roleRank = role === "primary" ? 3 : role === "related" ? 2 : 1;
-  const hasAtom = f.atom_id ? 2 : 1;
-  const nonBroad = BROAD_ARTICLES.has(f.article_id) ? 0 : 1;
-  const sev = SEVERITY_ORDER[f.severity] ?? 0;
-  const conf = Math.round((f.confidence ?? 0) * 100);
-  return [roleRank, hasAtom, nonBroad, sev, conf, -f.article_id];
-}
-
-function choosePrimaryFromDb(list: DbFinding[]): DbFinding {
-  const specific = list.filter((f) => !BROAD_ARTICLES.has(f.article_id));
-  const candidateList = specific.length > 0 ? specific : list;
-  return [...candidateList].sort((a, b) => {
-    const sa = primaryScoreForDb(a);
-    const sb = primaryScoreForDb(b);
-    for (let i = 0; i < sa.length; i++) {
-      const d = (sb[i] ?? 0) - (sa[i] ?? 0);
-      if (d !== 0) return d;
-    }
-    return compareDbFindingStable(a, b);
-  })[0];
-}
-
 function getFindingV3(f: DbFinding): Record<string, unknown> {
   const locationObj = ((f.location as Record<string, unknown>) ?? {}) as Record<string, unknown>;
   return ((locationObj.v3 as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
@@ -1532,74 +1504,6 @@ function getFindingV3(f: DbFinding): Record<string, unknown> {
 function getStoredCanonicalId(f: DbFinding): string | null {
   const raw = getFindingV3(f).canonical_finding_id;
   return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
-}
-
-function buildCanonicalGroups(
-  findings: DbFinding[],
-  oneCardPerOccurrence: boolean,
-  overlapRatio: number
-): Array<{ key: string; list: DbFinding[] }> {
-  if (oneCardPerOccurrence) {
-    return findings.map((f, index) => ({ key: `occurrence-${index}`, list: [f] }));
-  }
-
-  const byStoredId = new Map<string, DbFinding[]>();
-  const withoutStoredId: DbFinding[] = [];
-  for (const f of findings) {
-    const storedId = getStoredCanonicalId(f);
-    if (!storedId) {
-      withoutStoredId.push(f);
-      continue;
-    }
-    if (!byStoredId.has(storedId)) byStoredId.set(storedId, []);
-    byStoredId.get(storedId)!.push(f);
-  }
-
-  const groups: Array<{ key: string; list: DbFinding[] }> = [...byStoredId.entries()].map(([key, list]) => ({ key, list }));
-  const overlapSeed = withoutStoredId.map((f) => ({
-    ...f,
-    start_offset_global: f.start_offset_global ?? undefined,
-    end_offset_global: f.end_offset_global ?? undefined,
-  }));
-  const overlapGroups = clusterByOverlap(overlapSeed, overlapRatio) as Map<number, DbFinding[]>;
-  let fallbackIndex = 0;
-  for (const list of overlapGroups.values()) {
-    groups.push({ key: `fallback-${fallbackIndex++}`, list });
-  }
-  return groups;
-}
-
-/** Dedup key: same source + article + atom + span + snippet → keep one (highest severity). */
-function dedupKey(f: DbFinding, normAtom: string): string {
-  const normalizedSource = String(f.source ?? "ai").toLowerCase();
-  const normalizedSnippet = (f.evidence_snippet ?? "").normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
-  if (normalizedSource === "lexicon_mandatory" || normalizedSource === "glossary") {
-    const page = f.page_number ?? 0;
-    const snipHash = sha256(normalizedSnippet);
-    return `${normalizedSource}|${f.article_id}|${normAtom}|page:${page}|${snipHash}`;
-  }
-  const start = f.start_offset_global ?? 0;
-  const end = f.end_offset_global ?? start;
-  const snipHash = sha256(f.evidence_snippet ?? "");
-  return `${normalizedSource}|${f.article_id}|${normAtom}|${start}-${end}|${snipHash}`;
-}
-
-/** Deduplicate findings: keep highest severity per key. */
-function dedupeFindings(findings: DbFinding[]): DbFinding[] {
-  const byKey = new Map<string, DbFinding>();
-  for (const f of findings) {
-    const normAtom = normalizeAtomId(f.atom_id, f.article_id);
-    const key = dedupKey(f, normAtom);
-    const existing = byKey.get(key);
-    if (!existing) {
-      byKey.set(key, f);
-      continue;
-    }
-    const ordNew = SEVERITY_ORDER[f.severity] ?? 0;
-    const ordOld = SEVERITY_ORDER[existing.severity] ?? 0;
-    if (ordNew > ordOld) byKey.set(key, f);
-  }
-  return Array.from(byKey.values());
 }
 
 /** Options controlling how findings are grouped into canonical report cards. */
@@ -1624,145 +1528,76 @@ export function buildSummaryJson(
 ): SummaryJson {
   const generated_at = new Date().toISOString();
   const filtered = findings.filter((f) => f.article_id !== OUT_OF_SCOPE_ARTICLE_ID);
-  const deduped = dedupeFindings([...filtered].sort(compareDbFindingStable));
+  const sortedFindings = [...filtered].sort(compareDbFindingStable);
   logger.info("[DEBUG] Aggregation input summary", {
     jobId,
     rawFindings: findings.length,
     filteredFindings: filtered.length,
-    dedupedFindings: deduped.length,
+    dedupedFindings: sortedFindings.length,
     mergeStrategy: analysisOptions?.mergeStrategy ?? "default",
   });
   const policyArticles = getPolicyArticles();
 
   const severityOrder = (s: string) => (SEVERITIES.indexOf(s as (typeof SEVERITIES)[number]) + 1) || 0;
-
-  const overlapRatio =
-    analysisOptions?.mergeStrategy === "every_occurrence" ? OVERLAP_EVERY_OCCURRENCE : OVERLAP_SAME_LOCATION;
-  const oneCardPerOccurrence = analysisOptions?.mergeStrategy === "every_occurrence";
-
-  // Build canonical findings from overlap clusters first (single source of truth).
-  const canonicalMap = new Map<string, {
-    canonical_finding_id: string;
-    title_ar: string;
-    evidence_snippet: string;
-    severity: string;
-    confidence: number;
-    final_ruling?: string | null;
-    rationale?: string | null;
-    pillar_id?: string | null;
-    primary_article_id?: number | null;
-    related_article_ids?: number[];
-    policy_links?: Array<{ article_id: number; atom_concept_id?: string | null; role?: string | null }>;
-    start_offset_global?: number | null;
-    end_offset_global?: number | null;
-    start_line_chunk?: number | null;
-    end_line_chunk?: number | null;
-    page_number?: number | null;
-    primary_policy_atom_id?: string | null;
-    canonical_atom?: string | null;
-    intensity?: number | null;
-    context_impact?: number | null;
-    legal_sensitivity?: number | null;
-    audience_risk?: number | null;
-    /** DB source of primary row: lexicon_mandatory = true glossary insert; ai = model. */
-    source?: string;
-  }>();
-
-  const canonicalGroups = buildCanonicalGroups(deduped, oneCardPerOccurrence, overlapRatio);
-
-  for (const [clusterIndex, { key: groupKey, list }] of canonicalGroups.entries()) {
-    const byArticle = new Map<number, DbFinding[]>();
-    for (const finding of list) {
-      const articleId = finding.article_id ?? 0;
-      if (articleId === 0 || articleId === OUT_OF_SCOPE_ARTICLE_ID) continue;
-      if (!byArticle.has(articleId)) byArticle.set(articleId, []);
-      byArticle.get(articleId)!.push(finding);
-    }
-
-    for (const [articleId, articleList] of [...byArticle.entries()].sort((a, b) => a[0] - b[0])) {
-      const primary = choosePrimaryFromDb(articleList);
-      const relatedArticleIds = [...new Set(articleList.map((f) => f.article_id).filter((id) => id !== articleId))].sort((a, b) => a - b);
-      const cId = oneCardPerOccurrence
-        ? `CF-every-${clusterIndex}-${articleId}`
-        : `${groupKey}-article-${articleId}`;
-      const v3 = getFindingV3(primary);
-      const policyLinks: Array<{ article_id: number; atom_concept_id?: string | null; role?: string | null }> = [
-        { article_id: articleId, role: "primary" },
-        ...relatedArticleIds.map((id) => ({ article_id: id, role: "related" as const })),
-      ];
-      canonicalMap.set(cId, {
-        canonical_finding_id: cId,
-        finding_uuid: primary.finding_uuid ?? null,
-        title_ar: primary.title_ar,
-        evidence_snippet: primary.evidence_snippet,
-        severity: primary.severity,
-        confidence: primary.confidence ?? 0,
-        final_ruling: (v3.final_ruling as string | undefined) ?? null,
-        rationale: (() => {
-          const fromPrimary = (primary.rationale_ar != null && primary.rationale_ar.trim() !== "") ? primary.rationale_ar : null;
-          const fromV3 = ((v3.rationale_ar as string | undefined) != null && (v3.rationale_ar as string).trim() !== "") ? (v3.rationale_ar as string) : null;
-          const raw = fromPrimary ?? fromV3 ?? RATIONALE_FALLBACK;
-          if (isSnippetOnlyRationale(raw, primary.evidence_snippet)) return RATIONALE_FALLBACK;
-          return raw;
-        })(),
-        pillar_id: (v3.pillar_id as string | undefined) ?? null,
-        primary_article_id: articleId,
-        related_article_ids: relatedArticleIds,
-        policy_links: policyLinks,
-        start_offset_global: primary.start_offset_global ?? null,
-        end_offset_global: primary.end_offset_global ?? null,
-        start_line_chunk: primary.start_line_chunk ?? null,
-        end_line_chunk: primary.end_line_chunk ?? null,
-        page_number: primary.page_number ?? null,
-        primary_policy_atom_id: (() => {
-          const n = normalizeAtomId(primary.atom_id, articleId);
-          return n && String(n).trim() !== "" ? String(n) : null;
-        })(),
-        canonical_atom: primary.canonical_atom ?? null,
-        intensity: primary.intensity ?? null,
-        context_impact: primary.context_impact ?? null,
-        legal_sensitivity: primary.legal_sensitivity ?? null,
-        audience_risk: primary.audience_risk ?? null,
-        source:
-          primary.source === "lexicon_mandatory"
-            ? "lexicon_mandatory"
-            : primary.source === "manual"
-              ? "manual"
-              : "ai",
-      });
-      if (config.DEBUG_TRACE_FINDING_PIPELINE) {
-        traceFindingPipelineStage({
-          jobId,
-          chunkId: jobId,
-          stageName: "Aggregation canonicalization",
-          functionName: "buildSummaryJson canonicalMap",
-          snapshots: [{
-            traceId: primary.lineage_id ?? primary.finding_uuid ?? "",
-            findingUuid: primary.finding_uuid ?? primary.lineage_id ?? null,
-            reviewerArticleId: articleId,
-            passName: null,
-            eventId: null,
-            pageNumber: primary.page_number ?? null,
-            title_ar: primary.title_ar,
-            description_ar: primary.description_ar,
-            rationale_ar: primary.rationale_ar ?? null,
-            canonical_atom: primary.canonical_atom ?? null,
-            article_id: articleId,
-            claimedArticleId: articleId,
-            severity: primary.severity,
-            confidence: primary.confidence ?? 0,
-            evidence_snippet: primary.evidence_snippet,
-            quote: primary.evidence_snippet,
-            start_offset: primary.start_offset_global ?? null,
-            end_offset: primary.end_offset_global ?? null,
-            canonicalFindingId: cId,
-          }],
-        });
-      }
-    }
-  }
-
-  const canonical_findings = [...canonicalMap.values()].sort(compareCanonicalItemsStable);
+  const canonical_findings: NonNullable<SummaryJson["canonical_findings"]> = sortedFindings.map((finding, index) => {
+    const v3 = getFindingV3(finding);
+    const articleId = finding.article_id;
+    const canonicalFindingId =
+      (finding.finding_uuid ?? null) ||
+      (finding.lineage_id ?? null) ||
+      sha256(
+        [
+          "finding",
+          articleId,
+          finding.start_offset_global ?? "",
+          finding.end_offset_global ?? "",
+          finding.page_number ?? "",
+          finding.title_ar ?? "",
+          finding.evidence_snippet ?? "",
+          index,
+        ].join("|")
+      );
+    const primaryPolicyAtomId = (() => {
+      const atom = normalizeAtomId(finding.atom_id, articleId);
+      return atom && String(atom).trim() !== "" ? String(atom) : null;
+    })();
+    const rawRationale = (finding.rationale_ar != null && finding.rationale_ar.trim() !== "")
+      ? finding.rationale_ar
+      : ((v3.rationale_ar as string | undefined) != null && String(v3.rationale_ar).trim() !== "")
+        ? String(v3.rationale_ar)
+        : RATIONALE_FALLBACK;
+    return {
+      canonical_finding_id: canonicalFindingId,
+      finding_uuid: finding.finding_uuid ?? finding.lineage_id ?? null,
+      title_ar: finding.title_ar,
+      evidence_snippet: finding.evidence_snippet,
+      severity: finding.severity,
+      confidence: finding.confidence ?? 0,
+      final_ruling: (v3.final_ruling as string | undefined) ?? null,
+      rationale: isSnippetOnlyRationale(rawRationale, finding.evidence_snippet) ? RATIONALE_FALLBACK : rawRationale,
+      pillar_id: (v3.pillar_id as string | undefined) ?? null,
+      primary_article_id: articleId,
+      related_article_ids: [],
+      policy_links: [{ article_id: articleId, role: "primary" }],
+      start_offset_global: finding.start_offset_global ?? null,
+      end_offset_global: finding.end_offset_global ?? null,
+      start_line_chunk: finding.start_line_chunk ?? null,
+      end_line_chunk: finding.end_line_chunk ?? null,
+      page_number: finding.page_number ?? null,
+      primary_policy_atom_id: primaryPolicyAtomId,
+      canonical_atom: finding.canonical_atom ?? null,
+      intensity: finding.intensity ?? null,
+      context_impact: finding.context_impact ?? null,
+      legal_sensitivity: finding.legal_sensitivity ?? null,
+      audience_risk: finding.audience_risk ?? null,
+      source:
+        finding.source === "lexicon_mandatory"
+          ? "lexicon_mandatory"
+          : finding.source === "manual"
+            ? "manual"
+            : "ai",
+    };
+  });
   const report_hints: SummaryJson["report_hints"] = [];
   const noteSummary = buildNoteSummary(notes);
   logNotePipelineStage({
@@ -1779,7 +1614,7 @@ export function buildSummaryJson(
     reportHintCount: report_hints.length,
   });
 
-  // Severity counts from canonical (unique incidents).
+  // Severity counts from persisted findings, grouped only by article in the report.
   const severity_counts = { low: 0, medium: 0, high: 0, critical: 0 };
   for (const f of canonical_findings) {
     if (SEVERITIES.includes(f.severity as (typeof SEVERITIES)[number])) {
@@ -1787,19 +1622,19 @@ export function buildSummaryJson(
     }
   }
 
-  // findings_by_article: each canonical finding appears once under its primary article only.
-  const canonicalByPrimary = new Map<number, typeof canonical_findings>();
+  // findings_by_article: direct projection from persisted findings, grouped by article only.
+  const findingsByArticle = new Map<number, NonNullable<SummaryJson["canonical_findings"]>>();
   for (const f of canonical_findings) {
     const aid = f.primary_article_id ?? 0;
     if (aid === 0 || aid === OUT_OF_SCOPE_ARTICLE_ID) continue;
-    if (!canonicalByPrimary.has(aid)) canonicalByPrimary.set(aid, []);
-    canonicalByPrimary.get(aid)!.push(f);
+    if (!findingsByArticle.has(aid)) findingsByArticle.set(aid, []);
+    findingsByArticle.get(aid)!.push(f);
   }
 
   const findings_by_article = policyArticles
     .filter((a) => a.articleId !== OUT_OF_SCOPE_ARTICLE_ID)
     .map((art) => {
-      const list = canonicalByPrimary.get(art.articleId) ?? [];
+      const list = findingsByArticle.get(art.articleId) ?? [];
       const counts = { low: 0, medium: 0, high: 0, critical: 0 };
       for (const f of list) {
         if (SEVERITIES.includes(f.severity as (typeof SEVERITIES)[number])) {
@@ -1910,7 +1745,7 @@ export function buildSummaryJson(
   const checklist_articles = policyArticles
     .filter((a) => a.articleId !== OUT_OF_SCOPE_ARTICLE_ID)
     .map((art) => {
-      const list = canonicalByPrimary.get(art.articleId) ?? [];
+      const list = findingsByArticle.get(art.articleId) ?? [];
       const counts = { low: 0, medium: 0, high: 0, critical: 0 };
       for (const f of list) {
         if (SEVERITIES.includes(f.severity as (typeof SEVERITIES)[number])) {
@@ -2612,9 +2447,6 @@ export async function runAggregation(jobId: string): Promise<void> {
       summary.words_to_revisit = existing.slice(0, 60);
     }
   }
-  applySummaryContextToRulings(summary);
-  applyReportGate(summary);
-
   const reportHtml = buildReportHtml(summary);
 
   recordTelemetryFromSummary({
