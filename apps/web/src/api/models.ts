@@ -26,6 +26,37 @@ export enum OverrideEventType {
 export type AnalysisModeProfile = 'quality' | 'balanced' | 'turbo';
 export type AnalysisPipelineVersion = 'v1' | 'v2';
 export type AnalysisEngine = 'v2';
+export type NoteCategoryKey =
+  | 'media_credibility'
+  | 'medical_notes'
+  | 'classified_documents'
+  | 'security_scenes'
+  | 'saudi_names'
+  | 'commercial_entities';
+
+export interface ReportNote {
+  id: string;
+  reviewer: string | null;
+  category: string;
+  title: string;
+  description: string;
+  snippet: string;
+  event_id: number;
+  confidence: number;
+  status: string;
+  included_in_report: boolean;
+  comment?: string | null;
+  reviewer_comment?: string | null;
+  reviewed_at?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface ReportNotesSummaryGroup {
+  category: NoteCategoryKey;
+  count: number;
+  items: ReportNote[];
+}
 
 export interface User {
   id: string;
@@ -310,7 +341,7 @@ export interface Report {
     generated_at: string;
     analysis_meta?: {
       auditor_layer_version: 'v2' | 'v3' | 'v4';
-      violation_system_version: 'v2' | 'v3' | 'v4';
+      violation_system_version: 'v2' | 'v3' | 'v4' | 'v5';
       analysis_engine: 'v2';
       analysis_pipeline_version: 'v1' | 'v2';
       deep_auditor_enabled: boolean;
@@ -398,6 +429,15 @@ export interface Report {
       end_line_chunk?: number | null;
       page_numbers?: number[];
     }>;
+    notes_summary?: ReportNotesSummaryGroup[];
+    notes?: {
+      media_credibility: ReportNote[];
+      medical_notes: ReportNote[];
+      classified_documents: ReportNote[];
+      security_scenes: ReportNote[];
+      saudi_names: ReportNote[];
+      commercial_entities: ReportNote[];
+    };
     /** Words/phrases from glossary that appeared in script — for "كلمات/عبارات للمراجعة" only. */
     words_to_revisit?: Array<{
       term: string;

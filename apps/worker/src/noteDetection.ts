@@ -1,0 +1,322 @@
+import OpenAI from "openai";
+import { config } from "./config.js";
+import { canonicalStringify } from "./canonicalJson.js";
+import { extractJsonFromText, noteOutputSchema, type NoteItem, type NoteOutput } from "./schemas.js";
+import { logger } from "./logger.js";
+import { getNoteDefinitions, type NoteReviewerDefinition } from "./notePromptPack.js";
+import type { EventUnderstandingPassResult, StructuredEvent } from "./eventUnderstanding.js";
+
+const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
+
+type OpenAiCallOptions = {
+  signal?: AbortSignal;
+};
+
+export type NotePassResult = {
+  passName: string;
+  reviewerId: string;
+  category: string;
+  notes: NoteItem[];
+  duration: number;
+  model: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  skipped?: boolean;
+  reason?: string;
+};
+
+export type NoteDetectionResult = {
+  notes: NoteItem[];
+  passResults: NotePassResult[];
+  executedPassCount: number;
+  skippedPassCount: number;
+  totalDuration: number;
+};
+
+export type NoteInsertRow = {
+  job_id: string;
+  reviewer: string;
+  category: string;
+  title: string;
+  description: string;
+  snippet: string;
+  event_id: number;
+  confidence: number;
+  status: string;
+  included_in_report: boolean;
+};
+
+const NOTE_REPAIR_SYSTEM = `You fix broken JSON. Return only valid JSON, no markdown, no explanation.
+Expected shape: { "notes": [ { "reviewer", "category", "title", "description", "snippet", "event_id", "confidence", "status", "included_in_report" } ] }
+The response must be a single JSON object.
+Do not include any prose. Return JSON only.`;
+
+function normalizeText(value: string): string {
+  return value.normalize("NFC").replace(/\s+/g, " ").trim();
+}
+
+function buildStructuredEventsPayload(events: StructuredEvent[]): string {
+  return canonicalStringify(events);
+}
+
+function buildLineNumberedChunk(chunkText: string): string {
+  return chunkText
+    .split("\n")
+    .map((line, index) => `${String(index + 1).padStart(4, "0")}: ${line}`)
+    .join("\n");
+}
+
+function buildNoteSystemPrompt(definition: NoteReviewerDefinition): string {
+  return `${definition.prompt}
+
+You are a notes reviewer.
+Notes are not violations.
+Do not generate findings[].
+Do not classify GCAM violations.
+Do not change article ownership.
+Do not merge multiple observations into one note.
+Return ONLY valid JSON.
+The response must be a single JSON object.
+The response must contain the word JSON.
+Use only structured events for event_id and subject selection.
+Use the screenplay chunk only to select the surrounding paragraph for snippet.
+If no note exists, return {"notes":[]}.`;
+}
+
+async function callNotesOpenAI(args: {
+  definition: NoteReviewerDefinition;
+  events: StructuredEvent[];
+  chunkText: string;
+  temperature: number;
+  seed: number;
+  signal?: AbortSignal;
+}): Promise<{
+  rawResponse: string;
+  responseId: string | null;
+  responseTimestamp: string;
+  finishReason: string | null;
+  usage: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
+  renderedSystemPrompt: string;
+  renderedUserPrompt: string;
+}> {
+  const systemPrompt = buildNoteSystemPrompt(args.definition);
+  const userPrompt = `# Structured Events\n${buildStructuredEventsPayload(args.events)}\n\n# Screenplay Chunk\n${buildLineNumberedChunk(args.chunkText)}\n\nReturn JSON only.`;
+
+  logger.info("[DEBUG] Note reviewer request prepared", {
+    reviewer: args.definition.id,
+    category: args.definition.category,
+    model: config.OPENAI_JUDGE_MODEL,
+    eventCount: args.events.length,
+    chunkLength: args.chunkText.length,
+  });
+
+  const response = await openai.chat.completions.create({
+    model: config.OPENAI_JUDGE_MODEL,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+    temperature: args.temperature,
+    seed: args.seed,
+    max_tokens: 4096,
+  }, { timeout: config.JUDGE_TIMEOUT_MS, signal: args.signal });
+
+  const rawResponse = response.choices[0]?.message?.content ?? "{}";
+  return {
+    rawResponse,
+    responseId: response.id ?? null,
+    responseTimestamp: new Date().toISOString(),
+    finishReason: response.choices[0]?.finish_reason ?? null,
+    usage: response.usage
+      ? {
+          prompt_tokens: response.usage.prompt_tokens,
+          completion_tokens: response.usage.completion_tokens,
+          total_tokens: response.usage.total_tokens,
+        }
+      : null,
+    renderedSystemPrompt: systemPrompt,
+    renderedUserPrompt: userPrompt,
+  };
+}
+
+async function repairNotesJson(model: string, brokenContent: string, context: string, signal?: AbortSignal): Promise<string> {
+  const resp = await openai.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: NOTE_REPAIR_SYSTEM },
+      { role: "user", content: `Context: ${context}\n\nBroken JSON:\n${brokenContent.slice(0, 8000)}\n\nReturn the corrected JSON only.` },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0,
+    seed: 12345,
+  }, { timeout: config.JUDGE_TIMEOUT_MS, signal });
+  return resp.choices[0]?.message?.content ?? "{}";
+}
+
+function parseNotesOutput(raw: string): NoteOutput {
+  const json = extractJsonFromText(raw);
+  const parsed = JSON.parse(json) as unknown;
+  return noteOutputSchema.parse(parsed);
+}
+
+async function parseNotesWithRepair(
+  raw: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<{ notes: NoteItem[]; repaired: boolean; parseError: string | null }> {
+  try {
+    const parsed = parseNotesOutput(raw);
+    return { notes: parsed.notes, repaired: false, parseError: null };
+  } catch (error) {
+    const repairRaw = await repairNotesJson(model, raw, "Note reviewer output JSON", signal);
+    try {
+      const repaired = parseNotesOutput(repairRaw);
+      return { notes: repaired.notes, repaired: true, parseError: error instanceof Error ? error.message : String(error) };
+    } catch (repairError) {
+      logger.warn("Note reviewer JSON repair failed", {
+        error: error instanceof Error ? error.message : String(error),
+        repairError: repairError instanceof Error ? repairError.message : String(repairError),
+      });
+      return { notes: [], repaired: true, parseError: error instanceof Error ? error.message : String(error) };
+    }
+  }
+}
+
+function normalizeNote(note: NoteItem, reviewerId: string, category: string): NoteItem {
+  return {
+    ...note,
+    reviewer: note.reviewer ?? reviewerId,
+    category: note.category?.trim() || category,
+    title: normalizeText(note.title),
+    description: normalizeText(note.description),
+    snippet: note.snippet.trim(),
+    status: note.status ?? "new",
+    included_in_report: typeof note.included_in_report === "boolean" ? note.included_in_report : true,
+    confidence: typeof note.confidence === "number" ? Math.max(0, Math.min(1, note.confidence)) : 0.7,
+  };
+}
+
+export function toNoteInsertRow(jobId: string, note: NoteItem): NoteInsertRow {
+  return {
+    job_id: jobId,
+    reviewer: note.reviewer ?? "",
+    category: note.category,
+    title: note.title,
+    description: note.description,
+    snippet: note.snippet,
+    event_id: note.event_id,
+    confidence: typeof note.confidence === "number" ? note.confidence : 0.7,
+    status: note.status ?? "new",
+    included_in_report: typeof note.included_in_report === "boolean" ? note.included_in_report : true,
+  };
+}
+
+export function toNoteInsertRows(jobId: string, notes: NoteItem[]): NoteInsertRow[] {
+  return notes.map((note) => toNoteInsertRow(jobId, note));
+}
+
+export async function runNotesDetection(
+  chunkText: string,
+  eventUnderstanding: EventUnderstandingPassResult | null,
+  jobConfig: { temperature: number; seed: number },
+  options: {
+    jobId: string;
+    chunkId: string;
+    signal?: AbortSignal;
+  },
+): Promise<NoteDetectionResult> {
+  let noteDefinitions: NoteReviewerDefinition[] = [];
+  try {
+    noteDefinitions = getNoteDefinitions();
+  } catch (error) {
+    logger.warn("Notes pipeline disabled for chunk because note pack failed to load", {
+      jobId: options.jobId,
+      chunkId: options.chunkId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      notes: [],
+      passResults: [],
+      executedPassCount: 0,
+      skippedPassCount: 0,
+      totalDuration: 0,
+    };
+  }
+  const events = eventUnderstanding?.events ?? [];
+  const startedAt = Date.now();
+  const passResults: NotePassResult[] = [];
+  const allNotes: NoteItem[] = [];
+
+  for (const definition of noteDefinitions) {
+    const passStartedAt = Date.now();
+    try {
+      const response = await callNotesOpenAI({
+        definition,
+        events,
+        chunkText,
+        temperature: jobConfig.temperature,
+        seed: jobConfig.seed,
+        signal: options.signal,
+      });
+      const parsed = await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal);
+      const normalizedNotes = parsed.notes.map((note) => normalizeNote(note, definition.id, definition.category));
+      allNotes.push(...normalizedNotes);
+      passResults.push({
+        passName: definition.id,
+        reviewerId: definition.id,
+        category: definition.category,
+        notes: normalizedNotes,
+        duration: Date.now() - passStartedAt,
+        model: config.OPENAI_JUDGE_MODEL,
+        promptTokens: response.usage?.prompt_tokens ?? null,
+        completionTokens: response.usage?.completion_tokens ?? null,
+        totalTokens: response.usage?.total_tokens ?? null,
+      });
+      logger.info("Note reviewer completed", {
+        jobId: options.jobId,
+        chunkId: options.chunkId,
+        reviewer: definition.id,
+        category: definition.category,
+        noteCount: normalizedNotes.length,
+        repaired: parsed.repaired,
+        parseError: parsed.parseError ?? null,
+        finishReason: response.finishReason,
+      });
+    } catch (error) {
+      logger.warn("Note reviewer failed", {
+        jobId: options.jobId,
+        chunkId: options.chunkId,
+        reviewer: definition.id,
+        category: definition.category,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      passResults.push({
+        passName: definition.id,
+        reviewerId: definition.id,
+        category: definition.category,
+        notes: [],
+        duration: Date.now() - passStartedAt,
+        model: config.OPENAI_JUDGE_MODEL,
+        promptTokens: null,
+        completionTokens: null,
+        totalTokens: null,
+        skipped: false,
+        reason: "failed",
+      });
+    }
+  }
+
+  return {
+    notes: allNotes,
+    passResults,
+    executedPassCount: passResults.filter((pass) => pass.reason !== "failed").length,
+    skippedPassCount: passResults.filter((pass) => pass.skipped).length,
+    totalDuration: Date.now() - startedAt,
+  };
+}

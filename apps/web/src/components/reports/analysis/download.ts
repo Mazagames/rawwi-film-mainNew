@@ -3,6 +3,7 @@ import { pdf } from "@react-pdf/renderer";
 import { AnalysisSectionPdf } from "./Pdf";
 import { mapAnalysisFindingsForPdf, splitAnalysisReviewFindingsForPdf } from "./mapper";
 import type { AnalysisFinding, AnalysisReviewFinding } from "@/api";
+import type { NoteCategoryKey, ReportNote } from "@/api/models";
 import type { ViewerPageSlice } from "@/utils/findingContext";
 
 async function toDataUrl(url: string): Promise<string | null> {
@@ -56,6 +57,7 @@ export interface DownloadAnalysisPdfParams {
     start_line_chunk?: number | null;
     end_line_chunk?: number | null;
   }> | null;
+  notes?: Partial<Record<NoteCategoryKey, ReportNote[]>> | null;
   scriptSummary?: {
     synopsis_ar: string;
     key_risky_events_ar?: string;
@@ -107,6 +109,7 @@ export async function downloadAnalysisPdf(params: DownloadAnalysisPdfParams): Pr
       createdAt: params.createdAt,
       findings,
       reportHints: reportHintsMapped,
+      notes: params.notes ?? undefined,
       scriptSummary: params.scriptSummary ?? undefined,
       wordsToRevisit: params.wordsToRevisit ?? undefined,
       viewerPages: params.viewerPages ?? undefined,

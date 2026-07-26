@@ -3,6 +3,7 @@ import type { AnalysisFinding, AnalysisReviewFinding } from "@/api";
 import { mapAnalysisFindingsForPdf, splitAnalysisReviewFindingsForPdf } from "./mapper";
 import { displayPageForFinding, type ViewerPageSlice } from "@/utils/viewerPageFromOffset";
 import { getGlossarySentenceContext } from "@/utils/findingContext";
+import type { NoteCategoryKey, ReportNote } from "@/api/models";
 
 type ReportHint = {
   canonical_finding_id: string;
@@ -21,6 +22,15 @@ type ScriptSummary = {
   compliance_posture_ar?: string;
   confidence: number;
 };
+
+const NOTE_CATEGORY_ORDER: NoteCategoryKey[] = [
+  "security_scenes",
+  "saudi_names",
+  "commercial_entities",
+  "medical_notes",
+  "media_credibility",
+  "classified_documents",
+];
 
 function resolveWordExportFindingData(params: DownloadAnalysisWordParams) {
   const hasReviewLayer = (params.reviewFindings?.length ?? 0) > 0;
@@ -101,6 +111,7 @@ export interface DownloadAnalysisWordParams {
     source?: string | null;
   }> | null;
   reportHints?: ReportHint[] | null;
+  notes?: Partial<Record<NoteCategoryKey, ReportNote[]>> | null;
   scriptSummary?: ScriptSummary | null;
   lang: "ar" | "en";
 }
@@ -568,6 +579,135 @@ function buildRecommendationsBlock(params: DownloadAnalysisWordParams): string {
   ].join("");
 }
 
+function buildNotesBlock(params: DownloadAnalysisWordParams): string {
+  const notesByCategory = params.notes ?? {};
+  const totalNotes = NOTE_CATEGORY_ORDER.reduce((sum, key) => sum + (notesByCategory[key]?.length ?? 0), 0);
+  if (totalNotes === 0) return "";
+
+  const categoryLabel = (key: NoteCategoryKey): string => {
+    const labels: Record<NoteCategoryKey, { ar: string; en: string }> = {
+      security_scenes: { ar: "مشاهد أمنية", en: "Security Scenes" },
+      saudi_names: { ar: "أسماء سعودية", en: "Saudi Names" },
+      commercial_entities: { ar: "كيانات تجارية", en: "Commercial Entities" },
+      medical_notes: { ar: "ملاحظات طبية", en: "Medical Notes" },
+      media_credibility: { ar: "مصداقية الوسائط", en: "Media Credibility" },
+      classified_documents: { ar: "وثائق مصنفة", en: "Classified Documents" },
+    };
+    return params.lang === "ar" ? labels[key].ar : labels[key].en;
+  };
+
+  const renderNote = (note: ReportNote, index: number): string => {
+    const status = plainText(note.status);
+    const reviewerComment = plainText(note.reviewer_comment ?? note.comment);
+    const statusLabel = status ? `${params.lang === "ar" ? "الحالة" : "Status"}: ${status}` : "";
+    const includedLabel = note.included_in_report === false
+      ? (params.lang === "ar" ? "مستبعدة من التقرير" : "Excluded from report")
+      : (params.lang === "ar" ? "مضمنة في التقرير" : "Included in report");
+    const metadata = [
+      `${params.lang === "ar" ? "الحدث" : "Event"} ${note.event_id}`,
+      `${params.lang === "ar" ? "الثقة" : "Confidence"} ${Math.round((note.confidence ?? 0) * 100)}%`,
+      includedLabel,
+      statusLabel,
+    ].filter(Boolean).join(" • ");
+
+    return [
+      makeParagraph(`${index + 1}. ${plainText(note.title) || "—"}`, {
+        bidi: params.lang === "ar",
+        align: "right",
+        font: TITLE_FONT,
+        size: 20,
+        bold: true,
+        spacingAfter: 40,
+        rtl: params.lang === "ar",
+      }),
+      makeParagraph(categoryLabel(note.category as NoteCategoryKey), {
+        bidi: params.lang === "ar",
+        align: "right",
+        font: TABLE_FONT,
+        size: 18,
+        bold: false,
+        spacingAfter: 24,
+        rtl: params.lang === "ar",
+      }),
+      makeParagraph(metadata, {
+        bidi: params.lang === "ar",
+        align: "right",
+        font: TABLE_FONT,
+        size: 16,
+        bold: false,
+        spacingAfter: 24,
+        rtl: params.lang === "ar",
+      }),
+      makeParagraph(plainText(note.snippet) || "—", {
+        bidi: params.lang === "ar",
+        align: "right",
+        font: TABLE_FONT,
+        size: 18,
+        bold: false,
+        spacingAfter: 24,
+        rtl: params.lang === "ar",
+      }),
+      makeParagraph(plainText(note.description) || "—", {
+        bidi: params.lang === "ar",
+        align: "right",
+        font: TABLE_FONT,
+        size: 18,
+        bold: false,
+        spacingAfter: 24,
+        rtl: params.lang === "ar",
+      }),
+      reviewerComment
+        ? makeParagraph(
+            `${params.lang === "ar" ? "تعليق المراجع" : "Reviewer comment"}: ${reviewerComment}`,
+            {
+              bidi: params.lang === "ar",
+              align: "right",
+              font: TABLE_FONT,
+              size: 16,
+              bold: false,
+              spacingAfter: 36,
+              rtl: params.lang === "ar",
+            }
+          )
+        : "",
+    ].join("");
+  };
+
+  const blocks = NOTE_CATEGORY_ORDER.map((category) => {
+    const notes = notesByCategory[category] ?? [];
+    if (notes.length === 0) return "";
+    return [
+      makeParagraph(categoryLabel(category), {
+        bidi: params.lang === "ar",
+        align: "right",
+        font: TITLE_FONT,
+        size: 22,
+        bold: true,
+        spacingBefore: 220,
+        spacingAfter: 120,
+        rtl: params.lang === "ar",
+      }),
+      notes.map((note, index) => renderNote(note, index)).join(""),
+    ].join("");
+  }).filter(Boolean);
+
+  if (blocks.length === 0) return "";
+
+  return [
+    makeParagraph(params.lang === "ar" ? "الملاحظات" : "Notes", {
+      bidi: params.lang === "ar",
+      align: "right",
+      font: TITLE_FONT,
+      size: 22,
+      bold: true,
+      spacingBefore: 220,
+      spacingAfter: 140,
+      rtl: params.lang === "ar",
+    }),
+    blocks.join(""),
+  ].join("");
+}
+
 function buildDocumentXml(templateXml: string, params: DownloadAnalysisWordParams): string {
   const bodyOpenMatch = templateXml.match(/^[\s\S]*?<w:body>/);
   const sectPrMatch = templateXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/);
@@ -604,6 +744,7 @@ function buildDocumentXml(templateXml: string, params: DownloadAnalysisWordParam
       rtl: params.lang === "ar",
     }),
     buildFindingsTable(params),
+    buildNotesBlock(params),
     buildRecommendationsBlock(params),
   ].join("");
 

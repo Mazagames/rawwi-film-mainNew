@@ -1,6 +1,7 @@
 import React from "react";
 import { pdf } from "@react-pdf/renderer";
 import type { AnalysisFinding, AnalysisReviewFinding } from "@/api";
+import type { NoteCategoryKey, ReportNote } from "@/api/models";
 import { splitAnalysisReviewFindingsForPdf } from "../analysis/mapper";
 import { mapQuickAnalysisFindingsForPdf, type CanonicalFindingForQuickPdf } from "./mapper";
 import { QuickAnalysisPdf } from "./Pdf";
@@ -41,6 +42,7 @@ export async function downloadQuickAnalysisPdf(params: {
   findingsByArticle?: Array<{ article_id: number; top_findings?: Array<{ title_ar?: string; severity?: string; confidence?: number; evidence_snippet?: string; rationale?: string | null }> }> | null;
   canonicalFindings?: CanonicalFindingForQuickPdf[] | null;
   reportHints?: ReportHintForQuickPdf[] | null;
+  notes?: Partial<Record<NoteCategoryKey, ReportNote[]>> | null;
   lang: "ar" | "en";
   dateFormat?: string;
 }): Promise<void> {
@@ -100,6 +102,7 @@ export async function downloadQuickAnalysisPdf(params: {
     createdAt: params.createdAt,
     findings,
     reportHints: reportHintsMapped,
+    notes: params.notes ?? undefined,
     lang: params.lang,
     dateFormat: params.dateFormat,
     logoUrl: logoUrl ?? undefined,

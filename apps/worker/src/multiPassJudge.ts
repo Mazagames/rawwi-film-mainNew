@@ -43,6 +43,7 @@ import {
 } from "./v4PromptPack.js";
 import { buildEventUnderstandingPass, renderStructuredEventContext, type EventUnderstandingPassResult } from "./eventUnderstanding.js";
 import { getV5ReviewerDefinitions } from "./v5PromptPack.js";
+import { NOTE_REVIEWER_ARTICLE_NUMBERS } from "./notePromptPack.js";
 import { traceFindingPipelineStage } from "./findingPipelineTrace.js";
 import type { AnalysisExecutionSignatureInput } from "./executionSignature.js";
 
@@ -1581,7 +1582,9 @@ const ACTIVE_SUBJECT_PASSES: PassDefinition[] = [
 ];
 
 function buildV5DetectionPasses(): PassDefinition[] {
-  return getV5ReviewerDefinitions().map((reviewer) => ({
+  return getV5ReviewerDefinitions()
+    .filter((reviewer) => !NOTE_REVIEWER_ARTICLE_NUMBERS.has(reviewer.articleNumber))
+    .map((reviewer) => ({
     name: `v5_article_${String(reviewer.articleNumber).padStart(2, "0")}`,
     displayLabel: reviewer.displayLabel,
     articleIds: [reviewer.articleNumber],

@@ -7,13 +7,16 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeValue } from '@/utils/dateFormat';
 import { type AnalysisReport } from '@/services/reportService';
 import { reportsApi, findingsApi, scriptsApi, type AnalysisFinding, type AnalysisReviewFinding } from '@/api';
-import type { ReportListItem, ReviewStatus, Script } from '@/api/models';
+import type { NoteCategoryKey, ReportListItem, ReportNote, ReviewStatus, Script } from '@/api/models';
+import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
 import { Textarea } from '@/components/ui/Textarea';
+import { FindingCard, type NoteCardData } from '@/components/ui/FindingCard';
 import { cn } from '@/utils/cn';
 import { escapeHtmlSafe } from '@/utils/escapeHtml';
 import toast from 'react-hot-toast';
@@ -55,6 +58,22 @@ const policyArticlesForForm = getActionablePolicyArticles();
 const DEFAULT_ACTIONABLE_ARTICLE_ID = policyArticlesForForm[0]?.articleId ?? 4;
 const VIOLATION_TYPES_OPTIONS = violationTypesForChecklist();
 const DEFAULT_VIOLATION_TYPE_ID = VIOLATION_TYPES_OPTIONS[0]?.id ?? 'other';
+const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
+  { key: 'security_scenes', labelAr: 'مشاهد أمنية', labelEn: 'Security Scenes' },
+  { key: 'saudi_names', labelAr: 'أسماء سعودية', labelEn: 'Saudi Names' },
+  { key: 'commercial_entities', labelAr: 'كيانات تجارية', labelEn: 'Commercial Entities' },
+  { key: 'medical_notes', labelAr: 'ملاحظات طبية', labelEn: 'Medical Notes' },
+  { key: 'media_credibility', labelAr: 'مصداقية الوسائط', labelEn: 'Media Credibility' },
+  { key: 'classified_documents', labelAr: 'وثائق مصنفة', labelEn: 'Classified Documents' },
+];
+const EMPTY_NOTES_BY_CATEGORY: Record<NoteCategoryKey, ReportNote[]> = {
+  media_credibility: [],
+  medical_notes: [],
+  classified_documents: [],
+  security_scenes: [],
+  saudi_names: [],
+  commercial_entities: [],
+};
 
 function formatAtomDisplayR(articleId: number, atomId: string | null): string {
   if (!atomId?.trim()) return String(articleId);
@@ -259,6 +278,24 @@ function countFindingKinds<T extends { source?: string | null }>(list: T[]) {
   return counts;
 }
 
+function noteCardFromReportNote(note: ReportNote): NoteCardData {
+  return {
+    id: note.id,
+    category: note.category,
+    title: note.title,
+    description: note.description,
+    snippet: note.snippet,
+    eventId: note.event_id,
+    reviewer: note.reviewer ?? null,
+    confidence: note.confidence,
+    status: note.status,
+    includedInReport: note.included_in_report,
+    reviewerComment: note.reviewer_comment ?? note.comment ?? null,
+    reviewedAt: note.reviewed_at ?? null,
+    createdAt: note.created_at ?? null,
+  };
+}
+
 function findingSourcePriority(source: string | null | undefined): number {
   return findingKindFromSource(source) === 'manual'
     ? 3
@@ -344,6 +381,15 @@ export function Results() {
   /** false = deduped list (default); true = every DB row (duplicates visible). */
   const [showAllFindingRows, setShowAllFindingRows] = useState(false);
   const [findingFilter, setFindingFilter] = useState<FindingKindFilter>('all');
+  const [noteCategoryFilter, setNoteCategoryFilter] = useState<NoteCategoryKey>('security_scenes');
+  const [notesState, setNotesState] = useState<Record<NoteCategoryKey, ReportNote[]>>(EMPTY_NOTES_BY_CATEGORY);
+  const [noteEditModal, setNoteEditModal] = useState<NoteCardData | null>(null);
+  const [noteEditSaving, setNoteEditSaving] = useState(false);
+  const [noteEditForm, setNoteEditForm] = useState({
+    title: '',
+    description: '',
+    reviewerComment: '',
+  });
   /** script_pages slices for viewer-accurate page labels (same model as workspace). */
   const [reportViewerPages, setReportViewerPages] = useState<Array<{ pageNumber: number; content: string }> | null>(null);
 
@@ -1053,6 +1099,7 @@ export function Results() {
   const analysisMeta = summary.analysis_meta;
   const partialReportMeta = summary.partial_report;
   const manualReviewContextMeta = summary.manual_review_context;
+  const notesByCategory = notesState;
   const canonicalSummaryFindings: CanonicalSummaryFinding[] = (summary.canonical_findings || []).filter(Boolean);
   const reportHints: CanonicalSummaryFinding[] = (summary.report_hints || []).filter(Boolean);
   const canonicalHintIds = new Set(reportHints.map((f) => f.canonical_finding_id).filter(Boolean));
@@ -1076,6 +1123,24 @@ export function Results() {
   const approvedFindings = hasRealFindings ? findings.filter(f => f.reviewStatus === 'approved') : [];
   const violationsDeduped = hasRealFindings ? dedupeRealFindings(violations) : [];
   const approvedFindingsDeduped = hasRealFindings ? dedupeRealFindings(approvedFindings) : [];
+  const noteCategoryCounts = NOTE_CATEGORY_ORDER.map((cat) => ({
+    ...cat,
+    count: notesByCategory[cat.key]?.length ?? 0,
+  }));
+  const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
+  const selectedNotes = notesByCategory[noteCategoryFilter] ?? [];
+  const selectedNoteCards = selectedNotes.map(noteCardFromReportNote);
+
+  useEffect(() => {
+    setNotesState(report?.summaryJson.notes ?? EMPTY_NOTES_BY_CATEGORY);
+  }, [report?.id]);
+
+  useEffect(() => {
+    const firstCategoryWithNotes = NOTE_CATEGORY_ORDER.find((cat) => (notesByCategory[cat.key]?.length ?? 0) > 0)?.key;
+    if (firstCategoryWithNotes) {
+      setNoteCategoryFilter(firstCategoryWithNotes);
+    }
+  }, [report?.id]); // reset tab selection only when the loaded report changes
 
   const semanticCategoriesOrdered = violationTypesForChecklist();
   const categoryViolationCounts = (() => {
@@ -1635,6 +1700,7 @@ export function Results() {
         findingsByArticle: summary?.findings_by_article,
         canonicalFindings: summary?.canonical_findings,
         reportHints: safeReportHintsForPdf,
+        notes: notesState,
         scriptSummary: summary?.script_summary ?? undefined,
         viewerPages: reportViewerPages,
         lang: isAr ? ('ar' as const) : ('en' as const),
@@ -1773,6 +1839,123 @@ export function Results() {
     }
   };
 
+  const findNoteById = useCallback((noteId: string): ReportNote | null => {
+    for (const category of NOTE_CATEGORY_ORDER) {
+      const match = notesState[category.key]?.find((note) => note.id === noteId);
+      if (match) return match;
+    }
+    return null;
+  }, [notesState]);
+
+  const replaceNoteInState = useCallback((updated: ReportNote) => {
+    setNotesState((prev) => {
+      const next: Record<NoteCategoryKey, ReportNote[]> = {
+        ...prev,
+        media_credibility: [...(prev.media_credibility ?? [])],
+        medical_notes: [...(prev.medical_notes ?? [])],
+        classified_documents: [...(prev.classified_documents ?? [])],
+        security_scenes: [...(prev.security_scenes ?? [])],
+        saudi_names: [...(prev.saudi_names ?? [])],
+        commercial_entities: [...(prev.commercial_entities ?? [])],
+      };
+      for (const key of NOTE_CATEGORY_ORDER.map((item) => item.key)) {
+        next[key] = next[key].filter((note) => note.id !== updated.id);
+      }
+      next[updated.category as NoteCategoryKey] = [
+        ...(next[updated.category as NoteCategoryKey] ?? []),
+        updated,
+      ].sort((a, b) => a.event_id - b.event_id || a.title.localeCompare(b.title, lang === 'ar' ? 'ar' : 'en'));
+      return next;
+    });
+  }, [lang]);
+
+  const updateNoteRow = useCallback(async (noteId: string, patch: Partial<Pick<ReportNote, 'title' | 'description' | 'included_in_report' | 'status' | 'reviewer_comment' | 'reviewed_at'>>) => {
+    const { data, error } = await supabase
+      .from('analysis_notes')
+      .update({
+        ...patch,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', noteId)
+      .select('id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at')
+      .single();
+    if (error) throw error;
+    return data as ReportNote;
+  }, []);
+
+  const handleToggleNoteReportVisibility = async (note: NoteCardData) => {
+    const current = findNoteById(note.id);
+    if (!current) return;
+    const nextInclude = current.included_in_report === false;
+    setNoteEditSaving(true);
+    try {
+      const updated = await updateNoteRow(note.id, { included_in_report: nextInclude });
+      replaceNoteInState(updated);
+      toast.success(nextInclude
+        ? (lang === 'ar' ? 'سيتم تضمين هذه الملاحظة في التقرير' : 'This note will be included in the report')
+        : (lang === 'ar' ? 'تم استبعاد هذه الملاحظة من التقرير' : 'This note has been excluded from the report'));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast.error(message || (lang === 'ar' ? 'تعذر تحديث حالة الملاحظة' : 'Failed to update note visibility'));
+    } finally {
+      setNoteEditSaving(false);
+    }
+  };
+
+  const handleMarkNoteReviewed = async (note: NoteCardData) => {
+    const current = findNoteById(note.id);
+    if (!current) return;
+    setNoteEditSaving(true);
+    try {
+      const updated = await updateNoteRow(note.id, {
+        status: 'reviewed',
+        reviewed_at: new Date().toISOString(),
+      });
+      replaceNoteInState(updated);
+      toast.success(lang === 'ar' ? 'تم تعليم الملاحظة كمراجَعة' : 'Note marked as reviewed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast.error(message || (lang === 'ar' ? 'تعذر تحديث حالة الملاحظة' : 'Failed to mark note as reviewed'));
+    } finally {
+      setNoteEditSaving(false);
+    }
+  };
+
+  const openNoteEditModal = (note: NoteCardData) => {
+    setNoteEditModal(note);
+    setNoteEditForm({
+      title: note.title,
+      description: note.description,
+      reviewerComment: note.reviewerComment ?? '',
+    });
+  };
+
+  const handleSaveNoteEdit = async () => {
+    if (!noteEditModal) return;
+    const title = noteEditForm.title.trim();
+    const description = noteEditForm.description.trim();
+    if (!title || !description) {
+      toast.error(lang === 'ar' ? 'العنوان والوصف مطلوبان' : 'Title and description are required');
+      return;
+    }
+    setNoteEditSaving(true);
+    try {
+      const updated = await updateNoteRow(noteEditModal.id, {
+        title,
+        description,
+        reviewer_comment: noteEditForm.reviewerComment.trim() || null,
+      });
+      replaceNoteInState(updated);
+      setNoteEditModal(null);
+      toast.success(lang === 'ar' ? 'تم تحديث الملاحظة' : 'Note updated');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast.error(message || (lang === 'ar' ? 'تعذر تحديث الملاحظة' : 'Failed to update note'));
+    } finally {
+      setNoteEditSaving(false);
+    }
+  };
+
   const handleDeleteFindingCard = async (payload: { findingId?: string; reviewFindingId?: string }) => {
     const confirmMessage = lang === 'ar'
       ? 'هل تريد حذف بطاقة الملاحظة؟'
@@ -1825,6 +2008,7 @@ export function Results() {
         findingsByArticle: summary.findings_by_article,
         canonicalFindings: canonicalSummaryFindings,
         reportHints: summary.report_hints ?? undefined,
+        notes: notesState,
         scriptSummary: summary.script_summary ?? undefined,
         lang: isAr ? 'ar' : 'en' as const,
       };
@@ -3104,6 +3288,70 @@ export function Results() {
                 ? renderFindingsFromReal(filteredDisplayViolations)
                 : renderFindingsFromSummary(filteredCanonicalSummaryFindings)}
 
+          {notesTotalCount > 0 && (
+            <section className="mt-12">
+              <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
+                <Info className="w-5 h-5 text-info" />
+                {lang === 'ar' ? 'ملاحظات' : 'Notes'}
+                <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{notesTotalCount}</Badge>
+              </h3>
+              <p className="text-text-muted text-sm mt-1">
+                {lang === 'ar'
+                  ? 'هذه ملاحظات معلوماتية للمراجعة البشرية، وليست مخالفات.'
+                  : 'These are informational observations for human review, not violations.'}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {noteCategoryCounts.map((cat) => {
+                  const isActive = noteCategoryFilter === cat.key;
+                  return (
+                    <button
+                      key={cat.key}
+                      type="button"
+                      onClick={() => setNoteCategoryFilter(cat.key)}
+                      className={cn(
+                        'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                        isActive
+                          ? 'border-info/40 bg-info/10 text-info'
+                          : 'border-border bg-background/70 text-text-muted hover:bg-background hover:text-text-main'
+                      )}
+                    >
+                      <span>{lang === 'ar' ? cat.labelAr : cat.labelEn}</span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'text-[10px]',
+                          isActive ? 'bg-info/10 text-info border-info/30' : 'text-text-muted'
+                        )}
+                      >
+                        {cat.count}
+                      </Badge>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-4 space-y-4">
+        {selectedNoteCards.length > 0 ? (
+                  selectedNoteCards.map((note) => (
+                    <FindingCard
+                      key={note.id}
+                      mode="note"
+                      note={note}
+                      onToggleNoteReportVisibility={handleToggleNoteReportVisibility}
+                      onMarkNoteReviewed={handleMarkNoteReviewed}
+                      onEditNote={openNoteEditModal}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-xl border border-dashed border-info/30 bg-info/5 p-6 text-sm text-text-muted">
+                    {lang === 'ar'
+                      ? 'لا توجد ملاحظات في هذا التصنيف.'
+                      : 'No notes are available in this category.'}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Report hints: not violations but notes for director (e.g. Islamic rules when filming) */}
           {!showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0))) && (
             <>
@@ -3179,6 +3427,51 @@ export function Results() {
             </>
           )}
         </div>
+
+      <Modal
+        isOpen={!!noteEditModal}
+        onClose={() => setNoteEditModal(null)}
+        title={lang === 'ar' ? 'تعديل الملاحظة' : 'Edit note'}
+      >
+        {noteEditModal && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border bg-background/60 p-3">
+              <div className="text-[11px] text-text-muted mb-1">{lang === 'ar' ? 'التصنيف' : 'Category'}</div>
+              <div className="font-semibold text-text-main" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+                {NOTE_CATEGORY_ORDER.find((cat) => cat.key === noteEditModal.category)?.[lang === 'ar' ? 'labelAr' : 'labelEn'] ?? noteEditModal.category}
+              </div>
+            </div>
+            <Input
+              label={lang === 'ar' ? 'العنوان' : 'Title'}
+              value={noteEditForm.title}
+              onChange={(e) => setNoteEditForm((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder={lang === 'ar' ? 'اكتب عنوان الملاحظة' : 'Write the note title'}
+            />
+            <Textarea
+              label={lang === 'ar' ? 'الوصف' : 'Description'}
+              value={noteEditForm.description}
+              onChange={(e) => setNoteEditForm((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder={lang === 'ar' ? 'اكتب وصف الملاحظة' : 'Write the note description'}
+            />
+            <Textarea
+              label={lang === 'ar' ? 'تعليق المراجع' : 'Reviewer comment'}
+              value={noteEditForm.reviewerComment}
+              onChange={(e) => setNoteEditForm((prev) => ({ ...prev, reviewerComment: e.target.value }))}
+              placeholder={lang === 'ar' ? 'اكتب تعليق المراجع' : 'Write a reviewer comment'}
+            />
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
+              <Button variant="outline" onClick={() => setNoteEditModal(null)} disabled={noteEditSaving}>
+                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+              </Button>
+              <Button onClick={handleSaveNoteEdit} disabled={noteEditSaving}>
+                {noteEditSaving
+                  ? (lang === 'ar' ? 'جاري الحفظ…' : 'Saving…')
+                  : (lang === 'ar' ? 'حفظ الملاحظة' : 'Save note')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={checklistModalOpen}

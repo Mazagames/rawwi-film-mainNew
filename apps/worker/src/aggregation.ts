@@ -152,6 +152,126 @@ export type SummaryJson = {
     end_line_chunk?: number | null;
     page_numbers?: number[];
   }>;
+  notes_summary?: Array<{
+    category: string;
+    count: number;
+    items: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      comment: string | null;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+  }>;
+  notes?: {
+    media_credibility: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      comment: string | null;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+    medical_notes: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+    classified_documents: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+    security_scenes: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+    saudi_names: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+    commercial_entities: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+  };
   /** Separate light pass: words/phrases from glossary that appeared in the script — for "كلمات/عبارات للمراجعة" only. Does not affect violations. */
   words_to_revisit?: Array<{
     term: string;
@@ -1180,9 +1300,52 @@ type DbFinding = {
   canonical_hash?: string | null;
 };
 
+type DbNote = {
+  id?: string | null;
+  reviewer?: string | null;
+  category: string;
+  title: string;
+  description: string;
+  snippet: string;
+  event_id: number;
+  confidence: number | null;
+  status?: string | null;
+  included_in_report?: boolean | null;
+  reviewer_comment?: string | null;
+  reviewed_at?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
 const SEVERITIES = ["low", "medium", "high", "critical"] as const;
 const SEVERITY_ORDER: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
 const RATIONALE_FALLBACK = "يتطلب تقييم مراجع مختص.";
+const NOTE_CATEGORY_KEYS: Record<string, keyof NonNullable<SummaryJson["notes"]>> = {
+  "Media Credibility": "media_credibility",
+  "Medical Notes": "medical_notes",
+  "Classified Documents": "classified_documents",
+  "Security Scenes": "security_scenes",
+  "Saudi Names": "saudi_names",
+  "Commercial Entities": "commercial_entities",
+};
+const NOTE_CATEGORY_ORDER: Array<keyof NonNullable<SummaryJson["notes"]>> = [
+  "media_credibility",
+  "medical_notes",
+  "classified_documents",
+  "security_scenes",
+  "saudi_names",
+  "commercial_entities",
+];
+const NOTE_CATEGORY_LABELS: Record<keyof NonNullable<SummaryJson["notes"]>, string> = {
+  media_credibility: "Media Credibility",
+  medical_notes: "Medical Notes",
+  classified_documents: "Classified Documents",
+  security_scenes: "Security Scenes",
+  saudi_names: "Saudi Names",
+  commercial_entities: "Commercial Entities",
+};
+
+type NoteSummaryItem = NonNullable<SummaryJson["notes"]>[keyof NonNullable<SummaryJson["notes"]>][number];
 
 function findingTypeKey(source: string | null | undefined): "ai" | "manual" | "glossary" {
   if (source === "manual") return "manual";
@@ -1199,6 +1362,59 @@ function countFindingTypes(
     counts[findingTypeKey(finding.source)]++;
   }
   return counts;
+}
+
+function normalizeNoteCategoryKey(category: string): keyof NonNullable<SummaryJson["notes"]> {
+  const normalized = String(category ?? "").trim();
+  return NOTE_CATEGORY_KEYS[normalized] ?? "commercial_entities";
+}
+
+function buildNoteSummary(notes: DbNote[]): {
+  notes_summary: NonNullable<SummaryJson["notes_summary"]>;
+  notes: NonNullable<SummaryJson["notes"]>;
+} {
+  const groups = new Map<keyof NonNullable<SummaryJson["notes"]>, NoteSummaryItem[]>();
+  for (const note of notes) {
+    const key = normalizeNoteCategoryKey(note.category);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push({
+      id: note.id ?? null,
+      reviewer: note.reviewer ?? null,
+      category: note.category,
+      title: note.title,
+      description: note.description,
+      snippet: note.snippet,
+      event_id: note.event_id,
+      confidence: typeof note.confidence === "number" ? note.confidence : 0.7,
+      status: note.status ?? "new",
+      included_in_report: typeof note.included_in_report === "boolean" ? note.included_in_report : true,
+      comment: note.reviewer_comment ?? null,
+      reviewer_comment: note.reviewer_comment ?? null,
+      reviewed_at: note.reviewed_at ?? null,
+      updated_at: note.updated_at ?? null,
+      created_at: note.created_at ?? null,
+    });
+  }
+
+  const notes_summary = [...groups.entries()]
+    .map(([category, items]) => ({
+      category,
+      count: items.length,
+      items,
+    }))
+    .sort((a, b) => NOTE_CATEGORY_ORDER.indexOf(a.category as keyof NonNullable<SummaryJson["notes"]>) - NOTE_CATEGORY_ORDER.indexOf(b.category as keyof NonNullable<SummaryJson["notes"]>));
+
+  return {
+    notes_summary,
+    notes: {
+      media_credibility: groups.get("media_credibility") ?? [],
+      medical_notes: groups.get("medical_notes") ?? [],
+      classified_documents: groups.get("classified_documents") ?? [],
+      security_scenes: groups.get("security_scenes") ?? [],
+      saudi_names: groups.get("saudi_names") ?? [],
+      commercial_entities: groups.get("commercial_entities") ?? [],
+    },
+  };
 }
 
 function compareCanonicalItemsStable(
@@ -1384,6 +1600,7 @@ export function buildSummaryJson(
   scriptTitle?: string,
   analysisOptions?: AnalysisSummaryOptions | null,
   jobConfigMeta?: JobConfigMeta | null,
+  notes: DbNote[] = [],
 ): SummaryJson {
   const generated_at = new Date().toISOString();
   const filtered = findings.filter((f) => f.article_id !== OUT_OF_SCOPE_ARTICLE_ID);
@@ -1524,9 +1741,11 @@ export function buildSummaryJson(
 
   const canonical_findings = [...canonicalMap.values()].sort(compareCanonicalItemsStable);
   const report_hints: SummaryJson["report_hints"] = [];
+  const noteSummary = buildNoteSummary(notes);
   logger.info("[DEBUG] Aggregation canonicalization complete", {
     jobId,
     canonicalFindingCount: canonical_findings.length,
+    noteCount: notes.length,
     reportHintCount: report_hints.length,
   });
 
@@ -1743,6 +1962,8 @@ export function buildSummaryJson(
     canonical_findings,
     findings_by_canonical_atom,
     report_hints,
+    notes_summary: noteSummary.notes_summary,
+    notes: noteSummary.notes,
   };
 }
 
@@ -1846,6 +2067,34 @@ export function buildReportHtml(summary: SummaryJson): string {
   </section>`
       : "";
 
+  const notesHtml =
+    (s.notes_summary?.length ?? 0) > 0
+      ? `
+  <section>
+    <h2>٥ الملاحظات</h2>
+    <p>هذه الملاحظات مستقلة عن المخالفات وتُعرض حسب الفئة فقط.</p>
+    ${(s.notes_summary ?? [])
+      .map(
+        (group) => `
+    <div style="margin:1em 0; padding:0.75em; border:1px solid #d8b4fe; background:#faf5ff;">
+      <h3>${NOTE_CATEGORY_LABELS[group.category as keyof NonNullable<SummaryJson["notes"]>] ?? group.category}</h3>
+      <p>عدد الملاحظات: ${group.count}</p>
+      ${group.items
+        .map(
+          (note) => `
+      <div style="margin:0.75em 0; padding:0.5em; border:1px solid #ddd; background:#fff;">
+        <strong>${note.title}</strong> (المراجع: ${note.reviewer ?? "—"}, الثقة: ${note.confidence})<br/>
+        <em>الوصف:</em> ${note.description}<br/>
+        <em>الفقرة:</em> "${note.snippet}"
+      </div>`
+        )
+        .join("")}
+    </div>`
+      )
+      .join("")}
+  </section>`
+      : "";
+
   const revisitHtml =
     (s.words_to_revisit?.length ?? 0) > 0
       ? `
@@ -1893,6 +2142,7 @@ export function buildReportHtml(summary: SummaryJson): string {
     ${detailsHtml}
   </section>
   ${hintsHtml}
+  ${notesHtml}
   ${revisitHtml}
 </body>
 </html>`;
@@ -2144,7 +2394,18 @@ export async function runAggregation(jobId: string): Promise<void> {
     logger.error("Aggregation: failed to load findings", { jobId, error: findingsErr });
   }
 
+  const { data: notes, error: notesErr } = await supabase
+    .from("analysis_notes")
+    .select("id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: true });
+
+  if (notesErr) {
+    logger.warn("Aggregation: failed to load notes", { jobId, error: notesErr });
+  }
+
   const list = (findings ?? []) as DbFinding[];
+  const noteList = (notes ?? []) as DbNote[];
   await persistLineageEvents(
     list.map((finding) =>
       buildLineageEvent(finding, {
@@ -2158,6 +2419,7 @@ export async function runAggregation(jobId: string): Promise<void> {
   logger.info("Aggregation findings loaded", {
     jobId,
     findingsLoaded: list.length,
+    notesLoaded: noteList.length,
     severityBreakdown: {
       low: list.filter(f => f.severity === "low").length,
       medium: list.filter(f => f.severity === "medium").length,
@@ -2199,19 +2461,20 @@ export async function runAggregation(jobId: string): Promise<void> {
   }
   const summary = buildSummaryJson(
     jobId,
-    job.script_id,
-    list,
-    clientName,
-    scriptTitle,
-    analysisOptions,
-    {
-      analysis_engine: (job.config_snapshot as { analysis_engine?: string } | null)?.analysis_engine,
-      pipeline_version: (job.config_snapshot as { pipeline_version?: string } | null)?.pipeline_version,
-      violation_system_version: (job.config_snapshot as { violation_system_version?: string } | null)?.violation_system_version,
-      auditor_layer_version: (job.config_snapshot as { auditor_layer_version?: string } | null)?.auditor_layer_version,
-      deep_auditor_enabled: (job.config_snapshot as { deep_auditor_enabled?: boolean } | null)?.deep_auditor_enabled,
-    },
-  );
+      job.script_id,
+      list,
+      clientName,
+      scriptTitle,
+      analysisOptions,
+      {
+        analysis_engine: (job.config_snapshot as { analysis_engine?: string } | null)?.analysis_engine,
+        pipeline_version: (job.config_snapshot as { pipeline_version?: string } | null)?.pipeline_version,
+        violation_system_version: (job.config_snapshot as { violation_system_version?: string } | null)?.violation_system_version,
+        auditor_layer_version: (job.config_snapshot as { auditor_layer_version?: string } | null)?.auditor_layer_version,
+        deep_auditor_enabled: (job.config_snapshot as { deep_auditor_enabled?: boolean } | null)?.deep_auditor_enabled,
+      },
+      noteList,
+    );
   const totalChunks = Math.max(0, (((job as { progress_total?: number | null }).progress_total ?? 1) - 1));
   if ((job as { partial_finalize_requested?: boolean | null }).partial_finalize_requested) {
     const [doneChunks, pendingChunks, failedChunks] = await Promise.all([

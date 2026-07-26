@@ -10,8 +10,17 @@ import {
 import { getGlossarySentenceContext, type ViewerPageSlice } from "@/utils/findingContext";
 import { analysisStyles as s } from "./styles";
 import type { AnalysisPdfFinding } from "./mapper";
+import type { NoteCategoryKey, ReportNote } from "@/api/models";
 const A4_WIDTH = 595.28;
 const A4_HEIGHT = 841.89;
+const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
+  { key: "security_scenes", labelAr: "مشاهد أمنية", labelEn: "Security Scenes" },
+  { key: "saudi_names", labelAr: "أسماء سعودية", labelEn: "Saudi Names" },
+  { key: "commercial_entities", labelAr: "كيانات تجارية", labelEn: "Commercial Entities" },
+  { key: "medical_notes", labelAr: "ملاحظات طبية", labelEn: "Medical Notes" },
+  { key: "media_credibility", labelAr: "مصداقية الوسائط", labelEn: "Media Credibility" },
+  { key: "classified_documents", labelAr: "وثائق مصنفة", labelEn: "Classified Documents" },
+];
 
 export interface ScriptSummaryForPdf {
   synopsis_ar: string;
@@ -35,6 +44,7 @@ export interface AnalysisSectionPdfData {
   createdAt: string;
   findings: AnalysisPdfFinding[];
   reportHints?: AnalysisPdfFinding[];
+  notes?: Partial<Record<NoteCategoryKey, ReportNote[]>>;
   scriptSummary?: ScriptSummaryForPdf | null;
   wordsToRevisit?: RevisitMentionPdf[];
   viewerPages?: ViewerPageSlice[] | null;
@@ -78,6 +88,11 @@ export const AnalysisSectionPdf: React.FC<AnalysisSectionPdfProps> = ({
       confidence: f.confidence ?? 0,
       evidenceSnippet: f.evidenceSnippet ?? "",
     }));
+  const includedNotesByCategory = NOTE_CATEGORY_ORDER.map((category) => ({
+    ...category,
+    notes: (data.notes?.[category.key] ?? [])
+      .filter((note): note is ReportNote => Boolean(note) && note.included_in_report !== false),
+  })).filter((group) => group.notes.length > 0);
 
   const groups = safeFindings.reduce<Partial<Record<ViolationTypeId, AnalysisPdfFinding[]>>>((acc, f) => {
     const key =
@@ -223,6 +238,52 @@ export const AnalysisSectionPdf: React.FC<AnalysisSectionPdfProps> = ({
         );
             })
             .filter(Boolean)
+        )}
+
+        {includedNotesByCategory.length > 0 && (
+          <View style={{ marginTop: 16 }}>
+            <Text style={[s.sectionTitle, rtl]}>{isAr ? "الملاحظات" : "Notes"}</Text>
+            <Text style={[s.findingMeta, rtl]}>
+              {isAr
+                ? "هذه ملاحظات معلوماتية للمراجعة البشرية وليست مخالفات."
+                : "These are informational observations for human review, not violations."}
+            </Text>
+            {includedNotesByCategory.map((group) => (
+              <View key={group.key} style={{ marginTop: 10 }}>
+                <Text style={[s.articleHeader, rtl]}>
+                  {isAr ? group.labelAr : group.labelEn}
+                </Text>
+                {group.notes.map((note, idx) => (
+                  <View key={`${note.id}-${idx}`} style={[s.finding, { backgroundColor: "#f8fafc", borderColor: "#7dd3fc", marginTop: 8 }]}>
+                    <Text style={[s.findingTitle, rtl]}>{note.title || "—"}</Text>
+                    <Text style={[s.findingMeta, rtl]}>
+                      {isAr ? "الحدث: " : "Event: "}#{note.event_id}
+                    </Text>
+                    <Text style={[s.findingSnippet, rtl]}>
+                      {isAr ? "الفقرة: " : "Paragraph: "}
+                      "{note.snippet || "—"}"
+                    </Text>
+                    <Text style={[s.findingBody, rtl]}>
+                      {isAr ? "الوصف: " : "Description: "}{note.description || "—"}
+                    </Text>
+                    {(note.reviewer_comment ?? note.comment) ? (
+                      <Text style={[s.findingMeta, rtl]}>
+                        {isAr ? "ملاحظة المراجع: " : "Reviewer comment: "}{note.reviewer_comment ?? note.comment}
+                      </Text>
+                    ) : null}
+                    <View style={[s.findingChipsRow, { flexDirection: isAr ? "row-reverse" : "row" }]}>
+                      <Text style={[s.chip, s.chipInfo]}>{isAr ? "ملاحظة" : "Note"}</Text>
+                      <Text style={[s.chip, s.chipInfo]}>{isAr ? "الثقة" : "Conf"} {Math.round((note.confidence || 0) * 100)}%</Text>
+                      <Text style={[s.chip, s.chipInfo]}>
+                        {note.included_in_report === false ? (isAr ? "مستبعد" : "Excluded") : (isAr ? "مضمن" : "Included")}
+                      </Text>
+                      {note.status ? <Text style={[s.chip, s.chipInfo]}>{note.status}</Text> : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
         )}
 
         {safeReportHints.length > 0 && (

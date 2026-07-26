@@ -86,6 +86,28 @@ export const judgeOutputSchema = z.object({
 export type JudgeFinding = z.infer<typeof judgeFindingSchema>;
 export type JudgeOutput = z.infer<typeof judgeOutputSchema>;
 
+const noteConfidenceSchema = z.preprocess(toNullableNumber, z.number().min(0).max(1).optional().nullable())
+  .transform((v) => (typeof v === "number" ? Math.max(0, Math.min(1, v)) : 0.7));
+
+export const noteSchema = z.object({
+  reviewer: z.string().optional().nullable().transform((v) => v ?? null),
+  category: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  snippet: z.string().min(1),
+  event_id: z.preprocess(toNullableNumber, z.number().int().min(1)),
+  confidence: noteConfidenceSchema.optional().nullable().transform((v) => (typeof v === "number" ? Math.max(0, Math.min(1, v)) : 0.7)),
+  status: z.string().optional().nullable().transform((v) => v ?? "new"),
+  included_in_report: z.boolean().optional().nullable().transform((v) => v ?? true),
+});
+
+export const noteOutputSchema = z.object({
+  notes: z.array(noteSchema),
+});
+
+export type NoteItem = z.infer<typeof noteSchema>;
+export type NoteOutput = z.infer<typeof noteOutputSchema>;
+
 const auditorRulingSchema = z.enum(["violation", "needs_review", "context_ok"]);
 const confidenceSchema = z.preprocess(toNullableNumber, z.number().min(0).max(1).nullable().optional())
   .transform((v) => (typeof v === "number" ? Math.max(0, Math.min(1, v)) : null));

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useLangStore } from '@/store/langStore';
 import { Finding } from '@/store/dataStore';
 import { useAuthStore } from '@/store/authStore';
@@ -7,15 +8,36 @@ import { useNavigate } from 'react-router-dom';
 import { Badge } from './Badge';
 import { Button } from './Button';
 import { cn } from '@/utils/cn';
-import { ShieldAlert, AlertTriangle, AlertCircle, Edit2, RotateCcw, MapPin, EyeOff, CheckCircle, ExternalLink } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, AlertCircle, Edit2, RotateCcw, MapPin, EyeOff, CheckCircle, ExternalLink, MoreVertical } from 'lucide-react';
 import { getViolationTypeIdFromLegacyPolicyArticle, resolveViolationTypeId, violationTypeLabel } from '@/data/violationTypes';
 import { displayPageForFinding } from '@/utils/viewerPageFromOffset';
 import { formatResolvedSceneLabel, resolveSceneLabelFromOffset } from '@/utils/sceneLabelFromOffset';
 
+export interface NoteCardData {
+  id: string;
+  category: string;
+  title: string;
+  description: string;
+  snippet: string;
+  eventId: number;
+  reviewer?: string | null;
+  confidence?: number | null;
+  status?: string | null;
+  includedInReport?: boolean;
+  reviewerComment?: string | null;
+  reviewedAt?: string | null;
+  createdAt?: string | null;
+}
+
 interface FindingCardProps {
-  finding: Finding;
+  finding?: Finding;
+  note?: NoteCardData;
+  mode?: 'finding' | 'note';
   onOverrideClick?: (finding: Finding) => void;
   onRestoreClick?: (finding: Finding) => void;
+  onToggleNoteReportVisibility?: (note: NoteCardData) => void;
+  onMarkNoteReviewed?: (note: NoteCardData) => void;
+  onEditNote?: (note: NoteCardData) => void;
   /** When set with finding.startOffsetGlobal, page label matches workspace viewer. */
   scriptViewerPages?: Array<{ pageNumber: number; content: string }> | null;
 }
@@ -27,50 +49,94 @@ const severityConfig: Record<string, { icon: any, color: string, bg: string, str
   Low: { icon: AlertCircle, color: 'text-info', bg: 'bg-info-50', strip: 'bg-info' },
 };
 
-export function FindingCard({ finding, onOverrideClick, onRestoreClick, scriptViewerPages }: FindingCardProps) {
+export function FindingCard({
+  finding,
+  note,
+  mode,
+  onOverrideClick,
+  onRestoreClick,
+  onToggleNoteReportVisibility,
+  onMarkNoteReviewed,
+  onEditNote,
+  scriptViewerPages,
+}: FindingCardProps) {
   const { lang, t } = useLangStore();
   const { user } = useAuthStore();
   const { settings } = useSettingsStore();
   const navigate = useNavigate();
   const isAdminOrRegulator = user?.role === 'Super Admin' || user?.role === 'Regulator' || user?.role === 'Admin';
+  const isNoteCard = mode === 'note' || Boolean(note);
+  const [noteMenuOpen, setNoteMenuOpen] = useState(false);
+
+  if (isNoteCard && !note) return null;
+  if (!isNoteCard && !finding) return null;
+
+  useEffect(() => {
+    if (!noteMenuOpen) return;
+    const handlePointer = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.(`[data-note-menu="${note?.id ?? ''}"]`)) return;
+      setNoteMenuOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setNoteMenuOpen(false);
+    };
+    window.addEventListener('mousedown', handlePointer);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('mousedown', handlePointer);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [noteMenuOpen, note?.id]);
   
   // Visibility Logic: Owner/Reviewer should not see 'hidden_from_owner'
-  if (!isAdminOrRegulator && finding.override?.eventType === 'hidden_from_owner') {
+  if (!isNoteCard && finding && !isAdminOrRegulator && finding.override?.eventType === 'hidden_from_owner') {
     return null;
   }
 
-  const isOverriddenNotViolation = finding.override?.eventType === 'not_violation';
-  const isHiddenFromOwner = finding.override?.eventType === 'hidden_from_owner';
+  const isOverriddenNotViolation = !isNoteCard && finding?.override?.eventType === 'not_violation';
+  const isHiddenFromOwner = !isNoteCard && finding?.override?.eventType === 'hidden_from_owner';
   const enableHiddenOverrides = settings?.features?.enableHiddenOverrides !== false;
   const showHiddenFromOwner = isHiddenFromOwner && enableHiddenOverrides;
 
   // Strip Color Logic
-  let stripColor = severityConfig[finding.severity].strip;
+  let stripColor = isNoteCard ? 'bg-info' : severityConfig[finding!.severity].strip;
   if (isOverriddenNotViolation) stripColor = 'bg-success';
   if (showHiddenFromOwner) stripColor = 'bg-text-muted';
 
-  const SevIcon = severityConfig[finding.severity].icon;
+  const SevIcon = isNoteCard ? AlertCircle : severityConfig[finding!.severity].icon;
 
-  const displayPage = displayPageForFinding(
-    finding.startOffsetGlobal,
-    scriptViewerPages ?? null,
-    finding.pageNumber != null && Number.isFinite(Number(finding.pageNumber)) ? Number(finding.pageNumber) : null
-  );
-  const resolvedViolationType =
-    getViolationTypeIdFromLegacyPolicyArticle(finding.articleId, finding.subAtomId ?? null)
-    ?? resolveViolationTypeId(finding.titleAr)
-    ?? resolveViolationTypeId(finding.descriptionAr)
-    ?? resolveViolationTypeId(finding.evidenceSnippet)
-    ?? resolveViolationTypeId(finding.excerpt);
-  const titleLabel = resolvedViolationType
-    ? violationTypeLabel(resolvedViolationType, lang)
-    : (lang === 'ar' ? finding.titleAr || 'ملاحظة' : finding.titleEn || 'Finding');
-  const resolvedSceneLabel = formatResolvedSceneLabel(
-    resolveSceneLabelFromOffset(finding.startOffsetGlobal, scriptViewerPages ?? null),
-    lang
-  );
+  const displayPage = !isNoteCard
+    ? displayPageForFinding(
+        finding!.startOffsetGlobal,
+        scriptViewerPages ?? null,
+        finding!.pageNumber != null && Number.isFinite(Number(finding!.pageNumber)) ? Number(finding!.pageNumber) : null
+      )
+    : null;
+  const resolvedViolationType = !isNoteCard
+    ? getViolationTypeIdFromLegacyPolicyArticle(finding!.articleId, finding!.subAtomId ?? null)
+      ?? resolveViolationTypeId(finding!.titleAr)
+      ?? resolveViolationTypeId(finding!.descriptionAr)
+      ?? resolveViolationTypeId(finding!.evidenceSnippet)
+      ?? resolveViolationTypeId(finding!.excerpt)
+    : null;
+  const titleLabel = isNoteCard
+    ? (note!.title || 'Note')
+    : resolvedViolationType
+      ? violationTypeLabel(resolvedViolationType, lang)
+      : (lang === 'ar' ? finding!.titleAr || 'ملاحظة' : finding!.titleEn || 'Finding');
+  const resolvedSceneLabel = !isNoteCard
+    ? formatResolvedSceneLabel(
+        resolveSceneLabelFromOffset(finding!.startOffsetGlobal, scriptViewerPages ?? null),
+        lang
+      )
+    : null;
 
   const getLocationString = () => {
+    if (isNoteCard) {
+      return `${lang === 'ar' ? 'الحدث' : 'Event'} #${note!.eventId}`;
+    }
+    if (!finding) return t('unknownLocation');
     const page = displayPage ?? finding.location?.page;
     if (!finding.location && page == null) return t('unknownLocation');
     const parts = [];
@@ -101,56 +167,89 @@ export function FindingCard({ finding, onOverrideClick, onRestoreClick, scriptVi
             </div>
             
             <div className="flex flex-wrap items-center gap-2 mt-2">
-              {/* Severity Badge */}
-              <div className={cn(
-                "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold border",
-                severityConfig[finding.severity].bg,
-                severityConfig[finding.severity].color,
-                "border-current/20",
-                isOverriddenNotViolation && "opacity-60"
-              )}>
-                <SevIcon className="w-3.5 h-3.5" />
-                <span className={cn(isOverriddenNotViolation && "line-through")}>
-                  {finding.severity}
-                </span>
-              </div>
-              
-              {/* Source Badge */}
-              <Badge variant={finding.source === 'ai' ? 'default' : finding.source === 'lexicon_mandatory' ? 'error' : 'outline'} className="text-[10px]">
-                {finding.source === 'ai' ? 'AI' : finding.source === 'lexicon_mandatory' ? t('findingSourceGlossary') : t('manualFinding')}
-              </Badge>
+              {isNoteCard ? (
+                <>
+                  <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">
+                    {note!.category}
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] text-text-muted border-border/60">
+                    {note!.includedInReport === false ? (lang === 'ar' ? 'مستبعد' : 'Excluded') : (lang === 'ar' ? 'مضمن' : 'Included')}
+                  </Badge>
+                  {note!.reviewer && (
+                    <Badge variant="outline" className="text-[10px] text-text-muted border-border/60">
+                      {lang === 'ar' ? 'المراجع' : 'Reviewer'}: {note!.reviewer}
+                    </Badge>
+                  )}
+                  {note!.confidence != null && (
+                    <Badge variant="outline" className="text-[10px] text-text-muted border-border/60">
+                      {lang === 'ar' ? 'ثقة' : 'Conf'} {Math.round((note!.confidence ?? 0) * 100)}%
+                    </Badge>
+                  )}
+                  {note!.status && (
+                    <Badge variant="outline" className="text-[10px] text-text-muted border-border/60">
+                      {note!.status}
+                    </Badge>
+                  )}
+                  {note!.reviewedAt && (
+                    <Badge variant="outline" className="text-[10px] text-text-muted border-border/60">
+                      {lang === 'ar' ? 'مراجعة' : 'Reviewed'}
+                    </Badge>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Severity Badge */}
+                  <div className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold border",
+                    severityConfig[finding!.severity].bg,
+                    severityConfig[finding!.severity].color,
+                    "border-current/20",
+                    isOverriddenNotViolation && "opacity-60"
+                  )}>
+                    <SevIcon className="w-3.5 h-3.5" />
+                    <span className={cn(isOverriddenNotViolation && "line-through")}>
+                      {finding!.severity}
+                    </span>
+                  </div>
 
-              {/* Override Badges */}
-              {isOverriddenNotViolation && (
-                <Badge variant="success" className="text-xs flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" />
-                  {t('overriddenOk')}
-                </Badge>
-              )}
-              {showHiddenFromOwner && (
-                <Badge variant="outline" className="text-xs flex items-center gap-1 text-text-muted">
-                  <EyeOff className="w-3 h-3" />
-                  {t('hiddenOwner')}
-                </Badge>
+                  {/* Source Badge */}
+                  <Badge variant={finding!.source === 'ai' ? 'default' : finding!.source === 'lexicon_mandatory' ? 'error' : 'outline'} className="text-[10px]">
+                    {finding!.source === 'ai' ? 'AI' : finding!.source === 'lexicon_mandatory' ? t('findingSourceGlossary') : t('manualFinding')}
+                  </Badge>
+
+                  {/* Override Badges */}
+                  {isOverriddenNotViolation && (
+                    <Badge variant="success" className="text-xs flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      {t('overriddenOk')}
+                    </Badge>
+                  )}
+                  {showHiddenFromOwner && (
+                    <Badge variant="outline" className="text-xs flex items-center gap-1 text-text-muted">
+                      <EyeOff className="w-3 h-3" />
+                      {t('hiddenOwner')}
+                    </Badge>
+                  )}
+                </>
               )}
             </div>
           </div>
 
           {/* Admin Controls (Hidden in Print) */}
-          {isAdminOrRegulator && (
+          {!isNoteCard && isAdminOrRegulator && (
             <div className="flex gap-2 print:hidden">
-              {!finding.override ? (
-                <Button variant="outline" size="sm" onClick={() => onOverrideClick?.(finding)} className="h-8 text-xs">
+              {!finding!.override ? (
+                <Button variant="outline" size="sm" onClick={() => onOverrideClick?.(finding!)} className="h-8 text-xs">
                   <Edit2 className="w-3 h-3 me-1.5" />
                   {t('editStatus')}
                 </Button>
               ) : (
                 <>
-                  <Button variant="ghost" size="sm" onClick={() => onRestoreClick?.(finding)} className="h-8 text-xs text-error hover:bg-error-50 hover:text-error-700">
+                  <Button variant="ghost" size="sm" onClick={() => onRestoreClick?.(finding!)} className="h-8 text-xs text-error hover:bg-error-50 hover:text-error-700">
                     <RotateCcw className="w-3 h-3 me-1.5" />
                     {t('restoreOriginal')}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => onOverrideClick?.(finding)} className="h-8 text-xs">
+                  <Button variant="outline" size="sm" onClick={() => onOverrideClick?.(finding!)} className="h-8 text-xs">
                     <Edit2 className="w-3 h-3 me-1.5" />
                     {t('updateOverride')}
                   </Button>
@@ -158,30 +257,94 @@ export function FindingCard({ finding, onOverrideClick, onRestoreClick, scriptVi
               )}
             </div>
           )}
+          {isNoteCard && (
+            <div className="relative flex gap-2 print:hidden">
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-text-muted hover:bg-surface"
+                onClick={() => setNoteMenuOpen((prev) => !prev)}
+                aria-label={lang === 'ar' ? 'خيارات الملاحظة' : 'Note actions'}
+                data-note-menu={note!.id}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+              {noteMenuOpen && (
+                <div className="absolute end-0 top-10 z-20 min-w-[220px] rounded-md border border-border bg-background p-1 shadow-lg" data-note-menu={note!.id}>
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-start text-xs hover:bg-surface"
+                    onClick={() => {
+                      onToggleNoteReportVisibility?.(note!);
+                      setNoteMenuOpen(false);
+                    }}
+                  >
+                    {note!.includedInReport === false
+                      ? (lang === 'ar' ? 'تضمين في التقرير' : 'Include in final report')
+                      : (lang === 'ar' ? 'استبعاد من التقرير' : 'Exclude from final report')}
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-start text-xs hover:bg-surface"
+                    onClick={() => {
+                      onMarkNoteReviewed?.(note!);
+                      setNoteMenuOpen(false);
+                    }}
+                  >
+                    {lang === 'ar' ? 'اعتماد كمراجَع' : 'Mark as reviewed'}
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-start text-xs hover:bg-surface"
+                    onClick={() => {
+                      onEditNote?.(note!);
+                      setNoteMenuOpen(false);
+                    }}
+                  >
+                    {lang === 'ar' ? 'تعديل العنوان والوصف' : 'Edit title & description'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Override Reason Block */}
-        {finding.override && (
+        {!isNoteCard && finding!.override && (
           <div className="mb-4 bg-background rounded-lg p-3 border border-border text-sm">
             <div className="flex justify-between items-start mb-1">
               <span className="font-semibold text-text-main">{t('overrideReason')}</span>
               <div className="text-xs text-text-muted flex gap-3">
-                <span><span className="font-medium">{t('byUser')}</span> {finding.override.byUser}</span>
-                <span>{formatDate(new Date(finding.override.createdAt), { lang, format: settings?.platform?.dateFormat })}</span>
+                <span><span className="font-medium">{t('byUser')}</span> {finding!.override!.byUser}</span>
+                <span>{formatDate(new Date(finding!.override!.createdAt), { lang, format: settings?.platform?.dateFormat })}</span>
               </div>
             </div>
-            <p className="text-text-muted">{finding.override.reason}</p>
+            <p className="text-text-muted">{finding!.override!.reason}</p>
           </div>
         )}
 
         {/* Description */}
         <div className="mb-4">
           <span className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1 block">
-            {t('findingDescription')}
+            {isNoteCard ? (lang === 'ar' ? 'الوصف' : 'Description') : t('findingDescription')}
           </span>
+          {isNoteCard && (
+            <div className="mb-2 inline-flex rounded-full border border-info/30 bg-info/10 px-2.5 py-1 text-[11px] font-semibold text-info">
+              {lang === 'ar' ? 'هذه ملاحظة. ليست مخالفة.' : 'This is a Note. Not a violation.'}
+            </div>
+          )}
           <p className="text-sm text-text-main leading-relaxed">
-            {lang === 'ar' ? finding.descriptionAr : (finding.descriptionEn || finding.descriptionAr)}
+            {isNoteCard
+              ? note!.description
+              : lang === 'ar'
+                ? finding!.descriptionAr
+                : (finding!.descriptionEn || finding!.descriptionAr)}
           </p>
+          {isNoteCard && note!.reviewerComment && (
+            <p className="mt-2 text-xs text-text-muted">
+              <span className="font-semibold text-text-main">{lang === 'ar' ? 'ملاحظة المراجع:' : 'Reviewer comment:'}</span>{' '}
+              {note!.reviewerComment}
+            </p>
+          )}
         </div>
 
         {/* Evidence & Location */}
@@ -191,22 +354,24 @@ export function FindingCard({ finding, onOverrideClick, onRestoreClick, scriptVi
               <MapPin className="w-3.5 h-3.5" />
               <span className="font-medium">{getLocationString()}</span>
             </div>
-            <button 
-              onClick={() => {
-                const pg = displayPage ?? (finding.pageNumber != null && finding.pageNumber > 0 ? finding.pageNumber : null);
-                const p = pg != null ? `?page=${pg}` : '';
-                navigate(`/workspace/${finding.scriptId}${p}#highlight-${finding.id}`);
-              }}
-              className="flex items-center gap-1 hover:text-primary transition-colors font-medium print:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 rounded-md px-1"
-              aria-label={lang === 'ar' ? 'الذهاب للموقع' : 'Jump to location'}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              {lang === 'ar' ? 'الذهاب للموقع' : 'Jump to location'}
-            </button>
+            {!isNoteCard && (
+              <button
+                onClick={() => {
+                  const pg = displayPage ?? (finding!.pageNumber != null && finding!.pageNumber > 0 ? finding!.pageNumber : null);
+                  const p = pg != null ? `?page=${pg}` : '';
+                  navigate(`/workspace/${finding!.scriptId}${p}#highlight-${finding!.id}`);
+                }}
+                className="flex items-center gap-1 hover:text-primary transition-colors font-medium print:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 rounded-md px-1"
+                aria-label={lang === 'ar' ? 'الذهاب للموقع' : 'Jump to location'}
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                {lang === 'ar' ? 'الذهاب للموقع' : 'Jump to location'}
+              </button>
+            )}
           </div>
           <div className="p-4">
             <blockquote className="border-s-2 border-primary/50 ps-4 text-sm font-medium text-text-main italic leading-relaxed" dir="rtl">
-              "{finding.evidenceSnippet || finding.excerpt}"
+              "{isNoteCard ? note!.snippet : (finding!.evidenceSnippet || finding!.excerpt)}"
             </blockquote>
           </div>
         </div>

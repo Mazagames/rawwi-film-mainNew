@@ -21,6 +21,19 @@ type DbFinding = {
   location: unknown;
 };
 
+type DbNote = {
+  reviewer: string;
+  category: string;
+  title: string;
+  description: string;
+  snippet: string;
+  event_id: number;
+  confidence: number;
+  status: string;
+  included_in_report: boolean;
+  created_at?: string | null;
+};
+
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
 }
@@ -107,12 +120,50 @@ function testCrossArticleOverlapKeepsOwnershipSeparate() {
   console.log("✓ Cross-article overlaps keep article ownership separate");
 }
 
+function testNotesAreGroupedSeparately() {
+  const findings: DbFinding[] = [
+    { article_id: 5, atom_id: "5-1", severity: "medium", confidence: 0.9, title_ar: "x", description_ar: "", evidence_snippet: "a", start_offset_global: 0, end_offset_global: 1, start_line_chunk: null, end_line_chunk: null, location: {} },
+  ];
+  const notes: DbNote[] = [
+    {
+      reviewer: "note_saudi_names",
+      category: "Saudi Names",
+      title: "اسم",
+      description: "وصف",
+      snippet: "فقرة",
+      event_id: 12,
+      confidence: 0.8,
+      status: "new",
+      included_in_report: true,
+    },
+    {
+      reviewer: "notes_security_scenes",
+      category: "Security Scenes",
+      title: "مشهد",
+      description: "وصف آخر",
+      snippet: "فقرة أخرى",
+      event_id: 13,
+      confidence: 0.7,
+      status: "new",
+      included_in_report: false,
+    },
+  ];
+  const summary = buildSummaryJson("job1", "script1", findings, undefined, undefined, undefined, undefined, notes);
+  assert(Array.isArray(summary.notes_summary), "notes_summary should exist");
+  assert((summary.notes?.saudi_names ?? []).length === 1, "Saudi names note should be grouped separately");
+  assert((summary.notes?.security_scenes ?? []).length === 1, "Security scenes note should be grouped separately");
+  assert(summary.notes_summary?.some((group) => group.category === "saudi_names"), "notes_summary should include saudi_names");
+  assert(summary.notes_summary?.some((group) => group.category === "security_scenes"), "notes_summary should include security_scenes");
+  console.log("✓ Notes are grouped separately from violations");
+}
+
 async function main() {
   testArticleOrder();
   testDedup();
   testArticle26Excluded();
   testSummaryHasFindingsByArticle();
   testCrossArticleOverlapKeepsOwnershipSeparate();
+  testNotesAreGroupedSeparately();
   console.log("\nAll aggregation tests passed.");
 }
 

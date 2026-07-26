@@ -2,6 +2,7 @@ import React from "react";
 import { Document, Image, Page, Text, View } from "@react-pdf/renderer";
 import { formatDate, formatDateLong } from "@/utils/dateFormat";
 import { resolveViolationTypeId, violationTypeLabel, violationTypesForChecklist, type ViolationTypeId } from "@/data/violationTypes";
+import type { NoteCategoryKey, ReportNote } from "@/api/models";
 import { quickAnalysisStyles as s } from "./styles";
 import type { QuickAnalysisPdfFinding } from "./mapper";
 
@@ -21,16 +22,26 @@ type QuickPdfHint = {
   rationale?: string | null;
 };
 
+const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
+  { key: "security_scenes", labelAr: "مشاهد أمنية", labelEn: "Security Scenes" },
+  { key: "saudi_names", labelAr: "أسماء سعودية", labelEn: "Saudi Names" },
+  { key: "commercial_entities", labelAr: "كيانات تجارية", labelEn: "Commercial Entities" },
+  { key: "medical_notes", labelAr: "ملاحظات طبية", labelEn: "Medical Notes" },
+  { key: "media_credibility", labelAr: "مصداقية الوسائط", labelEn: "Media Credibility" },
+  { key: "classified_documents", labelAr: "وثائق مصنفة", labelEn: "Classified Documents" },
+];
+
 export const QuickAnalysisPdf: React.FC<{
   scriptTitle: string;
   createdAt: string;
   findings: QuickAnalysisPdfFinding[];
   reportHints?: QuickPdfHint[];
+  notes?: Partial<Record<NoteCategoryKey, ReportNote[]>>;
   lang: "ar" | "en";
   dateFormat?: string;
   logoUrl?: string;
   coverImageDataUrl?: string | null;
-}> = ({ scriptTitle, createdAt, findings, reportHints = [], lang, dateFormat, logoUrl, coverImageDataUrl }) => {
+}> = ({ scriptTitle, createdAt, findings, reportHints = [], notes = {}, lang, dateFormat, logoUrl, coverImageDataUrl }) => {
   const isAr = lang === "ar";
   const rtl = isAr ? s.rtl : {};
   const safeFindings = (findings || []).filter(Boolean).map((f, idx) => ({
@@ -58,6 +69,7 @@ export const QuickAnalysisPdf: React.FC<{
     return acc;
   }, { ai: 0, manual: 0, glossary: 0 });
   const specialNotesCount = reportHints.length;
+  const totalNotes = NOTE_CATEGORY_ORDER.reduce((sum, key) => sum + (notes[key.key]?.length ?? 0), 0);
   const sourceLabel = (source?: string) => source === "manual" ? (isAr ? "يدوي" : "Manual") : source === "lexicon_mandatory" || source === "glossary" ? (isAr ? "معجم" : "Glossary") : (isAr ? "تحليل آلي" : "AI Analysis");
   const categoryOrder = violationTypesForChecklist();
   return (
@@ -90,6 +102,7 @@ export const QuickAnalysisPdf: React.FC<{
           <View style={s.statCard}><Text style={s.statValue}>{typeCounts.glossary}</Text><Text style={s.statLabel}>{isAr ? "مطابقات القاموس" : "Glossary findings"}</Text></View>
           <View style={s.statCard}><Text style={s.statValue}>{typeCounts.manual}</Text><Text style={s.statLabel}>{isAr ? "ملاحظات يدوية" : "Manual findings"}</Text></View>
           <View style={s.statCard}><Text style={s.statValue}>{specialNotesCount}</Text><Text style={s.statLabel}>{isAr ? "ملاحظات خاصة" : "Special notes"}</Text></View>
+          <View style={s.statCard}><Text style={s.statValue}>{totalNotes}</Text><Text style={s.statLabel}>{isAr ? "ملاحظات" : "Notes"}</Text></View>
         </View>
         <Text style={[s.sectionTitle, rtl]}>{isAr ? "تفاصيل القضايا" : "Findings Details"}</Text>
         {Object.keys(groups).length === 0 ? (
@@ -176,6 +189,40 @@ export const QuickAnalysisPdf: React.FC<{
                 <Text style={[s.findingRationaleText, rtl]}>{f.rationale ?? "—"}</Text>
               </View>
             ))}
+          </View>
+        )}
+
+        {totalNotes > 0 && (
+          <View style={{ marginTop: 16 }}>
+            <Text style={[s.sectionTitle, rtl]}>{isAr ? "الملاحظات" : "Notes"}</Text>
+            {NOTE_CATEGORY_ORDER.map((category) => {
+              const categoryNotes = notes[category.key] ?? [];
+              if (categoryNotes.length === 0) return null;
+              return (
+                <View key={category.key} style={{ marginTop: 12 }}>
+                  <Text style={[s.findingTitle, rtl]}>
+                    {isAr ? category.labelAr : category.labelEn}
+                  </Text>
+                  {categoryNotes.map((note, idx) => (
+                    <View key={`${category.key}-${note.id ?? idx}`} style={[s.finding, { backgroundColor: "#f8fafc", borderColor: "#bae6fd", marginTop: 8 }]}>
+                      <Text style={[s.findingTitle, rtl]}>{note.title || "—"}</Text>
+                      <Text style={[s.findingSnippet, rtl]}>
+                        {isAr ? "الحدث: " : "Event: "}{note.event_id}
+                      </Text>
+                      <Text style={[s.findingSnippet, rtl]}>
+                        {isAr ? "النص: " : "Text: "}"{note.snippet || "—"}"
+                      </Text>
+                      <Text style={[s.findingMeta, rtl]}>{note.description || "—"}</Text>
+                      {(note.reviewer_comment ?? note.comment) ? (
+                        <Text style={[s.findingMeta, rtl]}>
+                          {isAr ? "ملاحظة المراجع: " : "Reviewer comment: "}{note.reviewer_comment ?? note.comment}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
           </View>
         )}
       </Page>

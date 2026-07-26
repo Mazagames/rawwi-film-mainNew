@@ -17,6 +17,7 @@ import { buildRouterTraceSummary, callJudgeRaw, callRouter, parseJudgeWithRepair
 import { config } from "./config.js";
 import { isValidAtomForArticle, normalizeAtomId } from "./policyMap.js";
 import type { JudgeFinding } from "./schemas.js";
+import { runNotesDetection, toNoteInsertRows } from "./noteDetection.js";
 import { getScriptStandardRouterList } from "./gcam.js";
 import { ROUTER_SYSTEM_MSG, JUDGE_SYSTEM_MSG, injectLexiconIntoPrompts, PROMPT_VERSIONS } from "./aiConstants.js";
 import { runMultiPassDetection, DETECTION_PASSES, planDetectionPassExecution, type LexiconTerm } from "./multiPassJudge.js";
@@ -2942,6 +2943,70 @@ export async function processChunkJudge(
     multiPassEventUnderstanding: multiPassEventUnderstanding ? structuredClone(multiPassEventUnderstanding) : null,
     multiPassPassResults: structuredClone(multiPassPassResults),
   });
+
+  if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
+    try {
+      const noteDetectionResult = await runNotesDetection(
+        chunk.text,
+        multiPassEventUnderstanding,
+        { temperature, seed: seed ?? 0 },
+        {
+          jobId,
+          chunkId: chunk.id,
+          signal,
+        },
+      );
+
+      const noteRows = toNoteInsertRows(jobId, noteDetectionResult.notes);
+      logger.info("Notes pipeline completed", {
+        jobId,
+        chunkId: chunk.id,
+        noteCount: noteRows.length,
+        executedPassCount: noteDetectionResult.executedPassCount,
+        skippedPassCount: noteDetectionResult.skippedPassCount,
+        totalDurationMs: noteDetectionResult.totalDuration,
+      });
+
+      if (noteRows.length > 0) {
+        const { data: insertedNotes, error: notesError } = await withOperationTimeout<{
+          data: Array<{ id: string }> | null;
+          error: { message: string } | null;
+        }>(
+          "Upsert analysis_notes",
+          NON_CRITICAL_DB_TIMEOUT_MS,
+          supabase
+            .from("analysis_notes")
+            .upsert(noteRows, {
+              onConflict: "job_id,reviewer,event_id,category,title",
+              ignoreDuplicates: false,
+            })
+            .select("id")
+        );
+
+        if (notesError) {
+          logger.warn("Notes upsert failed", {
+            jobId,
+            chunkId: chunk.id,
+            error: notesError.message,
+            noteCount: noteRows.length,
+          });
+        } else {
+          logger.info("Notes upsert complete", {
+            jobId,
+            chunkId: chunk.id,
+            inserted: insertedNotes?.length ?? 0,
+            noteCount: noteRows.length,
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn("Notes pipeline failed but analysis will continue", {
+        jobId,
+        chunkId: chunk.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   throwIfAborted(signal);
   await setChunkPhase(chunk.id, "aggregating");
