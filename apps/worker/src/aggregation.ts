@@ -20,6 +20,7 @@ import { containsAnyNormalized } from "./textDetectionNormalize.js";
 import { normalizeReviewFindingConsistency } from "./reviewFindingConsistency.js";
 import { buildLineageEvent, persistLineageEvents } from "./findingLineage.js";
 import { traceFindingPipelineStage, traceFindingPipelineSummary, type FindingPipelineTraceSnapshot } from "./findingPipelineTrace.js";
+import { emitPipelineTelemetryBlock, recordTelemetryFromSummary } from "./pipelineTelemetry.js";
 
 export type SummaryJson = {
   job_id: string;
@@ -2577,6 +2578,14 @@ export async function runAggregation(jobId: string): Promise<void> {
 
   const reportHtml = buildReportHtml(summary);
 
+  recordTelemetryFromSummary({
+    jobId,
+    stageName: "aggregation",
+    inputCount: findings.length,
+    summaryArticles: summary.findings_by_article ?? [],
+    noteSummary: Object.fromEntries((noteSummary.notes_summary ?? []).map((entry) => [entry.category, entry.count])),
+  });
+
   logger.info("[DEBUG] Aggregation report payload ready", {
     jobId,
     findingsCount: summary.totals.findings_count,
@@ -2665,6 +2674,14 @@ export async function runAggregation(jobId: string): Promise<void> {
     throw new Error("Aggregation report upsert returned no usable row");
   }
 
+  recordTelemetryFromSummary({
+    jobId,
+    stageName: "report",
+    inputCount: summary.findings_by_article?.reduce((total, article) => total + (article.top_findings?.length ?? 0), 0) ?? 0,
+    summaryArticles: summary.findings_by_article ?? [],
+    noteSummary: Object.fromEntries((noteSummary.notes_summary ?? []).map((entry) => [entry.category, entry.count])),
+  });
+
   if (reportId) {
     await persistLineageEvents(
       list.map((finding) =>
@@ -2742,4 +2759,5 @@ export async function runAggregation(jobId: string): Promise<void> {
   });
   traceFindingPipelineSummary(jobId, jobId);
   clearCachedJobResources(jobId);
+  emitPipelineTelemetryBlock({ jobId });
 }

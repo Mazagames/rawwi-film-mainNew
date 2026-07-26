@@ -28,6 +28,7 @@ import { buildReviewerBenchmarkHtml, buildReviewerBenchmarkReport, toReviewerBen
 import { buildValidatorAuditHtml, buildValidatorAuditReport, toValidatorAuditLog } from "./validatorAudit.js";
 import { buildReviewerTraceReport, toReviewerTraceLog } from "./reviewerTrace.js";
 import { traceFindingPipelineStage, traceFindingPipelineSummary, type FindingPipelineTraceSnapshot } from "./findingPipelineTrace.js";
+import { recordTelemetryFromFindings } from "./pipelineTelemetry.js";
 import { upsertFindingPolicyLinks } from "./policyLinks.js";
 import { calculateSeverity } from "./severityRulebook.js";
 import { getPrimaryCanonicalAtomForGcam } from "./canonicalAtomMapping.js";
@@ -2555,6 +2556,12 @@ export async function processChunkJudge(
         afterVerbatim: allFindings.length,
         dropped: beforeVerbatimCount - allFindings.length,
       });
+
+      recordTelemetryFromFindings({
+        jobId,
+        stageName: "reviewer_output",
+        findings: multiPassResult.findings,
+      });
       
       logger.info("Multi-pass detection stats", {
         chunkId: chunk.id,
@@ -2629,7 +2636,7 @@ export async function processChunkJudge(
         chunkId: chunk.id,
         runKey,
         beforeDedupe: beforeDedupeCount,
-        afterDedupe: afterDedupeCount,
+      afterDedupe: afterDedupeCount,
       dedupeDropped: beforeDedupeCount - afterDedupeCount,
       afterOverlap: afterOverlapCount,
       overlapDropped: afterDedupeCount - afterOverlapCount,
@@ -2637,6 +2644,12 @@ export async function processChunkJudge(
         articleFourDropped: afterOverlapCount - afterArticleFourCollapseCount,
         finalAiFindings: afterArticleFourCollapseCount,
         lexiconFindings: mandatoryFindings.length,
+      });
+      recordTelemetryFromFindings({
+        jobId,
+        stageName: "merge",
+        inputCount: beforeDedupeCount,
+        findings: allFindings,
       });
       const canonicalizationKept = new Set(
         allFindings.map((finding) => ensureFindingLineageId(finding, {
@@ -2878,10 +2891,10 @@ export async function processChunkJudge(
     });
   }
 
-    if (isMemory2Mode(job)) {
-      const beforeGuard = resolvedFindings.length;
-      const guardResult = applyMemory2SanityGuards(resolvedFindings, normalizedText, chunk.text, validatorAuditMode);
-      resolvedFindings = sortFindingsStable(guardResult.accepted);
+  if (isMemory2Mode(job)) {
+    const beforeGuard = resolvedFindings.length;
+    const guardResult = applyMemory2SanityGuards(resolvedFindings, normalizedText, chunk.text, validatorAuditMode);
+    resolvedFindings = sortFindingsStable(guardResult.accepted);
     const droppedByGuard = guardResult.rejected.length;
     if (droppedByGuard > 0) {
       logger.warn("Memory2 sanity guards flagged findings before persistence", {
@@ -2900,6 +2913,13 @@ export async function processChunkJudge(
       rejected: guardResult.rejected,
     });
   }
+
+  recordTelemetryFromFindings({
+    jobId,
+    stageName: "validator",
+    inputCount: persistedFindings.length,
+    findings: resolvedFindings,
+  });
 
   if (config.DEBUG_TRACE_FINDING_PIPELINE) {
     traceFindingPipelineStage({
@@ -3345,6 +3365,13 @@ export async function processChunkJudge(
       }];
     });
 
+    recordTelemetryFromFindings({
+      jobId,
+      stageName: "auditor",
+      inputCount: resolvedFindings.length,
+      findings: rows,
+    });
+
     if (config.DEBUG_TRACE_FINDING_PIPELINE) {
       traceFindingPipelineStage({
         jobId,
@@ -3457,6 +3484,12 @@ export async function processChunkJudge(
       attempted: rows.length,
       inserted: data?.length ?? 0,
       error: error ?? null,
+    });
+    recordTelemetryFromFindings({
+      jobId,
+      stageName: "persistence",
+      inputCount: rows.length,
+      findings: data ?? [],
     });
     if (config.DEBUG_TRACE_FINDING_PIPELINE) {
       logger.info("TRACE INSERTED FINDING IDS", {
