@@ -58,7 +58,9 @@ Your output will later be reviewed by specialized GCAM reviewers.
 
 Your responsibility is only to produce an objective and accurate understanding of what happens.
 
-This layer is domain-neutral. If the same screenplay were analyzed for copyright, education, or storytelling instead of GCAM compliance, the extracted events should be identical.`;
+This layer is domain-neutral. If the same screenplay were analyzed for copyright, education, or storytelling instead of GCAM compliance, the extracted events should be identical.
+
+These fields are evidence copied from the screenplay/event source. They MUST remain verbatim in the original language of the supplied screenplay/event. Do not translate, rewrite, summarize, paraphrase, normalize, correct, or reinterpret them.`;
 
 const EVENT_UNDERSTANDING_EVENT_SCHEMA = z.object({
   event_id: z.preprocess(toNumber, z.number().int().min(1)),
@@ -235,6 +237,7 @@ Never describe categories.
 Never describe violations.
 
 The quote must be the shortest verbatim quotation that objectively proves the event.
+These fields are evidence copied from the screenplay/event source. They MUST remain verbatim in the original language of the supplied screenplay/event. Do not translate, rewrite, summarize, paraphrase, normalize, correct, or reinterpret them.
 
 Phase 4 — Enrich the Event
 

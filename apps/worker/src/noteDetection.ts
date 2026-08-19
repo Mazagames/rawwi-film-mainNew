@@ -74,7 +74,7 @@ function buildLineNumberedChunk(chunkText: string): string {
     .join("\n");
 }
 
-function buildNoteSystemPrompt(definition: NoteReviewerDefinition): string {
+export function buildNoteSystemPrompt(definition: NoteReviewerDefinition): string {
   return `${definition.prompt}
 
 You are a notes reviewer.
@@ -91,6 +91,13 @@ Use the screenplay chunk only to select the surrounding paragraph and quote.
 Each note must contain category, title, description, paragraph, quote, event_id, and confidence.
 paragraph must be the surrounding 5-10 screenplay lines.
 quote must be the shortest verbatim excerpt that supports the note.
+
+These fields are evidence copied from the screenplay/event source. They MUST remain verbatim in the original language of the supplied screenplay/event. Do not translate, rewrite, summarize, paraphrase, normalize, correct, or reinterpret them.
+
+The 4-digit prefixes (e.g., 0109:) in the Screenplay Chunk are INTERNAL REVIEW IDS and MUST NEVER appear in the quote, paragraph, evidence_snippet, title, or description. Evidence must contain the original screenplay text only.
+
+When extracting quote or paragraph that spans multiple lines, preserve the original spaces and line breaks. Do not merge or concatenate words across line boundaries.
+
 If any required field cannot be produced, omit that note.
 If no note exists, return {"notes":[]}.`;
 }
@@ -222,7 +229,13 @@ function validateNoteCandidate(candidate: unknown): { note: NoteItem | null; rej
   };
 }
 
-function normalizeNote(note: NoteItem, reviewerId: string): NoteItem | null {
+function normalizeEvidenceField(text: string | null | undefined): string {
+  if (!text) return "";
+  // Strip internal line IDs (e.g. 0109:) ONLY when they occur at the beginning of a line.
+  return text.replace(/^\s*\d{4}:\s?/gm, "").trim();
+}
+
+export function normalizeNote(note: NoteItem, reviewerId: string): NoteItem | null {
   const emittedCategory = String(note.category ?? "").trim();
   if (!emittedCategory) {
     return null;
@@ -231,13 +244,18 @@ function normalizeNote(note: NoteItem, reviewerId: string): NoteItem | null {
   if (!resolvedCategory) {
     return null;
   }
+
+  const rawSnippet = typeof note.snippet === "string" && note.snippet.trim() ? note.snippet : note.paragraph;
+
   return {
     ...note,
     reviewer: note.reviewer ?? reviewerId,
     category: resolvedCategory,
     title: normalizeText(note.title),
     description: normalizeText(note.description),
-    snippet: typeof note.snippet === "string" && note.snippet.trim() ? note.snippet.trim() : note.paragraph.trim(),
+    paragraph: normalizeEvidenceField(note.paragraph),
+    quote: normalizeEvidenceField(note.quote),
+    snippet: normalizeEvidenceField(rawSnippet),
     status: note.status ?? "new",
     included_in_report: typeof note.included_in_report === "boolean" ? note.included_in_report : true,
     confidence: typeof note.confidence === "number" ? Math.max(0, Math.min(1, note.confidence)) : 0.7,

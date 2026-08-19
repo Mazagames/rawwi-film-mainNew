@@ -36,6 +36,7 @@ function testPromptContract(): void {
   assert(prompt.includes("\"event_summary\""), "user prompt should request event summaries");
   assert(!prompt.includes("chunk_start:"), "user prompt should not ask the model to regenerate chunk_start");
   assert(!prompt.includes("chunk_end:"), "user prompt should not ask the model to regenerate chunk_end");
+  assert(EVENT_UNDERSTANDING_SYSTEM_PROMPT.includes("verbatim in the original language"), "system prompt should forbid translation of evidence fields");
   console.log("✓ event understanding prompt contract");
 }
 
