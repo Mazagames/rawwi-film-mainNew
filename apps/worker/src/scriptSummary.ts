@@ -1,5 +1,5 @@
-import OpenAI from "openai";
 import { randomUUID } from "crypto";
+import { generateStructuredCompletion } from "./aiClient.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { config } from "./config.js";
 import { supabase } from "./db.js";
@@ -327,24 +327,20 @@ const SYSTEM_MSG = `أنت مدقق محتوى. مهمتك فهم النص كق�
 
 async function generateScriptSummaryInternal(fullText: string, scriptTitle?: string): Promise<ScriptSummaryPayload | null> {
   if (!config.OPENAI_API_KEY || !fullText?.trim()) return null;
-  const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
   const clip = fullText.slice(0, 28000);
   const userContent = scriptTitle
     ? `العنوان: ${scriptTitle}\n\nالنص:\n${clip}`
     : `النص:\n${clip}`;
 
   try {
-    const resp = await openai.chat.completions.create({
-      model: config.OPENAI_JUDGE_MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_MSG },
-        { role: "user", content: userContent },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1024,
+    const resp = await generateStructuredCompletion({
+      model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+      systemPrompt: SYSTEM_MSG,
+      userPrompt: userContent,
       temperature: 0,
+      maxTokens: 1024,
     });
-    const raw = resp.choices[0]?.message?.content ?? "{}";
+    const raw = resp.content ?? "{}";
     const first = raw.indexOf("{");
     const last = raw.lastIndexOf("}");
     const json = first >= 0 && last > first ? raw.slice(first, last + 1) : raw;

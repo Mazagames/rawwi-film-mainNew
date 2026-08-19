@@ -1,4 +1,5 @@
-import OpenAI from "openai";
+import { randomUUID } from "crypto";
+import { generateStructuredCompletion } from "./aiClient.js";
 import { config } from "./config.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { extractJsonFromText, noteOutputSchema, noteSchema, type NoteItem, type NoteOutput } from "./schemas.js";
@@ -12,8 +13,6 @@ import {
   logNotePipelineStage,
   normalizeNoteCategoryKey,
 } from "./notePipelineTelemetry.js";
-
-const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 
 type OpenAiCallOptions = {
   signal?: AbortSignal;
@@ -133,48 +132,39 @@ async function callNotesOpenAI(args: {
     chunkLength: args.chunkText.length,
   });
 
-  const response = await openai.chat.completions.create({
-    model: config.OPENAI_JUDGE_MODEL,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
+  const response = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    systemPrompt: systemPrompt,
+    userPrompt: userPrompt,
     temperature: args.temperature,
     seed: args.seed,
-    max_tokens: 4096,
-  }, { timeout: config.JUDGE_TIMEOUT_MS, signal: args.signal });
+    maxTokens: 4096,
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+    signal: args.signal,
+  });
 
-  const rawResponse = response.choices[0]?.message?.content ?? "{}";
   return {
-    rawResponse,
-    responseId: response.id ?? null,
-    responseTimestamp: new Date().toISOString(),
-    finishReason: response.choices[0]?.finish_reason ?? null,
-    usage: response.usage
-      ? {
-          prompt_tokens: response.usage.prompt_tokens,
-          completion_tokens: response.usage.completion_tokens,
-          total_tokens: response.usage.total_tokens,
-        }
-      : null,
+    rawResponse: response.content,
+    responseId: response.responseId,
+    responseTimestamp: response.responseTimestamp,
+    finishReason: response.finishReason,
+    usage: response.usage,
     renderedSystemPrompt: systemPrompt,
     renderedUserPrompt: userPrompt,
   };
 }
 
 async function repairNotesJson(model: string, brokenContent: string, context: string, signal?: AbortSignal): Promise<string> {
-  const resp = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: "system", content: NOTE_REPAIR_SYSTEM },
-      { role: "user", content: `Context: ${context}\n\nBroken JSON:\n${brokenContent.slice(0, 8000)}\n\nReturn the corrected JSON only.` },
-    ],
-    response_format: { type: "json_object" },
+  const resp = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : model, // Fallback if a specific judge model was passed
+    systemPrompt: NOTE_REPAIR_SYSTEM,
+    userPrompt: `Context: ${context}\n\nBroken JSON:\n${brokenContent.slice(0, 8000)}\n\nReturn the corrected JSON only.`,
     temperature: 0,
     seed: 12345,
-  }, { timeout: config.JUDGE_TIMEOUT_MS, signal });
-  return resp.choices[0]?.message?.content ?? "{}";
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+    signal,
+  });
+  return resp.content;
 }
 
 function parseNotesOutput(raw: string): NoteOutput {

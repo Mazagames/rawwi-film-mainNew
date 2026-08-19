@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { generateStructuredCompletion } from "./aiClient.js";
 import { config } from "./config.js";
 import type { GCAMArticle } from "./gcam.js";
 import {
@@ -21,8 +21,6 @@ import { AUDITOR_SYSTEM_MSG, RATIONALE_ONLY_SYSTEM_MSG, ROUTER_SYSTEM_MSG, JUDGE
 import { sha256 } from "./hash.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { persistAnalysisExecutionSignature, type AnalysisExecutionSignatureInput } from "./executionSignature.js";
-
-const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 
 const REPAIR_SYSTEM = `You fix broken JSON. Return only valid JSON, no markdown, no explanation.
 Expected shape: { "findings": [ { "article_id", "atom_id", "canonical_atom", "intensity", "context_impact", "legal_sensitivity", "audience_risk", "confidence", "title_ar", "description_ar", "evidence_snippet", "location": { "start_offset", "end_offset", "start_line", "end_line" }, "is_interpretive" } ] }
@@ -104,18 +102,17 @@ export async function callRouter(
     chunkPreviewLength: textSlice.length,
   });
 
-  const resp = await openai.chat.completions.create({
-    model: jobConfig.router_model,
-    messages: [
-      { role: "system", content: routerSystemPrompt || ROUTER_SYSTEM_MSG },
-      { role: "user", content: userContent },
-    ],
-    response_format: { type: "json_object" },
+  const resp = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_ROUTER_MODEL : jobConfig.router_model,
+    systemPrompt: routerSystemPrompt || ROUTER_SYSTEM_MSG,
+    userPrompt: userContent,
     temperature: jobConfig.temperature,
     seed: jobConfig.seed,
-  }, { timeout: config.JUDGE_TIMEOUT_MS, signal: options.signal });
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+    signal: options.signal,
+  });
 
-  const raw = resp.choices[0]?.message?.content ?? "{}";
+  const raw = resp.content ?? "{}";
   const parsed = parseRouterOutput(raw);
 
   logger.info("[DEBUG] Router response parsed", {
@@ -206,28 +203,21 @@ export async function callJudgeRaw(
     globalEnd,
   });
 
-  const resp = await openai.chat.completions.create({
-    model: jobConfig.judge_model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userContent },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 4096,
+  const resp = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : jobConfig.judge_model,
+    systemPrompt: systemPrompt,
+    userPrompt: userContent,
     temperature: jobConfig.temperature,
     seed: jobConfig.seed,
-  }, { timeout: config.JUDGE_TIMEOUT_MS, signal: options.signal });
+    maxTokens: 4096,
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+    signal: options.signal,
+  });
 
-  const content = resp.choices[0]?.message?.content ?? '{"findings":[]}';
-  const finishReason = resp.choices[0]?.finish_reason ?? null;
-  const usage = resp.usage
-    ? {
-        prompt_tokens: resp.usage.prompt_tokens,
-        completion_tokens: resp.usage.completion_tokens,
-        total_tokens: resp.usage.total_tokens,
-      }
-    : null;
-  const responseId = resp.id ?? null;
+  const content = resp.content ?? '{"findings":[]}';
+  const finishReason = resp.finishReason;
+  const usage = resp.usage;
+  const responseId = resp.responseId;
   const responseTimestamp = new Date().toISOString();
   logger.info("[DEBUG] Judge response received", {
     model: jobConfig.judge_model,
@@ -277,15 +267,14 @@ export async function callRepairJson(
     brokenContentLength: brokenContent.length,
     sliceLength: slice.length,
   });
-  const resp = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: "system", content: REPAIR_SYSTEM },
-      { role: "user", content: `Context: ${context}\n\nBroken JSON:\n${slice}\n\nReturn the corrected JSON only.` },
-    ],
-    response_format: { type: "json_object" },
-  }, { timeout: config.JUDGE_TIMEOUT_MS, signal: options.signal });
-  return resp.choices[0]?.message?.content ?? "{}";
+  const resp = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : model,
+    systemPrompt: REPAIR_SYSTEM,
+    userPrompt: `Context: ${context}\n\nBroken JSON:\n${slice}\n\nReturn the corrected JSON only.`,
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+    signal: options.signal,
+  });
+  return resp.content ?? "{}";
 }
 
 function extractRawFindingsCount(raw: string): number | null {
@@ -471,25 +460,21 @@ export async function callAuditorRaw(
     typeof auditorContext === "string" && auditorContext.trim().length > 0
       ? auditorContext.trim().slice(0, 12_000)
       : null;
-  const resp = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: "system", content: auditorSystemPrompt || AUDITOR_SYSTEM_MSG },
-      {
-        role: "user",
-        content: `المرشحات القانونية canonical:\n${clippedPayload}\n\n${
-          clippedAuditorContext
-            ? `سياق إضافي للمراجع (Pipeline V2):\n${clippedAuditorContext}\n\n`
-            : ""
-        }مقتطف النص الكامل:\n${clippedText}\n\nأرجع JSON فقط. كل assessment يجب أن يحتوي حقل rationale_ar مملوءاً (جملة أو جملتان بالعربية: أين في النص، ماذا يعني في السياق، ولماذا اعتُبرت مخالفة أو تحتاج مراجعة). إذا وُجد سياق إضافي للمراجع فاستخدمه فقط لفهم الحبكة، نبرة المشهد، وموقف السرد؛ ولا تعتمد عليه كدليل حرفي ما لم يكن النص الحرفي موجوداً أيضاً في المقتطف الحالي. مثال: "المقتطف من مشهد حلم يصف ضحية طعن؛ السياق درامي ولا يروّج للعنف لكن الوصف يتجاوز ضوابط مادة 9."`,
-      },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 8192,
+  const resp = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_AUDITOR_MODEL : model,
+    systemPrompt: auditorSystemPrompt || AUDITOR_SYSTEM_MSG,
+    userPrompt: `المرشحات القانونية canonical:\n${clippedPayload}\n\n${
+      clippedAuditorContext
+        ? `سياق إضافي للمراجع (Pipeline V2):\n${clippedAuditorContext}\n\n`
+        : ""
+    }مقتطف النص الكامل:\n${clippedText}\n\nأرجع JSON فقط. كل assessment يجب أن يحتوي حقل rationale_ar مملوءاً (جملة أو جملتان بالعربية: أين في النص، ماذا يعني في السياق، ولماذا اعتُبرت مخالفة أو تحتاج مراجعة). إذا وُجد سياق إضافي للمراجع فاستخدمه فقط لفهم الحبكة، نبرة المشهد، وموقف السرد؛ ولا تعتمد عليه كدليل حرفي ما لم يكن النص الحرفي موجوداً أيضاً في المقتطف الحالي. مثال: "المقتطف من مشهد حلم يصف ضحية طعن؛ السياق درامي ولا يروّج للعنف لكن الوصف يتجاوز ضوابط مادة 9."`,
     temperature: 0,
     seed: 12345,
-  }, { timeout: config.JUDGE_TIMEOUT_MS, signal: options.signal });
-  return resp.choices[0]?.message?.content ?? '{"assessments":[]}';
+    maxTokens: 8192,
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+    signal: options.signal,
+  });
+  return resp.content ?? '{"assessments":[]}';
 }
 
 export type RationaleOnlyItem = {
@@ -522,18 +507,17 @@ export async function callRationaleOnly(
         `${i + 1}. canonical_finding_id: ${r.canonical_finding_id}\n   title_ar: "${(r.title_ar || "").slice(0, 200)}"\n   evidence_snippet: "${(r.evidence_snippet || "").slice(0, 500)}"\n   final_ruling: ${r.final_ruling}\n   primary_article_id: ${r.primary_article_id}\n   weak_rationale: "${(r.weak_rationale || "").slice(0, 300)}"`
     )
     .join("\n\n");
-  const resp = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: "system", content: RATIONALE_ONLY_SYSTEM_MSG },
-      { role: "user", content: `اكتب rationale_ar لكل عنصر بالعربية (جملة أو جملتان). أرجع JSON فقط: {"rationales":[{"canonical_finding_id":"...","rationale_ar":"..."}]}\n\nالعناصر:\n\n${payload}` },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 3072,
+  const resp = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_RATIONALE_MODEL : model,
+    systemPrompt: RATIONALE_ONLY_SYSTEM_MSG,
+    userPrompt: `اكتب rationale_ar لكل عنصر بالعربية (جملة أو جملتان). أرجع JSON فقط: {"rationales":[{"canonical_finding_id":"...","rationale_ar":"..."}]}\n\nالعناصر:\n\n${payload}`,
     temperature: 0,
     seed: 12345,
-  }, { timeout: config.JUDGE_TIMEOUT_MS, signal: options.signal });
-  const raw = resp.choices[0]?.message?.content ?? "{}";
+    maxTokens: 3072,
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+    signal: options.signal,
+  });
+  const raw = resp.content ?? "{}";
   try {
     const json = extractJsonFromText(raw);
     const parsed = JSON.parse(json) as {
@@ -624,17 +608,16 @@ export async function callRevisitSpotter(
   const userContent = `القائمة: ${termsList}\n\n---\nالنص:\n${textSlice.slice(0, 28_000)}\n\nأرجع JSON فقط: { "mentions": [ ... ] }`;
 
   try {
-    const resp = await openai.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: REVISIT_SPOTTER_SYSTEM },
-        { role: "user", content: userContent },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 2048,
+    const resp = await generateStructuredCompletion({
+      model: config.AI_PROVIDER === "gemini" ? config.GEMINI_ROUTER_MODEL : model, // Fallback to router model which is mini
+      systemPrompt: REVISIT_SPOTTER_SYSTEM,
+      userPrompt: userContent,
       temperature: 0,
-    }, { timeout: config.JUDGE_TIMEOUT_MS, signal: options.signal });
-    const raw = resp.choices[0]?.message?.content ?? "{}";
+      maxTokens: 2048,
+      timeoutMs: config.JUDGE_TIMEOUT_MS,
+      signal: options.signal,
+    });
+    const raw = resp.content ?? "{}";
     const parsed = JSON.parse(raw) as { mentions?: Array<{ term?: string; snippet?: string; start_offset?: number; end_offset?: number }> };
     const list = Array.isArray(parsed.mentions) ? parsed.mentions : [];
     return list

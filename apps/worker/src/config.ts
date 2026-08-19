@@ -4,6 +4,12 @@
 export const config = {
   SUPABASE_URL: process.env.SUPABASE_URL ?? "",
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  AI_PROVIDER: (process.env.AI_PROVIDER ?? "openai").toLowerCase() as "openai" | "gemini",
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "",
+  GEMINI_ROUTER_MODEL: process.env.GEMINI_ROUTER_MODEL ?? "gemini-2.5-flash",
+  GEMINI_JUDGE_MODEL: process.env.GEMINI_JUDGE_MODEL ?? "gemini-2.5-pro",
+  GEMINI_AUDITOR_MODEL: process.env.GEMINI_AUDITOR_MODEL ?? "gemini-2.5-pro",
+  GEMINI_RATIONALE_MODEL: process.env.GEMINI_RATIONALE_MODEL ?? "gemini-2.5-pro",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
   OPENAI_ROUTER_MODEL: process.env.OPENAI_ROUTER_MODEL ?? "gpt-4.1-mini",
   OPENAI_JUDGE_MODEL: process.env.OPENAI_JUDGE_MODEL ?? "gpt-4.1",

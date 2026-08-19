@@ -1,11 +1,10 @@
-import OpenAI from "openai";
+import { randomUUID } from "crypto";
 import { z } from "zod";
+import { generateStructuredCompletion } from "./aiClient.js";
 import { config } from "./config.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { extractJsonFromText } from "./schemas.js";
 import { logger } from "./logger.js";
-
-const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 
 export type StructuredEvent = {
   event_id: number;
@@ -530,24 +529,22 @@ async function callEventUnderstandingOpenAI(chunkText: string, chunkStart: numbe
     chunkLength: chunkText.length,
   });
 
-  const response = await openai.chat.completions.create({
-    model: config.OPENAI_JUDGE_MODEL,
-    messages: [
-      { role: "system", content: EVENT_UNDERSTANDING_SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
+  const response = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    systemPrompt: EVENT_UNDERSTANDING_SYSTEM_PROMPT,
+    userPrompt: userPrompt,
     temperature: 0,
     seed: 12345,
-    max_tokens: 4096,
-  }, { timeout: config.JUDGE_TIMEOUT_MS });
+    maxTokens: 4096,
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+  });
 
-  const content = response.choices[0]?.message?.content ?? "{}";
+  const content = response.content;
 
   logger.info("[DEBUG] Event understanding response received", {
     model: config.OPENAI_JUDGE_MODEL,
     contentLength: content.length,
-    finishReason: response.choices[0]?.finish_reason ?? null,
+    finishReason: response.finishReason,
   });
 
   return content;
@@ -573,37 +570,29 @@ async function callEventUnderstandingVerificationOpenAI(result: EventUnderstandi
     eventCount: result.event_count,
   });
 
-  const response = await openai.chat.completions.create({
-    model: config.OPENAI_JUDGE_MODEL,
-    messages: [
-      { role: "system", content: EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
+  const response = await generateStructuredCompletion({
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    systemPrompt: EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT,
+    userPrompt: userPrompt,
     temperature: 0,
     seed: 12345,
-    max_tokens: 4096,
-  }, { timeout: config.JUDGE_TIMEOUT_MS });
+    maxTokens: 4096,
+    timeoutMs: config.JUDGE_TIMEOUT_MS,
+  });
 
-  const content = response.choices[0]?.message?.content ?? "{}";
+  const content = response.content;
   logger.info("[DEBUG] Event understanding verifier response received", {
     model: config.OPENAI_JUDGE_MODEL,
     contentLength: content.length,
-    finishReason: response.choices[0]?.finish_reason ?? null,
+    finishReason: response.finishReason,
   });
 
   return {
     rawResponse: content,
-    responseId: response.id ?? null,
-    responseTimestamp: new Date().toISOString(),
-    finishReason: response.choices[0]?.finish_reason ?? null,
-    usage: response.usage
-      ? {
-          prompt_tokens: response.usage.prompt_tokens,
-          completion_tokens: response.usage.completion_tokens,
-          total_tokens: response.usage.total_tokens,
-        }
-      : null,
+    responseId: response.responseId,
+    responseTimestamp: response.responseTimestamp,
+    finishReason: response.finishReason,
+    usage: response.usage,
   };
 }
 
