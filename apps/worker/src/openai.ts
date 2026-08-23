@@ -29,6 +29,7 @@ Each of intensity, context_impact, legal_sensitivity, audience_risk must be 1-4.
 type OpenAiCallOptions = {
   signal?: AbortSignal;
   userContentOverride?: string | null;
+  finishReason?: string | null;
 };
 
 function buildRouterArticlesPayload(articleList: GCAMArticle[]): string {
@@ -215,7 +216,8 @@ export async function callJudgeRaw(
     userPrompt: userContent,
     temperature: jobConfig.temperature,
     seed: jobConfig.seed,
-    maxTokens: 8192,
+    maxTokens: provider === "gemini" ? 16384 : 8192,
+    thinkingBudget: provider === "gemini" ? 4096 : undefined,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
     signal: options.signal,
   });
@@ -361,6 +363,13 @@ export async function parseJudgeWithRepair(
       };
     } catch (e) {
       parserValidationErrors.push(String(e));
+
+      // Explicit Guard: If finishReason was max_tokens and there's no JSON object started, do not invoke repair.
+      if (options.finishReason?.toLowerCase() === "max_tokens" && !content.includes("{")) {
+        logger.error("JSON parse failed due to max_tokens exhaustion without JSON body. Bypassing repair.", { model });
+        break; // Fast fail, drop to the FAILED return at the bottom
+      }
+
       logger.warn("Judge parse/validation failed, attempting repair", { attempt, error: String(e) });
 
       // Salvage valid findings instead of dropping entire pass when some items are malformed.

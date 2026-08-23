@@ -1976,7 +1976,10 @@ async function runSinglePass(
     }
 
     // Parse findings
-    const { findings, diagnostics } = await parseJudgeWithRepair(judgeCall.raw_judge_response, model, { signal });
+    const { findings, diagnostics } = await parseJudgeWithRepair(judgeCall.raw_judge_response, model, {
+      signal,
+      finishReason: judgeCall.finish_reason
+    });
     repairAttempts = diagnostics.repair_invoked ? 1 : 0;
     logger.info("Judge Call Diagnostics", {
       jobId: diagnosticContext?.jobId ?? null,
