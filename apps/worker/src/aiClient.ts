@@ -7,6 +7,11 @@ import { logger } from "./logger.js";
 let openai: OpenAI | null = null;
 let gemini: GoogleGenAI | null = null;
 
+export function isActiveAIProviderConfigured(): boolean {
+  if (config.AI_PROVIDER === "gemini") return !!config.GEMINI_API_KEY;
+  return !!config.OPENAI_API_KEY;
+}
+
 export interface AICompletionRequest {
   model: string;
   systemPrompt: string;

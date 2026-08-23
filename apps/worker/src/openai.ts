@@ -1,4 +1,4 @@
-import { generateStructuredCompletion } from "./aiClient.js";
+import { generateStructuredCompletion, isActiveAIProviderConfigured } from "./aiClient.js";
 import { config } from "./config.js";
 import type { GCAMArticle } from "./gcam.js";
 import {
@@ -603,7 +603,7 @@ export async function callRevisitSpotter(
   model: string = "gpt-4.1-mini",
   options: OpenAiCallOptions = {}
 ): Promise<RevisitMention[]> {
-  if (!config.OPENAI_API_KEY || terms.length === 0 || !textSlice.trim()) return [];
+  if (!isActiveAIProviderConfigured() || terms.length === 0 || !textSlice.trim()) return [];
   const termsList = terms.slice(0, 80).map((t) => `"${t}"`).join("، ");
   const userContent = `القائمة: ${termsList}\n\n---\nالنص:\n${textSlice.slice(0, 28_000)}\n\nأرجع JSON فقط: { "mentions": [ ... ] }`;
 

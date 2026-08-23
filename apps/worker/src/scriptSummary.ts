@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { generateStructuredCompletion } from "./aiClient.js";
+import { generateStructuredCompletion, isActiveAIProviderConfigured } from "./aiClient.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { config } from "./config.js";
 import { supabase } from "./db.js";
@@ -326,7 +326,7 @@ const SYSTEM_MSG = `أنت مدقق محتوى. مهمتك فهم النص كق�
 لا تفسير خارج JSON.`;
 
 async function generateScriptSummaryInternal(fullText: string, scriptTitle?: string): Promise<ScriptSummaryPayload | null> {
-  if (!config.OPENAI_API_KEY || !fullText?.trim()) return null;
+  if (!isActiveAIProviderConfigured() || !fullText?.trim()) return null;
   const clip = fullText.slice(0, 28000);
   const userContent = scriptTitle
     ? `العنوان: ${scriptTitle}\n\nالنص:\n${clip}`
