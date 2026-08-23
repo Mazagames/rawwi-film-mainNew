@@ -193,8 +193,14 @@ export async function callJudgeRaw(
     );
   }
 
+  const provider = config.AI_PROVIDER;
+  const configuredModel = jobConfig.judge_model;
+  const resolvedModel = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : configuredModel;
+
   logger.info("[DEBUG] Judge request prepared", {
-    model: jobConfig.judge_model,
+    configuredModel,
+    provider,
+    resolvedModel,
     temperature: jobConfig.temperature,
     seed: jobConfig.seed,
     selectedArticleCount: selectedArticles.length,
@@ -204,12 +210,12 @@ export async function callJudgeRaw(
   });
 
   const resp = await generateStructuredCompletion({
-    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : jobConfig.judge_model,
+    model: resolvedModel,
     systemPrompt: systemPrompt,
     userPrompt: userContent,
     temperature: jobConfig.temperature,
     seed: jobConfig.seed,
-    maxTokens: 4096,
+    maxTokens: 8192,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
     signal: options.signal,
   });
@@ -220,7 +226,9 @@ export async function callJudgeRaw(
   const responseId = resp.responseId;
   const responseTimestamp = new Date().toISOString();
   logger.info("[DEBUG] Judge response received", {
-    model: jobConfig.judge_model,
+    configuredModel,
+    provider,
+    resolvedModel,
     contentLength: content.length,
     finishReason,
   });
@@ -229,7 +237,7 @@ export async function callJudgeRaw(
     prompt_hash: promptHash,
     rendered_system_prompt: systemPrompt,
     rendered_user_prompt: userContent,
-    model: jobConfig.judge_model,
+    model: resolvedModel,
     finish_reason: finishReason,
     usage,
     response_id: responseId,
@@ -271,6 +279,7 @@ export async function callRepairJson(
     model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : model,
     systemPrompt: REPAIR_SYSTEM,
     userPrompt: `Context: ${context}\n\nBroken JSON:\n${slice}\n\nReturn the corrected JSON only.`,
+    maxTokens: 4096,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
     signal: options.signal,
   });
