@@ -2333,7 +2333,7 @@ export async function runMultiPassDetection(
   const plan = executionPlan ?? planDetectionPassExecution(chunkText, allArticles, lexiconTerms);
   const totalPasses = plan.activePasses.length;
   const eventUnderstanding = config.VIOLATION_SYSTEM_VERSION === "v5"
-      ? await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd)
+      ? await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined)
       : null;
   const reviewerPromptContext = eventUnderstanding
     ? renderStructuredEventContext(eventUnderstanding)

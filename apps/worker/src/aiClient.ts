@@ -102,9 +102,18 @@ async function generateGeminiCompletion(req: AICompletionRequest): Promise<AICom
   const candidate = response.candidates?.[0];
   const finishReason = candidate?.finishReason ?? null;
 
+  const finishReasonStr = typeof finishReason === "string" ? finishReason.toLowerCase() : null;
+
+  if (!response.text && finishReasonStr === "max_tokens") {
+    const err = new Error("AI provider returned MAX_TOKENS with no text. The generated response exceeded the configured maxTokens limit.");
+    (err as any).finishReason = finishReasonStr;
+    (err as any).usage = usage;
+    throw err;
+  }
+
   return {
     content: response.text ?? "{}",
-    finishReason: typeof finishReason === "string" ? finishReason.toLowerCase() : null,
+    finishReason: finishReasonStr,
     usage,
     // Gemini SDK usually returns no top-level responseId in this interface, we fallback to null
     responseId: null,

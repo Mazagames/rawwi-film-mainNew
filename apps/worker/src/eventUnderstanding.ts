@@ -1,6 +1,9 @@
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { generateStructuredCompletion } from "./aiClient.js";
+import {
+  generateStructuredCompletion,
+  type AICompletionResponse,
+} from "./aiClient.js";
 import { config } from "./config.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { extractJsonFromText } from "./schemas.js";
@@ -63,7 +66,10 @@ These fields are evidence copied from the screenplay/event source. They MUST rem
 
 const EVENT_UNDERSTANDING_EVENT_SCHEMA = z.object({
   event_id: z.preprocess(toNumber, z.number().int().min(1)),
-  event_summary: z.preprocess((value) => toStringValue(value)?.trim() ?? "", z.string().min(1)),
+  event_summary: z.preprocess(
+    (value) => toStringValue(value)?.trim() ?? "",
+    z.string().min(1),
+  ),
   actor: z.preprocess(toStringValue, z.string()),
   target: z.preprocess(toStringValue, z.string()),
   action: z.preprocess(toStringValue, z.string()),
@@ -76,9 +82,21 @@ const EVENT_UNDERSTANDING_EVENT_SCHEMA = z.object({
 });
 
 const EVENT_UNDERSTANDING_OUTPUT_SCHEMA = z.object({
-  chunk_start: z.preprocess(toNumber, z.number().int().min(0)).optional().nullable().transform((value) => (typeof value === "number" ? value : 0)),
-  chunk_end: z.preprocess(toNumber, z.number().int().min(0)).optional().nullable().transform((value) => (typeof value === "number" ? value : 0)),
-  event_count: z.preprocess(toNumber, z.number().int().min(0)).optional().nullable().transform((value) => (typeof value === "number" ? value : 0)),
+  chunk_start: z
+    .preprocess(toNumber, z.number().int().min(0))
+    .optional()
+    .nullable()
+    .transform((value) => (typeof value === "number" ? value : 0)),
+  chunk_end: z
+    .preprocess(toNumber, z.number().int().min(0))
+    .optional()
+    .nullable()
+    .transform((value) => (typeof value === "number" ? value : 0)),
+  event_count: z
+    .preprocess(toNumber, z.number().int().min(0))
+    .optional()
+    .nullable()
+    .transform((value) => (typeof value === "number" ? value : 0)),
   events: z.array(EVENT_UNDERSTANDING_EVENT_SCHEMA),
 });
 
@@ -88,12 +106,14 @@ const EVENT_UNDERSTANDING_VERIFICATION_OUTPUT_SCHEMA = z.union([
     status: z.literal("corrected"),
     events: z.array(EVENT_UNDERSTANDING_EVENT_SCHEMA).min(1),
   }),
-  z.object({
-    events: z.array(EVENT_UNDERSTANDING_EVENT_SCHEMA).min(1),
-  }).transform((value) => ({
-    status: "corrected" as const,
-    events: value.events,
-  })),
+  z
+    .object({
+      events: z.array(EVENT_UNDERSTANDING_EVENT_SCHEMA).min(1),
+    })
+    .transform((value) => ({
+      status: "corrected" as const,
+      events: value.events,
+    })),
 ]);
 
 const SOFT_EVENT_COUNT_WARNING_THRESHOLD = 20;
@@ -113,7 +133,11 @@ function toStringValue(value: unknown): string | undefined {
   return String(value);
 }
 
-export function buildEventUnderstandingUserPrompt(chunkText: string, chunkStart: number, chunkEnd: number): string {
+export function buildEventUnderstandingUserPrompt(
+  chunkText: string,
+  chunkStart: number,
+  chunkEnd: number,
+): string {
   return `Sequential Cognitive Protocol (V5.7)
 
 The current architecture is correct.
@@ -395,7 +419,9 @@ Return only structured JSON using this exact schema:
 }`;
 }
 
-export function renderStructuredEventContext(result: EventUnderstandingPassResult): string {
+export function renderStructuredEventContext(
+  result: EventUnderstandingPassResult,
+): string {
   const payload = canonicalStringify({
     understanding_layer: "semantic_event_understanding",
     one_event_one_finding: true,
@@ -442,7 +468,9 @@ Do not include explanations.
 Do not include prose.
 Output only JSON matching the required schema.`;
 
-export function buildEventUnderstandingVerifierUserPrompt(result: EventUnderstandingPassResult): string {
+export function buildEventUnderstandingVerifierUserPrompt(
+  result: EventUnderstandingPassResult,
+): string {
   return `Compare the structured events with the understanding criteria.
 
 Check only these questions:
@@ -457,11 +485,11 @@ Do not invent new events unless the structured events are incomplete or objectiv
 
 Structured events:
 ${canonicalStringify({
-    chunk_start: result.chunk_start,
-    chunk_end: result.chunk_end,
-    event_count: result.event_count,
-    events: result.events,
-  })}
+  chunk_start: result.chunk_start,
+  chunk_end: result.chunk_end,
+  event_count: result.event_count,
+  events: result.events,
+})}
 
 Return only valid JSON matching one of these shapes:
 { "status": "ok" }
@@ -503,7 +531,10 @@ export function parseEventUnderstandingOutput(
   };
 }
 
-export function parseEventUnderstandingVerificationOutput(raw: string): { status: "ok" | "corrected"; events: StructuredEvent[] } {
+export function parseEventUnderstandingVerificationOutput(raw: string): {
+  status: "ok" | "corrected";
+  events: StructuredEvent[];
+} {
   const json = extractJsonFromText(raw);
   const parsed = JSON.parse(json) as unknown;
   const output = EVENT_UNDERSTANDING_VERIFICATION_OUTPUT_SCHEMA.parse(parsed);
@@ -519,8 +550,20 @@ export function parseEventUnderstandingVerificationOutput(raw: string): { status
   return { status: "ok", events: [] };
 }
 
-async function callEventUnderstandingOpenAI(chunkText: string, chunkStart: number, chunkEnd: number): Promise<string> {
-  const userPrompt = buildEventUnderstandingUserPrompt(chunkText, chunkStart, chunkEnd);
+async function callEventUnderstandingOpenAI(
+  chunkText: string,
+  chunkStart: number,
+  chunkEnd: number,
+): Promise<{
+  rawResponse: string;
+  finishReason: string | null;
+  usage: AICompletionResponse["usage"];
+}> {
+  const userPrompt = buildEventUnderstandingUserPrompt(
+    chunkText,
+    chunkStart,
+    chunkEnd,
+  );
 
   logger.info("[DEBUG] Event understanding request prepared", {
     model: config.OPENAI_JUDGE_MODEL,
@@ -530,27 +573,39 @@ async function callEventUnderstandingOpenAI(chunkText: string, chunkStart: numbe
   });
 
   const response = await generateStructuredCompletion({
-    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    model:
+      config.AI_PROVIDER === "gemini"
+        ? config.GEMINI_JUDGE_MODEL
+        : config.OPENAI_JUDGE_MODEL,
     systemPrompt: EVENT_UNDERSTANDING_SYSTEM_PROMPT,
     userPrompt: userPrompt,
     temperature: 0,
     seed: 12345,
-    maxTokens: 4096,
+    maxTokens: 8192,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
   });
 
   const content = response.content;
 
   logger.info("[DEBUG] Event understanding response received", {
-    model: config.OPENAI_JUDGE_MODEL,
+    model:
+      config.AI_PROVIDER === "gemini"
+        ? config.GEMINI_JUDGE_MODEL
+        : config.OPENAI_JUDGE_MODEL,
     contentLength: content.length,
     finishReason: response.finishReason,
   });
 
-  return content;
+  return {
+    rawResponse: content,
+    finishReason: response.finishReason,
+    usage: response.usage,
+  };
 }
 
-async function callEventUnderstandingVerificationOpenAI(result: EventUnderstandingPassResult): Promise<{
+async function callEventUnderstandingVerificationOpenAI(
+  result: EventUnderstandingPassResult,
+): Promise<{
   rawResponse: string;
   responseId: string | null;
   responseTimestamp: string;
@@ -571,12 +626,15 @@ async function callEventUnderstandingVerificationOpenAI(result: EventUnderstandi
   });
 
   const response = await generateStructuredCompletion({
-    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    model:
+      config.AI_PROVIDER === "gemini"
+        ? config.GEMINI_JUDGE_MODEL
+        : config.OPENAI_JUDGE_MODEL,
     systemPrompt: EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT,
     userPrompt: userPrompt,
     temperature: 0,
     seed: 12345,
-    maxTokens: 4096,
+    maxTokens: 8192,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
   });
 
@@ -600,13 +658,35 @@ export async function buildEventUnderstandingPass(
   chunkText: string,
   chunkStart = 0,
   chunkEnd = chunkText.length,
+  chunkIndex?: number,
 ): Promise<EventUnderstandingPassResult> {
+  const startTime = Date.now();
+
+  // Keep a reference to the AI result for error diagnostics
+  let aiResult:
+    | {
+        rawResponse: string;
+        finishReason: string | null;
+        usage: AICompletionResponse["usage"];
+      }
+    | undefined;
+
   try {
-    const raw = await callEventUnderstandingOpenAI(chunkText, chunkStart, chunkEnd);
+    aiResult = await callEventUnderstandingOpenAI(
+      chunkText,
+      chunkStart,
+      chunkEnd,
+    );
+    const raw = aiResult.rawResponse;
     const parsed = parseEventUnderstandingOutput(raw, chunkStart, chunkEnd);
     const verification = await callEventUnderstandingVerificationOpenAI(parsed);
-    const parsedVerification = parseEventUnderstandingVerificationOutput(verification.rawResponse);
-    const finalEvents = parsedVerification.status === "corrected" ? parsedVerification.events : parsed.events;
+    const parsedVerification = parseEventUnderstandingVerificationOutput(
+      verification.rawResponse,
+    );
+    const finalEvents =
+      parsedVerification.status === "corrected"
+        ? parsedVerification.events
+        : parsed.events;
     const finalResult: EventUnderstandingPassResult = {
       chunk_start: parsed.chunk_start,
       chunk_end: parsed.chunk_end,
@@ -628,6 +708,21 @@ export async function buildEventUnderstandingPass(
         finish_reason: verification.finishReason,
       },
     };
+
+    const elapsed = Date.now() - startTime;
+    logger.info("Event Understanding Diagnostics", {
+      chunkIndex,
+      model:
+        config.AI_PROVIDER === "gemini"
+          ? config.GEMINI_JUDGE_MODEL
+          : config.OPENAI_JUDGE_MODEL,
+      inputTokens: aiResult.usage?.prompt_tokens ?? 0,
+      outputTokens: aiResult.usage?.completion_tokens ?? 0,
+      finishReason: aiResult.finishReason,
+      eventCount: finalResult.event_count,
+      elapsedMs: elapsed,
+    });
+
     if (finalResult.event_count > SOFT_EVENT_COUNT_WARNING_THRESHOLD) {
       logger.warn("Event understanding produced a high event count", {
         chunkStart,
@@ -638,12 +733,32 @@ export async function buildEventUnderstandingPass(
       });
     }
     return finalResult;
-  } catch (error) {
+  } catch (error: unknown) {
+    const elapsed = Date.now() - startTime;
+    const errObj = error as Record<string, any>;
+
+    logger.error("Event Understanding Diagnostics (Failure)", {
+      chunkIndex,
+      model:
+        config.AI_PROVIDER === "gemini"
+          ? config.GEMINI_JUDGE_MODEL
+          : config.OPENAI_JUDGE_MODEL,
+      inputTokens:
+        aiResult?.usage?.prompt_tokens ?? errObj?.usage?.prompt_tokens ?? null,
+      outputTokens:
+        aiResult?.usage?.completion_tokens ??
+        errObj?.usage?.completion_tokens ??
+        null,
+      finishReason: aiResult?.finishReason ?? errObj?.finishReason ?? null,
+      elapsedMs: elapsed,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
     logger.error("Event understanding pass failed", {
       chunkStart,
       chunkEnd,
       chunkLength: chunkText.length,
-      error: String(error),
+      error: error instanceof Error ? error.message : String(error),
     });
     throw error;
   }
