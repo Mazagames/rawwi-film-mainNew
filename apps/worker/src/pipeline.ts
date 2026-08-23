@@ -2467,7 +2467,7 @@ export async function processChunkJudge(
           finding_hash: findingHash,
           evidence_hash: evidenceSnippet != null ? sha256(evidenceSnippet) : null,
         });
-        const result = groundFindingEvidenceToChunk(f, chunkText);
+        const result = groundFindingEvidenceToChunk(f, chunkText, multiPassEventUnderstanding?.events || []);
         const findingId = (f as { canonical_finding_id?: string | null; finding_id?: string | null }).finding_id
           ?? (f as { canonical_finding_id?: string | null }).canonical_finding_id
           ?? null;

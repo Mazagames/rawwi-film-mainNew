@@ -947,7 +947,7 @@ function simulateValidatorPath(
   memory2Enabled: boolean,
   useEventConsistencyChecks: boolean,
 ): { rejectionReason: string | null; functionName: string | null; validationStage: string | null; rule: string | null } {
-  const grounded = groundFindingEvidenceToChunk(finding as JudgeFinding, chunkText);
+  const grounded = groundFindingEvidenceToChunk(finding as JudgeFinding, chunkText, events);
   if (!grounded.grounded) {
     return {
       rejectionReason: grounded.reason ?? grounded.diagnostics?.rejection_reason ?? "no_meaningful_exact_local_evidence",
@@ -1085,7 +1085,7 @@ export function buildValidatorAuditReport(args: {
       const claimedArticleId: number | null = finding.article_id ?? reviewerArticleId;
       const bestMatch = bestEventMatch(finding, events);
       const event = bestMatch.event;
-      const groundedPreview = groundFindingEvidenceToChunk(finding, args.chunkText);
+      const groundedPreview = groundFindingEvidenceToChunk(finding, args.chunkText, events);
       const previewFinding: FindingWithGlobalOffsets = groundedPreview.grounded
         ? {
             ...(groundedPreview.finding as AuditFindingLike),

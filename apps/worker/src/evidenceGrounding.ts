@@ -1,29 +1,31 @@
 import { findStringMatches } from "./lexiconCache.js";
-import type { JudgeFinding } from "./schemas.js";
 import { isDetectionVerbatim } from "./textDetectionNormalize.js";
+import { compactSpace } from "./strings.js";
+import type { JudgeFinding } from "./schemas.js";
+import { findBestEventMatch } from "./eventConsistency.js";
 
 type LocalSpan = {
+  text: string;
   start: number;
   end: number;
-  text: string;
 };
 
 export type GroundedFindingResult = {
   finding: JudgeFinding;
   grounded: boolean;
-  method: "rationale_quote" | "evidence_exact" | "line_candidate" | "sentence_candidate" | "offset_span" | "unresolved";
+  method: "rationale_quote" | "evidence_exact" | "line_candidate" | "sentence_candidate" | "offset_span" | "unresolved" | "structured_event" | "token_recall";
   reason?: string;
   diagnostics?: {
     finding_id?: string | null;
     evidence: string;
     candidate_matches: Array<{
-      method: "rationale_quote" | "evidence_exact" | "line_candidate" | "sentence_candidate" | "offset_span";
+      method: "rationale_quote" | "evidence_exact" | "structured_event" | "token_recall" | "line_candidate" | "sentence_candidate" | "offset_span";
       text: string;
       start: number;
       end: number;
     }>;
     selected_match: {
-      method: "rationale_quote" | "evidence_exact" | "line_candidate" | "sentence_candidate" | "offset_span" | "unresolved";
+      method: "rationale_quote" | "evidence_exact" | "structured_event" | "token_recall" | "line_candidate" | "sentence_candidate" | "offset_span" | "unresolved";
       text: string | null;
       start: number | null;
       end: number | null;
@@ -194,13 +196,29 @@ function buildDiagnostics(args: {
     candidate_matches: args.candidateMatches,
     selected_match: args.selectedMatch,
     grounding_score: args.grounded
-      ? (args.selectedMatch?.method === "rationale_quote" || args.selectedMatch?.method === "evidence_exact" ? 1 : 0.75)
+      ? (args.selectedMatch?.method === "rationale_quote" || args.selectedMatch?.method === "evidence_exact" || args.selectedMatch?.method === "structured_event" ? 1 : 0.75)
       : 0,
     rejection_reason: args.grounded ? null : args.reason ?? null,
   };
 }
 
-export function groundFindingEvidenceToChunk(finding: JudgeFinding, chunkText: string): GroundedFindingResult {
+// Very basic token set for fallback overlap checking, excluding common stopwords and generic screenplay terms
+const GENERIC_WORDS = new Set([
+  "و", "في", "على", "إلى", "الى", "من", "عن", "أن", "إن", "كان", "كانت", "هذا", "هذه", "ذلك", "تلك", "ثم", "مع",
+  "ما", "لا", "لم", "لن", "هو", "هي", "هم", "هن", "يا", "أو", "بل", "قد", "هناك", "هنا", "كل", "أي", "أيضاً", "ايضا",
+  "المشهد", "الخارجي", "الداخلي", "نهار", "ليل", "نهارا", "ليلا", "شخصية", "شخص", "رجل", "امرأة", "شخصيات"
+]);
+
+function tokenSet(text: string): Set<string> {
+  const words = text.replace(/[\s"'“”‘’«»()[\]{}:,\u060C;؛.!?؟…\-–—]+/gu, " ").trim().split(" ");
+  return new Set(words.map(w => w.toLowerCase()).filter(w => w.length > 2 && !GENERIC_WORDS.has(w)));
+}
+
+export function groundFindingEvidenceToChunk(
+  finding: JudgeFinding,
+  chunkText: string,
+  events: any[] = [] // Optional structured events to fallback on
+): GroundedFindingResult {
   const rawEvidence = compactSpace(finding.evidence_snippet ?? "");
   const hintStart = typeof finding.location?.start_offset === "number" ? finding.location.start_offset : null;
   const hintEnd = typeof finding.location?.end_offset === "number" ? finding.location.end_offset : hintStart;
@@ -264,6 +282,101 @@ export function groundFindingEvidenceToChunk(finding: JudgeFinding, chunkText: s
         },
         grounded: true,
         method: "evidence_exact",
+        diagnostics,
+      };
+    }
+  }
+
+  // Fallback 1: Attempt to match against Structured Event quotes
+  if (events && events.length > 0) {
+    const match = findBestEventMatch(finding, events);
+    // Score threshold: 30 is decent semantic/overlap match
+    if (match.matchedEvent && match.matchedScore >= 30) {
+      // Verify compatibility (article/atom context) to prevent hijacking unrelated events
+      const findingContext = [finding.title_ar, finding.description_ar, finding.rationale_ar].filter(Boolean).join(" ");
+      const contextTokens = tokenSet(findingContext);
+      const eventText = [match.matchedEvent.quote, match.matchedEvent.actor, match.matchedEvent.target, match.matchedEvent.action, match.matchedEvent.dominant_meaning].join(" ");
+      const eventTokens = tokenSet(eventText);
+      let contextOverlap = 0;
+      for (const token of contextTokens) {
+        if (eventTokens.has(token)) contextOverlap++;
+      }
+
+      // If we have strong context overlap (>= 2 meaningful tokens) OR the score is exceptionally high (>=60), we accept it.
+      if (contextOverlap >= 2 || match.matchedScore >= 60) {
+        const quote = compactSpace(match.matchedEvent.quote);
+        if (isDetectionVerbatim(chunkText, quote)) {
+          candidateMatches.push({ method: "structured_event", text: quote, start: match.matchedEvent.start_offset, end: match.matchedEvent.end_offset });
+          const diagnostics = buildDiagnostics({
+            finding,
+            evidence: quote,
+            candidateMatches,
+            selectedMatch: { method: "structured_event", text: quote, start: match.matchedEvent.start_offset, end: match.matchedEvent.end_offset },
+            grounded: true,
+          });
+          return {
+            finding: {
+              ...finding,
+              evidence_snippet: quote,
+              location: {
+                ...finding.location,
+                start_offset: match.matchedEvent.start_offset,
+                end_offset: match.matchedEvent.end_offset,
+              },
+            },
+            grounded: true,
+            method: "structured_event",
+            diagnostics,
+          };
+        }
+      }
+    }
+  }
+
+  // Fallback 2: Token recall against sentence candidates
+  if (rawEvidence.length >= 3) {
+    const candidates = buildSentenceCandidates(chunkText);
+    const findingTokens = tokenSet(rawEvidence);
+    let bestCandidate: LocalSpan | null = null;
+    let bestScore = 0;
+
+    for (const candidate of candidates) {
+      const candidateTokens = tokenSet(candidate.text);
+      if (candidateTokens.size === 0) continue;
+      let overlap = 0;
+      for (const token of findingTokens) {
+        if (candidateTokens.has(token)) overlap++;
+      }
+      const score = overlap / Math.max(findingTokens.size, 1);
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+      }
+    }
+
+    // Require at least 75% token recall to safely replace paraphrased evidence
+    if (bestCandidate && bestScore >= 0.75 && isDetectionVerbatim(chunkText, bestCandidate.text)) {
+      const bestText = compactSpace(bestCandidate.text);
+      candidateMatches.push({ method: "token_recall", text: bestText, start: bestCandidate.start, end: bestCandidate.end });
+      const diagnostics = buildDiagnostics({
+        finding,
+        evidence: bestText,
+        candidateMatches,
+        selectedMatch: { method: "token_recall", text: bestText, start: bestCandidate.start, end: bestCandidate.end },
+        grounded: true,
+      });
+      return {
+        finding: {
+          ...finding,
+          evidence_snippet: bestText,
+          location: {
+            ...finding.location,
+            start_offset: bestCandidate.start,
+            end_offset: bestCandidate.end,
+          },
+        },
+        grounded: true,
+        method: "token_recall",
         diagnostics,
       };
     }
