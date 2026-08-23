@@ -3399,11 +3399,7 @@ export async function processChunkJudge(
         const quoteEventId = eventConsistencyResult?.matchedEvent?.event_id ?? null;
         const pageEventId = quoteEventId;
         if (
-          findingEventId == null ||
-          quoteEventId == null ||
-          pageEventId == null ||
-          findingEventId !== quoteEventId ||
-          findingEventId !== pageEventId
+          findingEventId != null && findingEventId !== quoteEventId
         ) {
           const expectedEvent = findingEventId;
           const actualEvent = quoteEventId ?? pageEventId ?? null;
