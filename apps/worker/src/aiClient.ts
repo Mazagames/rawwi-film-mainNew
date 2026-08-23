@@ -21,6 +21,7 @@ export interface AICompletionRequest {
   maxTokens?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
+  thinkingBudget?: number;
 }
 
 export interface AICompletionResponse {
@@ -85,6 +86,7 @@ async function generateGeminiCompletion(req: AICompletionRequest): Promise<AICom
       responseMimeType: "application/json",
       temperature: req.temperature ?? 0,
       maxOutputTokens: req.maxTokens,
+      ...(req.thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget: req.thinkingBudget } } : {}),
     },
   });
 

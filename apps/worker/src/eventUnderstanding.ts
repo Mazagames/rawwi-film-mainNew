@@ -565,33 +565,33 @@ async function callEventUnderstandingOpenAI(
     chunkEnd,
   );
 
+  const resolvedModel =
+    config.AI_PROVIDER === "gemini"
+      ? config.GEMINI_ROUTER_MODEL
+      : config.OPENAI_JUDGE_MODEL;
+
   logger.info("[DEBUG] Event understanding request prepared", {
-    model: config.OPENAI_JUDGE_MODEL,
+    model: resolvedModel,
     chunkStart,
     chunkEnd,
     chunkLength: chunkText.length,
   });
 
   const response = await generateStructuredCompletion({
-    model:
-      config.AI_PROVIDER === "gemini"
-        ? config.GEMINI_JUDGE_MODEL
-        : config.OPENAI_JUDGE_MODEL,
+    model: resolvedModel,
     systemPrompt: EVENT_UNDERSTANDING_SYSTEM_PROMPT,
     userPrompt: userPrompt,
     temperature: 0,
     seed: 12345,
     maxTokens: 8192,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
+    thinkingBudget: 0,
   });
 
   const content = response.content;
 
   logger.info("[DEBUG] Event understanding response received", {
-    model:
-      config.AI_PROVIDER === "gemini"
-        ? config.GEMINI_JUDGE_MODEL
-        : config.OPENAI_JUDGE_MODEL,
+    model: resolvedModel,
     contentLength: content.length,
     finishReason: response.finishReason,
   });
@@ -618,29 +618,32 @@ async function callEventUnderstandingVerificationOpenAI(
 }> {
   const userPrompt = buildEventUnderstandingVerifierUserPrompt(result);
 
+  const resolvedModel =
+    config.AI_PROVIDER === "gemini"
+      ? config.GEMINI_ROUTER_MODEL
+      : config.OPENAI_JUDGE_MODEL;
+
   logger.info("[DEBUG] Event understanding verifier request prepared", {
-    model: config.OPENAI_JUDGE_MODEL,
+    model: resolvedModel,
     chunkStart: result.chunk_start,
     chunkEnd: result.chunk_end,
     eventCount: result.event_count,
   });
 
   const response = await generateStructuredCompletion({
-    model:
-      config.AI_PROVIDER === "gemini"
-        ? config.GEMINI_JUDGE_MODEL
-        : config.OPENAI_JUDGE_MODEL,
+    model: resolvedModel,
     systemPrompt: EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT,
     userPrompt: userPrompt,
     temperature: 0,
     seed: 12345,
     maxTokens: 8192,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
+    thinkingBudget: 0,
   });
 
   const content = response.content;
   logger.info("[DEBUG] Event understanding verifier response received", {
-    model: config.OPENAI_JUDGE_MODEL,
+    model: resolvedModel,
     contentLength: content.length,
     finishReason: response.finishReason,
   });
@@ -714,7 +717,7 @@ export async function buildEventUnderstandingPass(
       chunkIndex,
       model:
         config.AI_PROVIDER === "gemini"
-          ? config.GEMINI_JUDGE_MODEL
+          ? config.GEMINI_ROUTER_MODEL
           : config.OPENAI_JUDGE_MODEL,
       inputTokens: aiResult.usage?.prompt_tokens ?? 0,
       outputTokens: aiResult.usage?.completion_tokens ?? 0,
@@ -741,7 +744,7 @@ export async function buildEventUnderstandingPass(
       chunkIndex,
       model:
         config.AI_PROVIDER === "gemini"
-          ? config.GEMINI_JUDGE_MODEL
+          ? config.GEMINI_ROUTER_MODEL
           : config.OPENAI_JUDGE_MODEL,
       inputTokens:
         aiResult?.usage?.prompt_tokens ?? errObj?.usage?.prompt_tokens ?? null,
