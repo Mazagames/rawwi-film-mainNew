@@ -1,6 +1,7 @@
 import { supabase } from "./db.js";
 import { logger } from "./logger.js";
 import { logAuditEvent } from "./audit.js";
+import { config } from "./config.js";
 
 export type AnalysisJob = {
   id: string;
@@ -438,14 +439,29 @@ const chunkStateUpdateChains = new Map<string, Promise<void>>();
 function queueChunkStateUpdate(
   chunkId: string,
   label: string,
-  operation: () => PromiseLike<{ error: { message: string } | null }>
+  operation: () => PromiseLike<any>
 ): Promise<void> {
   const previous = chunkStateUpdateChains.get(chunkId) ?? Promise.resolve();
   const next = previous
     .catch(() => {})
     .then(async () => {
-      const { error } = await operation();
-      if (error) logger.warn(`${label} failed`, { chunkId, err: error.message });
+      try {
+        const { error } = (await operation()) || {};
+        if (error) logger.warn(`${label} failed`, { chunkId, err: error.message });
+      } catch (err: any) {
+        logger.error(`${label} threw an exception`, {
+          chunkId,
+          errorName: err?.name,
+          errorMessage: err?.message,
+          errorCode: err?.code,
+          causeName: err?.cause?.name,
+          causeMessage: err?.cause?.message,
+          causeCode: err?.cause?.code,
+          causeErrno: err?.cause?.errno,
+          causeSyscall: err?.cause?.syscall,
+          targetUrl: config.SUPABASE_URL,
+        });
+      }
     });
   const tracked = next.finally(() => {
     if (chunkStateUpdateChains.get(chunkId) === tracked) {

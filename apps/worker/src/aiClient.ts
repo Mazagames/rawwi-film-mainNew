@@ -31,6 +31,7 @@ export interface AICompletionResponse {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
+    thoughts_tokens?: number;
   } | null;
   responseId: string | null;
   responseTimestamp: string;
@@ -97,6 +98,7 @@ async function generateGeminiCompletion(req: AICompletionRequest): Promise<AICom
         prompt_tokens: usageMetadata.promptTokenCount ?? 0,
         completion_tokens: usageMetadata.candidatesTokenCount ?? 0,
         total_tokens: usageMetadata.totalTokenCount ?? 0,
+        thoughts_tokens: (usageMetadata as any).thoughtsTokenCount,
       }
     : null;
 

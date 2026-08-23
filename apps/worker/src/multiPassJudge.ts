@@ -1941,8 +1941,11 @@ async function runSinglePass(
         pass.displayLabel ?? pass.sourceFileName ?? pass.name
       );
     }
-    const judgeCall = await callJudgeRaw(
-      chunkText,
+    let judgeCall: Awaited<ReturnType<typeof callJudgeRaw>> | undefined;
+    let repairAttempts = 0;
+    try {
+      judgeCall = await callJudgeRaw(
+        chunkText,
       articles,
       chunkStart,
       chunkEnd,
@@ -1974,6 +1977,25 @@ async function runSinglePass(
 
     // Parse findings
     const { findings, diagnostics } = await parseJudgeWithRepair(judgeCall.raw_judge_response, model, { signal });
+    repairAttempts = diagnostics.repair_invoked ? 1 : 0;
+    logger.info("Judge Call Diagnostics", {
+      jobId: diagnosticContext?.jobId ?? null,
+      chunkId: diagnosticContext?.chunkId ?? null,
+      passName: pass.name,
+      articleId: articleIds[0] ?? null,
+      provider: config.AI_PROVIDER,
+      configuredModel: model,
+      resolvedModel: judgeCall.model,
+      promptTokens: judgeCall.usage?.prompt_tokens ?? null,
+      outputTokens: judgeCall.usage?.completion_tokens ?? null,
+      thoughtsTokens: (judgeCall.usage as any)?.thoughts_tokens ?? null,
+      totalTokens: judgeCall.usage?.total_tokens ?? null,
+      maxTokens: 8192,
+      finishReason: judgeCall.finish_reason,
+      repairAttempts,
+      durationMs: Date.now() - startTime,
+    });
+
     if (config.DEBUG_TRACE_FINDING_PIPELINE && diagnosticContext?.jobId && diagnosticContext?.chunkId) {
       traceFindingPipelineStage({
         jobId: diagnosticContext.jobId,
@@ -2170,6 +2192,27 @@ async function runSinglePass(
       missingTitleCount: diagnostics.missing_title_count,
     };
     
+    } catch (err: any) {
+      logger.error("Judge Call Diagnostics (Failed)", {
+        jobId: diagnosticContext?.jobId ?? null,
+        chunkId: diagnosticContext?.chunkId ?? null,
+        passName: pass.name,
+        articleId: articleIds[0] ?? null,
+        provider: config.AI_PROVIDER,
+        configuredModel: model,
+        resolvedModel: judgeCall?.model ?? (config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : model),
+        promptTokens: err.usage?.prompt_tokens ?? judgeCall?.usage?.prompt_tokens ?? null,
+        outputTokens: err.usage?.completion_tokens ?? judgeCall?.usage?.completion_tokens ?? null,
+        thoughtsTokens: (err.usage as any)?.thoughts_tokens ?? (judgeCall?.usage as any)?.thoughts_tokens ?? null,
+        totalTokens: err.usage?.total_tokens ?? judgeCall?.usage?.total_tokens ?? null,
+        maxTokens: 8192,
+        finishReason: err.finishReason ?? judgeCall?.finish_reason ?? null,
+        repairAttempts,
+        durationMs: Date.now() - startTime,
+        error: err.message ?? String(err),
+      });
+      throw err;
+    }
   } catch (error) {
     if (
       (error instanceof Error && (error.name === "AbortError" || error.name === "ChunkTimeoutError")) ||
