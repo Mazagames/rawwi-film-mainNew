@@ -385,7 +385,19 @@ export function groundFindingEvidenceToChunk(
   const lineCandidates = buildLineCandidates(chunkText);
   const sentenceCandidates = buildSentenceCandidates(chunkText);
 
-  if (isMeaningfulSpan(offsetSpan) && isDetectionVerbatim(chunkText, offsetSpan.text)) {
+  // Helper to verify that a fallback span retains at least some semantic connection to the LLM's raw evidence
+  const findingTokens = tokenSet(rawEvidence);
+  const isValidOffsetFallback = (text: string) => {
+    if (findingTokens.size === 0) return true;
+    const textTokens = tokenSet(text);
+    let overlap = 0;
+    for (const token of findingTokens) {
+      if (textTokens.has(token)) overlap++;
+    }
+    return (overlap / Math.max(findingTokens.size, 1)) >= 0.25;
+  };
+
+  if (isMeaningfulSpan(offsetSpan) && isDetectionVerbatim(chunkText, offsetSpan.text) && isValidOffsetFallback(offsetSpan.text)) {
     candidateMatches.push({ method: "offset_span", text: compactSpace(offsetSpan.text), start: offsetSpan.start, end: offsetSpan.end });
     const diagnostics = buildDiagnostics({
       finding,
@@ -412,7 +424,7 @@ export function groundFindingEvidenceToChunk(
 
   if (hintStart != null && hintEnd != null && hintEnd > hintStart) {
     const lineCandidate = chooseContainingCandidate(lineCandidates, hintStart, hintEnd);
-    if (isMeaningfulSpan(lineCandidate) && isDetectionVerbatim(chunkText, lineCandidate.text)) {
+    if (isMeaningfulSpan(lineCandidate) && isDetectionVerbatim(chunkText, lineCandidate.text) && isValidOffsetFallback(lineCandidate.text)) {
       candidateMatches.push({ method: "line_candidate", text: compactSpace(lineCandidate.text), start: lineCandidate.start, end: lineCandidate.end });
       const diagnostics = buildDiagnostics({
         finding,
@@ -438,7 +450,7 @@ export function groundFindingEvidenceToChunk(
     }
 
     const sentenceCandidate = chooseContainingCandidate(sentenceCandidates, hintStart, hintEnd);
-    if (isMeaningfulSpan(sentenceCandidate) && isDetectionVerbatim(chunkText, sentenceCandidate.text)) {
+    if (isMeaningfulSpan(sentenceCandidate) && isDetectionVerbatim(chunkText, sentenceCandidate.text) && isValidOffsetFallback(sentenceCandidate.text)) {
       candidateMatches.push({ method: "sentence_candidate", text: compactSpace(sentenceCandidate.text), start: sentenceCandidate.start, end: sentenceCandidate.end });
       const diagnostics = buildDiagnostics({
         finding,
