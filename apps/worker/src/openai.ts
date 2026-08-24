@@ -31,6 +31,7 @@ type OpenAiCallOptions = {
   userContentOverride?: string | null;
   finishReason?: string | null;
   isV5EventFirst?: boolean;
+  passName?: string;
 };
 
 function buildRouterArticlesPayload(articleList: GCAMArticle[]): string {
@@ -177,7 +178,7 @@ export async function callJudgeRaw(
   const isV5EventFirst = options.isV5EventFirst === true;
   const legacyFormattingSuffix = `\n\nقواعد تنسيق إلزامية:\n- article_id (اختياري): إذا استخدمته فيجب أن يكون رقماً صحيحاً من المواد المعروضة فقط: [${allowedArticleIds}]. إذا لم تُحدده استخدم canonical_atom.\n- canonical_atom مطلوب: واحدة من INSULT, VIOLENCE, SEXUAL, SUBSTANCES, DISCRIMINATION, CHILD_SAFETY, WOMEN, MISINFORMATION, PUBLIC_ORDER, EXTREMISM, INTERNATIONAL, ECONOMIC, PRIVACY, APPEARANCE.\n- intensity, context_impact, legal_sensitivity, audience_risk مطلوبة وكل واحدة رقماً بين 1 و 4.\n- title_ar مطلوب: عنوان عربي قصير ودقيق للمخالفة، ولا تتركه null أو فارغاً.\n- rationale_ar مطلوبة: جملة أو جملتان بالعربية تشرح أين يظهر المقتطف، ما الذي تم رصده، ولماذا يندرج تحت المادة. امنع الشرح العام مثل "وجود لفظ مخالف" دون توضيح.\n- يجب أن يطابق rationale_ar المادة الأساسية المختارة، ولا تذكر مادة مختلفة عنها في الشرح.\n- لا تُرجع severity — تُحسب في الخلفية.\n- evidence_snippet يجب أن يكون أصغر اقتباس حرفي ممكن يثبت المخالفة، وليس فقرة واسعة إلا إذا تعذر غير ذلك.\n- location.start_offset و location.end_offset يجب أن يحددا نفس المقتطف القصير داخل chunk الحالي (لا تُرجع null ولا نافذة واسعة بلا حاجة).\n- confidence رقماً بين 0 و 1.\n- evidence_snippet نصاً غير null.\n${!overrideContent && userPromptAddition && userPromptAddition.trim().length > 0 ? `\n${userPromptAddition.trim()}\n` : ""}أرجع JSON بمصفوفة findings فقط.`;
 
-  const v5FormattingSuffix = `\n\nقواعد التنسيق (V5):\n- يجب إرجاع مصفوفة findings بصيغة JSON فقط.\n- كل مخالفة (finding) يجب أن ترتبط بحدث واحد فقط وتحتوي على:\n  - event_id (معرف الحدث المطابق)\n  - title_ar (عنوان المخالفة)\n  - rationale_ar (شرح المخالفة)\n  - evidence_snippet (الاقتباس الحرفي من الحدث)\n  - confidence (بين 0 و 1)\n- لا تقم بإنشاء أو إرجاع start_offset أو end_offset أو canonical_atom أو intensity أو أي تفاصيل أخرى لم تُطلب منك صراحة (سيتم حسابها تلقائياً).\nأرجع JSON بمصفوفة findings فقط.`;
+  const v5FormattingSuffix = `\n\nقواعد التنسيق (V5):\n- يجب إرجاع مصفوفة findings بصيغة JSON فقط.\n- كل مخالفة (finding) يجب أن ترتبط بحدث واحد فقط وتحتوي على:\n  - article_id (يجب أن يساوي ${allowedArticleIds})\n  - event_id (معرف الحدث المطابق)\n  - title_ar (عنوان المخالفة)\n  - rationale_ar (شرح المخالفة)\n  - evidence_snippet (الاقتباس الحرفي من الحدث)\n  - confidence (بين 0 و 1)\n- لا تقم بإنشاء أو إرجاع start_offset أو end_offset أو canonical_atom أو intensity أو أي تفاصيل أخرى لم تُطلب منك صراحة (سيتم حسابها تلقائياً).\nأرجع JSON بمصفوفة findings فقط.`;
 
   const userContent = `${userContentCore}${isV5EventFirst ? v5FormattingSuffix : legacyFormattingSuffix}`;
   const promptHash = config.ENABLE_AI_DIAGNOSTICS
@@ -337,7 +338,31 @@ export async function parseJudgeWithRepair(
       const parsed = JSON.parse(json) as unknown;
       const out = judgeOutputSchema.parse(parsed);
       const keptFindings: JudgeFinding[] = [];
+      
+      let expectedArticleId: number | null = null;
+      if (options.passName?.startsWith("v5_article_")) {
+        const m = options.passName.match(/v5_article_(\d+)/);
+        if (m) expectedArticleId = Number(m[1]);
+      }
+
       for (const finding of out.findings) {
+        if (
+          (finding.article_id == null || finding.article_id === 0) &&
+          typeof finding.atom_id === "string"
+        ) {
+          const m = finding.atom_id.match(/^(\d+)[-.]/);
+          if (m) finding.article_id = Number(m[1]);
+        }
+
+        if (expectedArticleId !== null) {
+          if (finding.article_id == null || finding.article_id === 0) {
+            finding.article_id = expectedArticleId;
+          } else if (finding.article_id !== expectedArticleId) {
+            logger.warn("Cross-article output rejected in main parse", { expected: expectedArticleId, actual: finding.article_id });
+            continue; // Reject cross-article output
+          }
+        }
+
         if (!hasRequiredTitle(finding.title_ar)) {
           missingTitleCount++;
           parserValidationErrors.push("Missing required field: title_ar");
@@ -392,6 +417,27 @@ export async function parseJudgeWithRepair(
           let dropped = 0;
           for (const rf of rawFindings) {
             const normalized = { ...(rf ?? {}) } as Record<string, unknown>;
+            
+            // Extract expected reviewer article if available (from passName like "v5_article_14")
+            let expectedArticleId: number | null = null;
+            if (options.passName?.startsWith("v5_article_")) {
+              const m = options.passName.match(/v5_article_(\d+)/);
+              if (m) {
+                expectedArticleId = Number(m[1]);
+              }
+            }
+
+            // Safety rule logic for V5 reviewer article_id
+            if (expectedArticleId !== null) {
+              if (normalized.article_id == null || normalized.article_id === "" || normalized.article_id === 0) {
+                normalized.article_id = expectedArticleId;
+              } else if (normalized.article_id !== expectedArticleId) {
+                logger.warn("Cross-article output rejected", { expected: expectedArticleId, actual: normalized.article_id });
+                dropped++;
+                continue; // Reject as cross-article output
+              }
+            }
+
             // Derive article_id from atom_id if model omitted article_id (e.g. "5-2").
             if (
               (normalized.article_id == null || normalized.article_id === "") &&

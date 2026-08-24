@@ -2017,7 +2017,8 @@ async function runSinglePass(
     // Parse findings
     const { findings, diagnostics } = await parseJudgeWithRepair(judgeCall.raw_judge_response, model, {
       signal,
-      finishReason: judgeCall.finish_reason
+      finishReason: judgeCall.finish_reason,
+      passName: pass.name
     });
     repairAttempts = diagnostics.repair_invoked ? 1 : 0;
     logger.info("Judge Call Diagnostics", {
