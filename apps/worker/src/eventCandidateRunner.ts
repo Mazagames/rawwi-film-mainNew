@@ -26,6 +26,8 @@ export type EventCandidateRunnerResult = {
   groundedCandidateCount: number;
   ownershipSurvivorCount: number;
   finalAdjudicatorSurvivorCount: number;
+  groundedCandidates: JudgeFinding[];
+  ownershipSurvivors: JudgeFinding[];
 };
 
 type ReviewerResult = {
@@ -45,14 +47,17 @@ async function runReviewer(args: {
   chunkText: string;
   signal?: AbortSignal;
   reviewerResponse?: (articleNumber: number) => Promise<string>;
+  notesStyleProviderResolution?: boolean;
 }): Promise<ReviewerResult> {
   const startedAt = Date.now();
   const article = getScriptStandardArticle(args.reviewer.articleNumber) as GCAMArticle;
   const passName = `v5_article_${String(args.reviewer.articleNumber).padStart(2, "0")}`;
   const systemPrompt = args.reviewer.prompt;
   const userPrompt = renderBoundedStructuredEventContext(args.eventUnderstanding);
-  const primaryProvider = config.V5_VIOLATION_JUDGE_PROVIDER;
-  const model = config.V5_VIOLATION_JUDGE_MODEL;
+  const primaryProvider = args.notesStyleProviderResolution ? config.AI_PROVIDER : config.V5_VIOLATION_JUDGE_PROVIDER;
+  const model = args.notesStyleProviderResolution
+    ? (primaryProvider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL)
+    : config.V5_VIOLATION_JUDGE_MODEL;
 
   const invoke = async (provider: "openai" | "gemini") => {
     const response = args.reviewerResponse ? null : await callJudgeRaw(
@@ -68,6 +73,7 @@ async function runReviewer(args: {
         userContentOverride: userPrompt,
         isV5EventFirst: true,
         providerOverride: provider,
+        modelOverride: provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
         passName,
       },
     );
@@ -84,7 +90,7 @@ async function runReviewer(args: {
       const grounded = groundFindingEvidenceToChunk(finding, args.chunkText, args.eventUnderstanding.events);
       return grounded.grounded ? [grounded.finding] : [];
     });
-    logger.info("Violation candidate runner reviewer completed", {
+    logger.info(args.notesStyleProviderResolution ? "VIOLATION NOTE-STYLE RESPONSE RECEIVED" : "Violation candidate runner reviewer completed", {
       passName,
       provider,
       model,
@@ -98,6 +104,14 @@ async function runReviewer(args: {
   };
 
   try {
+    if (args.notesStyleProviderResolution) {
+      logger.info("VIOLATION NOTE-STYLE REQUEST STARTED", {
+        passName,
+        provider: primaryProvider,
+        model,
+        actualClientPath: primaryProvider === "gemini" ? "@google/genai models.generateContent" : "openai.chat.completions.create",
+      });
+    }
     const result = await runNotesProviderWithFallback({
       primaryProvider,
       primary: () => invoke(primaryProvider),
@@ -144,14 +158,38 @@ export async function runEventCandidateRunner(args: {
   signal?: AbortSignal;
   reviewerResponse?: (articleNumber: number) => Promise<string>;
   finalAdjudicator?: typeof runFinalAdjudicator;
+  articleNumbers?: number[];
+  notesStyleProviderResolution?: boolean;
+  experimentLabel?: string;
 }): Promise<EventCandidateRunnerResult> {
   const startedAt = Date.now();
-  const reviewers = getViolationReviewers();
+  const allowedArticles = args.articleNumbers ? new Set(args.articleNumbers) : null;
+  const reviewers = getViolationReviewers().filter((reviewer) => !allowedArticles || allowedArticles.has(reviewer.articleNumber));
   const concurrency = parseInt(process.env.WORKER_JUDGE_CONCURRENCY ?? "4", 10) || 4;
+  if (args.experimentLabel) {
+    logger.info("VIOLATION NOTE-STYLE TEST START", {
+      experiment: args.experimentLabel,
+      articlePassCount: reviewers.length,
+      provider: args.notesStyleProviderResolution ? config.AI_PROVIDER : config.V5_VIOLATION_JUDGE_PROVIDER,
+      model: args.notesStyleProviderResolution
+        ? (config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL)
+        : config.V5_VIOLATION_JUDGE_MODEL,
+      actualClientPath: args.notesStyleProviderResolution
+        ? (config.AI_PROVIDER === "gemini" ? "@google/genai models.generateContent" : "openai.chat.completions.create")
+        : "callJudgeRaw provider dispatch",
+    });
+  }
   const results = await runWithBoundedConcurrency(
     reviewers,
     concurrency,
-    (reviewer) => runReviewer({ reviewer, eventUnderstanding: args.eventUnderstanding, chunkText: args.chunkText, signal: args.signal, reviewerResponse: args.reviewerResponse }),
+    (reviewer) => runReviewer({
+      reviewer,
+      eventUnderstanding: args.eventUnderstanding,
+      chunkText: args.chunkText,
+      signal: args.signal,
+      reviewerResponse: args.reviewerResponse,
+      notesStyleProviderResolution: args.notesStyleProviderResolution,
+    }),
   );
   const groundedCandidates = results.flatMap((result) => result.groundedFindings);
   const ownership = enforceDeterministicOwnership(groundedCandidates, args.eventUnderstanding.events, args.chunkText);
@@ -168,8 +206,10 @@ export async function runEventCandidateRunner(args: {
   const rawCandidates = results.reduce((total, result) => total + result.rawCandidateCount, 0);
   const parsedCandidates = results.reduce((total, result) => total + result.parsedCandidateCount, 0);
   logger.info("Violation candidate engine: event_candidate_runner", {
-    provider: config.V5_VIOLATION_JUDGE_PROVIDER,
-    model: config.V5_VIOLATION_JUDGE_MODEL,
+    provider: args.notesStyleProviderResolution ? config.AI_PROVIDER : config.V5_VIOLATION_JUDGE_PROVIDER,
+    model: args.notesStyleProviderResolution
+      ? (config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL)
+      : config.V5_VIOLATION_JUDGE_MODEL,
     articlePassCount: reviewers.length,
     rawCandidates,
     parsedCandidates,
@@ -177,6 +217,18 @@ export async function runEventCandidateRunner(args: {
     ownershipSurvivors: ownership.finalFindings.length,
     finalAdjudicatorSurvivors: finalFindings.length,
   });
+  if (args.experimentLabel) {
+    logger.info("VIOLATION NOTE-STYLE TEST COMPLETE", {
+      experiment: args.experimentLabel,
+      rawCandidateCount: rawCandidates,
+      parsedCandidateCount: parsedCandidates,
+      groundedCandidateCount: groundedCandidates.length,
+      ownershipSurvivorCount: ownership.finalFindings.length,
+      finalAdjudicatorSurvivorCount: finalFindings.length,
+      finalReturnedFindingCount: finalFindings.length,
+      zeroStage: rawCandidates === 0 ? "raw" : parsedCandidates === 0 ? "parsed" : groundedCandidates.length === 0 ? "grounding" : ownership.finalFindings.length === 0 ? "ownership" : finalFindings.length === 0 ? "final_adjudicator" : null,
+    });
+  }
   return {
     findings: finalFindings,
     passResults: results.map((result) => result.passResult),
@@ -189,6 +241,8 @@ export async function runEventCandidateRunner(args: {
     groundedCandidateCount: groundedCandidates.length,
     ownershipSurvivorCount: ownership.finalFindings.length,
     finalAdjudicatorSurvivorCount: finalFindings.length,
+    groundedCandidates,
+    ownershipSurvivors: ownership.finalFindings,
   };
 }
 

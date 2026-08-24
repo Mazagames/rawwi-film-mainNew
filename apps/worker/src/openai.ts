@@ -32,6 +32,7 @@ type OpenAiCallOptions = {
   finishReason?: string | null;
   isV5EventFirst?: boolean;
   providerOverride?: "openai" | "gemini";
+  modelOverride?: string;
   passName?: string;
 };
 
@@ -203,9 +204,9 @@ export async function callJudgeRaw(
   }
 
   const provider = options.providerOverride ?? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_PROVIDER : config.AI_PROVIDER);
-  const configuredModel = isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : jobConfig.judge_model;
+  const configuredModel = options.modelOverride ?? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : jobConfig.judge_model);
   const resolvedModel = provider === "gemini"
-    ? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : config.GEMINI_JUDGE_MODEL)
+    ? (options.modelOverride ?? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : config.GEMINI_JUDGE_MODEL))
     : configuredModel;
 
   logger.info("[DEBUG] Judge request prepared", {

@@ -2374,7 +2374,9 @@ export async function processChunkJudge(
     // 3) Multi-Pass Detection (specialized scanners running in parallel)
     allFindings = [];
     try {
-      logger.info(`Violation candidate engine: ${resolveV5CandidateEngine(config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && violationSystemVersion === "v5")}`, {
+      const useArticle14Experiment = config.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED && violationSystemVersion === "v5";
+      const useEventCandidateRunner = config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && violationSystemVersion === "v5";
+      logger.info(`Violation candidate engine: ${useArticle14Experiment ? "article_14_note_style_experiment" : resolveV5CandidateEngine(useEventCandidateRunner)}`, {
         jobId,
         chunkId: chunk.id,
         provider: config.V5_VIOLATION_JUDGE_PROVIDER,
@@ -2386,7 +2388,17 @@ export async function processChunkJudge(
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
       const multiPassStartedAt = Date.now();
       throwIfAborted(signal);
-      if (config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && violationSystemVersion === "v5") {
+      if (useArticle14Experiment) {
+        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
+        multiPassResult = await runEventCandidateRunner({
+          chunkText,
+          eventUnderstanding,
+          signal,
+          articleNumbers: [14],
+          notesStyleProviderResolution: true,
+          experimentLabel: "article_14_note_style",
+        });
+      } else if (useEventCandidateRunner) {
         const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
         multiPassResult = await runEventCandidateRunner({
           chunkText,
@@ -2415,7 +2427,18 @@ export async function processChunkJudge(
       }
       multiPassEventUnderstanding = multiPassResult.eventUnderstanding;
       multiPassPassResults = multiPassResult.passResults;
-      if (config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && violationSystemVersion === "v5") {
+      if (useArticle14Experiment) {
+        logger.info("Article 14 Notes-style experiment execution summary", {
+          jobId,
+          chunkId: chunk.id,
+          articlePassCount: multiPassResult.passResults.length,
+          rawCandidates: multiPassResult.rawCandidateCount,
+          parsedCandidates: multiPassResult.parsedCandidateCount,
+          groundedCandidates: multiPassResult.groundedCandidateCount,
+          ownershipSurvivors: multiPassResult.ownershipSurvivorCount,
+          finalAdjudicatorSurvivors: multiPassResult.finalAdjudicatorSurvivorCount,
+        });
+      } else if (useEventCandidateRunner) {
         logger.info("Event candidate runner execution summary", {
           jobId,
           chunkId: chunk.id,
@@ -3761,7 +3784,7 @@ export async function processChunkJudge(
       }];
     });
 
-    if (violationSystemVersion === "v5" && !config.V5_EVENT_CANDIDATE_RUNNER_ENABLED) {
+    if (violationSystemVersion === "v5" && !config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && !config.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED) {
       const { runFinalAdjudicator } = await import("./finalAdjudicator.js");
       rows = await runFinalAdjudicator(rows, multiPassEventUnderstanding?.events ?? [], normalizedText ?? "");
     }
@@ -3902,6 +3925,15 @@ export async function processChunkJudge(
       inserted: data?.length ?? 0,
       error: error ?? null,
     });
+    if (config.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED && violationSystemVersion === "v5") {
+      logger.info("Article 14 Notes-style violation experiment persistence", {
+        jobId,
+        chunkId: chunk.id,
+        destination: "analysis_findings",
+        renderDestination: "Violations",
+        persistedFindings: data?.length ?? 0,
+      });
+    }
     recordTelemetryFromFindings({
       jobId,
       stageName: "persistence",
