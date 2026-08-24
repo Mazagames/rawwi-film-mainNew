@@ -285,6 +285,28 @@ async function main() {
     console.log(`- ${n.title} (Event ${n.event_id}): "${n.snippet || n.quote}"`);
   });
 
+  console.log("\n-------------------------------------------");
+  console.log("ASSERTIONS (CONCURRENT NOTES)");
+  console.log("-------------------------------------------");
+  const hasSecurity13 = notesResult.notes.some((n: any) => n.category === 'security_scenes' && n.event_id === 13);
+  const hasSecurity30 = notesResult.notes.some((n: any) => n.category === 'security_scenes' && n.event_id === 30);
+  const hasMedia23 = notesResult.notes.some((n: any) => n.category === 'media_credibility' && n.event_id === 23);
+  const hasMedia24 = notesResult.notes.some((n: any) => n.category === 'media_credibility' && n.event_id === 24);
+  const hasClassified25 = notesResult.notes.some((n: any) => n.category === 'classified_documents' && n.event_id === 25);
+  const totalAccepted = notesResult.notes.length;
+
+  console.log(`Security Event 13 found: ${hasSecurity13}`);
+  console.log(`Security Event 30 found: ${hasSecurity30}`);
+  console.log(`Media Event 23 found: ${hasMedia23}`);
+  console.log(`Media Event 24 found: ${hasMedia24}`);
+  console.log(`Classified Event 25 found: ${hasClassified25}`);
+  console.log(`Total Accepted Notes >= 5: ${totalAccepted >= 5} (${totalAccepted})`);
+  if (!hasSecurity13 || !hasSecurity30 || !hasMedia23 || !hasMedia24 || !hasClassified25 || totalAccepted < 5) {
+    console.error("\n[ERROR] Notes concurrent execution did not produce the expected notes.");
+    process.exit(1);
+  } else {
+    console.log("\n[SUCCESS] Concurrent Notes execution produced the identical expected notes.");
+  }
 }
 
 main().catch(console.error);

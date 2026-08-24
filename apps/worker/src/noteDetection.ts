@@ -308,9 +308,10 @@ export async function runNotesDetection(
   const passResults: NotePassResult[] = [];
   const allNotes: NoteItem[] = [];
 
-  for (const definition of noteDefinitions) {
-    const passStartedAt = Date.now();
-    try {
+  const concurrentResults = await Promise.all(
+    noteDefinitions.map(async (definition) => {
+      const passStartedAt = Date.now();
+      try {
       const response = await callNotesOpenAI({
         definition,
         events,
@@ -406,28 +407,6 @@ export async function runNotesDetection(
         });
         normalizedNotes.push(normalized);
       }
-      allNotes.push(...normalizedNotes);
-      logger.info("Note reviewer validation summary", {
-        jobId: options.jobId,
-        chunkId: options.chunkId,
-        reviewer: definition.id,
-        category: definition.category,
-        generated: noteTelemetry.generated,
-        accepted: noteTelemetry.accepted,
-        rejected: noteTelemetry.rejected,
-        rejectionReasons: noteTelemetry.rejectionReasons,
-      });
-      passResults.push({
-        passName: definition.id,
-        reviewerId: definition.id,
-        category: definition.category,
-        notes: normalizedNotes,
-        duration: Date.now() - passStartedAt,
-        model: config.OPENAI_JUDGE_MODEL,
-        promptTokens: response.usage?.prompt_tokens ?? null,
-        completionTokens: response.usage?.completion_tokens ?? null,
-        totalTokens: response.usage?.total_tokens ?? null,
-      });
       logger.info("Note reviewer completed", {
         jobId: options.jobId,
         chunkId: options.chunkId,
@@ -438,6 +417,31 @@ export async function runNotesDetection(
         parseError: parsed.parseError ?? null,
         finishReason: response.finishReason,
       });
+      logger.info("Note reviewer validation summary", {
+        jobId: options.jobId,
+        chunkId: options.chunkId,
+        reviewer: definition.id,
+        category: definition.category,
+        generated: noteTelemetry.generated,
+        accepted: noteTelemetry.accepted,
+        rejected: noteTelemetry.rejected,
+        rejectionReasons: noteTelemetry.rejectionReasons,
+      });
+      const passResult: NotePassResult = {
+        passName: definition.id,
+        reviewerId: definition.id,
+        category: definition.category,
+        notes: normalizedNotes,
+        duration: Date.now() - passStartedAt,
+        model: config.OPENAI_JUDGE_MODEL,
+        promptTokens: response.usage?.prompt_tokens ?? null,
+        completionTokens: response.usage?.completion_tokens ?? null,
+        totalTokens: response.usage?.total_tokens ?? null,
+      };
+      return {
+        passResult,
+        normalizedNotes,
+      };
     } catch (error) {
       logger.warn("Note reviewer failed", {
         jobId: options.jobId,
@@ -446,7 +450,7 @@ export async function runNotesDetection(
         category: definition.category,
         error: error instanceof Error ? error.message : String(error),
       });
-      passResults.push({
+      const passResult: NotePassResult = {
         passName: definition.id,
         reviewerId: definition.id,
         category: definition.category,
@@ -458,7 +462,20 @@ export async function runNotesDetection(
         totalTokens: null,
         skipped: false,
         reason: "failed",
-      });
+      };
+      return {
+        passResult,
+        normalizedNotes: [],
+      };
+    }
+  }));
+
+  for (const result of concurrentResults) {
+    if (result.passResult) {
+      passResults.push(result.passResult);
+    }
+    if (result.normalizedNotes && result.normalizedNotes.length > 0) {
+      allNotes.push(...result.normalizedNotes);
     }
   }
 
@@ -494,7 +511,6 @@ export async function runNotesDetection(
       // Sort by confidence descending, keep the first
       group.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
       deduplicatedNotes.push(group[0]);
-      
       // Log dropped notes
       for (let i = 1; i < group.length; i++) {
         droppedNotes.push(group[i]);
