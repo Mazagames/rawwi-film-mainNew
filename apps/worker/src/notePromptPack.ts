@@ -111,12 +111,12 @@ const NOTE_PACK_ENTRIES: NotePackEntry[] = [
     category: "article_14",
     displayLabel: "الألفاظ النابية والشتائم والإهانات الشخصية",
     filename: "article_14_profanity_personal_insults.md",
-    kind: "violation",
-    destination: "analysis_findings",
+    kind: "note",
+    destination: "analysis_notes",
   },
 ];
 
-export const NOTE_REVIEWER_ARTICLE_NUMBERS = new Set([11, 13, 21]);
+export const NOTE_REVIEWER_ARTICLE_NUMBERS = new Set([11, 13, 14, 21]);
 
 let cachedPack: LoadedNotePack | null = null;
 

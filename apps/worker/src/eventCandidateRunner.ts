@@ -7,12 +7,13 @@ import { getScriptStandardArticle, type GCAMArticle } from "./gcam.js";
 import { callJudgeRaw, parseJudgeWithRepair } from "./openai.js";
 import { extractRawFindingCount } from "./judgeDiagnostics.js";
 import { getV5ReviewerDefinitions } from "./v5PromptPack.js";
+import { NOTE_REVIEWER_ARTICLE_NUMBERS } from "./notePromptPack.js";
 import { runNotesProviderWithFallback, runWithBoundedConcurrency } from "./noteDetection.js";
 import type { JudgeFinding } from "./schemas.js";
 import type { PassResult } from "./multiPassJudge.js";
 import { logger } from "./logger.js";
 
-const NOTES_ONLY_ARTICLES = new Set([11, 13, 21]);
+const NOTES_ONLY_ARTICLES = NOTE_REVIEWER_ARTICLE_NUMBERS;
 
 export type EventCandidateRunnerResult = {
   findings: JudgeFinding[];

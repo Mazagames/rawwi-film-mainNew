@@ -18,7 +18,7 @@ function testRepositoryNotePackLoads(): void {
   const noteDirectory = resolveNoteDirectoryForTests(process.cwd());
   const pack = loadNotePackFromDirectoryForTests(noteDirectory);
   const noteDefinitions = pack.noteDefinitions.filter((definition) => definition.kind === "note");
-  assert(noteDefinitions.length === 7, `expected 7 note reviewers, got ${noteDefinitions.length}`);
+  assert(noteDefinitions.length === 8, `expected 8 note reviewers, got ${noteDefinitions.length}`);
 
   const expectedCategories = [
     "media_credibility",
@@ -28,6 +28,7 @@ function testRepositoryNotePackLoads(): void {
     "security_scenes",
     "commercial_entities",
     "religious_content",
+    "article_14",
   ];
 
   for (const category of expectedCategories) {
@@ -49,7 +50,7 @@ function testRepositoryNotePackLoads(): void {
 function testNoteDefinitionsAccessibleFromRuntime(): void {
   const definitions = getNoteDefinitions();
   const noteDefinitions = definitions.filter((definition) => definition.kind === "note");
-  assert(noteDefinitions.length === 7, `expected 7 loaded note definitions, got ${noteDefinitions.length}`);
+  assert(noteDefinitions.length === 8, `expected 8 loaded note definitions, got ${noteDefinitions.length}`);
   for (const definition of noteDefinitions) {
     assert(definition.prompt.trim().length > 0, `note prompt should not be empty for ${definition.id}`);
     assert(definition.category.trim().length > 0, `note category should not be empty for ${definition.id}`);

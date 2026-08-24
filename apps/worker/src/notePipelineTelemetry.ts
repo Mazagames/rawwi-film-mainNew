@@ -8,6 +8,7 @@ export const NOTE_CATEGORY_ORDER = [
   "media_credibility",
   "classified_documents",
   "religious_content",
+  "article_14",
 ] as const;
 
 export type NoteCategoryKey = typeof NOTE_CATEGORY_ORDER[number];
@@ -20,6 +21,7 @@ const NOTE_CATEGORY_LABELS: Record<NoteCategoryKey, string> = {
   media_credibility: "Media",
   classified_documents: "Classified",
   religious_content: "Religious",
+  article_14: "Article14",
 };
 
 const NOTE_CATEGORY_RENDERED_TABS: Record<NoteCategoryKey, string> = {
@@ -30,6 +32,7 @@ const NOTE_CATEGORY_RENDERED_TABS: Record<NoteCategoryKey, string> = {
   media_credibility: "Media Credibility",
   classified_documents: "Classified Documents",
   religious_content: "محتوى ديني / مذهبي حساس",
+  article_14: "Article 14",
 };
 
 const NOTE_CATEGORY_ALIASES: Record<string, NoteCategoryKey> = {
@@ -47,6 +50,8 @@ const NOTE_CATEGORY_ALIASES: Record<string, NoteCategoryKey> = {
   "Classified Documents": "classified_documents",
   religious_content: "religious_content",
   "محتوى ديني / مذهبي حساس": "religious_content",
+  article_14: "article_14",
+  "Article 14": "article_14",
 };
 
 type NoteCounts = Record<string, number>;

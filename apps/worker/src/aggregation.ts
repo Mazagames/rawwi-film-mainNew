@@ -298,6 +298,22 @@ export type SummaryJson = {
       updated_at: string | null;
       created_at?: string | null;
     }>;
+    article_14: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
   };
   /** Separate light pass: words/phrases from glossary that appeared in the script — for "كلمات/عبارات للمراجعة" only. Does not affect violations. */
   words_to_revisit?: Array<{
@@ -1391,6 +1407,7 @@ const NOTE_CATEGORY_ORDER: Array<keyof NonNullable<SummaryJson["notes"]>> = [
   "security_scenes",
   "saudi_names",
   "commercial_entities",
+  "article_14",
 ];
 const NOTE_CATEGORY_LABELS: Record<keyof NonNullable<SummaryJson["notes"]>, string> = {
   media_credibility: "Media Credibility",
@@ -1475,6 +1492,7 @@ function buildNoteSummary(jobId: string, notes: DbNote[]): {
       security_scenes: groups.get("security_scenes") ?? [],
       saudi_names: groups.get("saudi_names") ?? [],
       commercial_entities: groups.get("commercial_entities") ?? [],
+      article_14: groups.get("article_14") ?? [],
     },
   };
 }
@@ -1643,6 +1661,36 @@ export function buildSummaryJson(
   });
   const report_hints: SummaryJson["report_hints"] = [];
   const noteSummary = buildNoteSummary(jobId, notes);
+  const article14PresentationTitle = "المادة 14: الألفاظ النابية والشتائم والإهانات الشخصية";
+  const article14PresentationFindings = (noteSummary.notes.article_14 ?? [])
+    .filter((note) => note.included_in_report !== false)
+    .map((note, index) => ({
+      canonical_finding_id: `article14-note-${note.id ?? `${jobId}-${note.event_id}-${index}`}`,
+      finding_uuid: note.id,
+      title_ar: article14PresentationTitle,
+      evidence_snippet: note.snippet,
+      severity: "medium",
+      confidence: note.confidence,
+      final_ruling: null,
+      rationale: note.description || RATIONALE_FALLBACK,
+      pillar_id: null,
+      primary_article_id: 14,
+      related_article_ids: [],
+      policy_links: [{ article_id: 14, role: "primary" }],
+      start_offset_global: null,
+      end_offset_global: null,
+      start_line_chunk: null,
+      end_line_chunk: null,
+      page_number: null,
+      primary_policy_atom_id: null,
+      canonical_atom: null,
+      intensity: null,
+      context_impact: null,
+      legal_sensitivity: null,
+      audience_risk: null,
+      source: "ai",
+    }));
+  canonical_findings.push(...article14PresentationFindings);
   if (config.DEBUG_TRACE_FINDING_PIPELINE) {
     traceFindingPipelineStage({
       jobId,

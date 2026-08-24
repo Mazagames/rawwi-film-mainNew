@@ -182,7 +182,25 @@ function testNotesAreGroupedSeparately() {
   assert((religiousSummary.notes?.religious_content ?? []).length === 1, "Religious notes should be mapped to religious_content");
   assert(religiousSummary.notes_summary?.some((group) => group.category === "religious_content"), "notes_summary should include religious_content");
 
-  console.log("✓ Notes are grouped separately from violations, with multiple events preserved");
+  const article14Notes: DbNote[] = [
+    {
+      reviewer: "article_14_profanity_personal_insults",
+      category: "article_14",
+      title: "إهانة شخصية",
+      description: "إهانة مباشرة لشخصية",
+      snippet: "اقتباس الإهانة",
+      event_id: 22,
+      confidence: 0.95,
+      status: "new",
+      included_in_report: true,
+    },
+  ];
+  const article14Summary = buildSummaryJson("job3", "script3", [], undefined, undefined, undefined, undefined, article14Notes);
+  assert((article14Summary.notes?.article_14 ?? []).length === 1, "Article 14 must remain in analysis_notes summary output");
+  assert(article14Summary.canonical_findings?.length === 1, "Article 14 note should have one presentation finding");
+  assert(article14Summary.canonical_findings?.[0]?.primary_article_id === 14, "Article 14 presentation mapping must retain article ownership");
+
+  console.log("✓ Notes are grouped separately from violations, with Article 14 mapped only at presentation time");
 }
 
 function testUnknownNoteCategoryRejected() {
