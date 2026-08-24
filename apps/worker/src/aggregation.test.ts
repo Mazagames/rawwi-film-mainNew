@@ -182,6 +182,16 @@ function testNotesAreGroupedSeparately() {
   assert((religiousSummary.notes?.religious_content ?? []).length === 1, "Religious notes should be mapped to religious_content");
   assert(religiousSummary.notes_summary?.some((group) => group.category === "religious_content"), "notes_summary should include religious_content");
 
+  const article05And12Notes: DbNote[] = [
+    { reviewer: "article_05_violence_torture", category: "article_05", title: "عنف", description: "وصف", snippet: "دليل", event_id: 30, confidence: 0.9, status: "new" },
+    { reviewer: "article_12_child_protection_exploitation", category: "article_12", title: "قاصر", description: "وصف", snippet: "دليل", event_id: 31, confidence: 0.9, status: "new" },
+  ];
+  const article05And12Summary = buildSummaryJson("job4", "script4", [], undefined, undefined, undefined, undefined, article05And12Notes);
+  assert((article05And12Summary.notes?.article_05 ?? []).length === 1, "Article 05 must remain in summary.notes");
+  assert((article05And12Summary.notes?.article_12 ?? []).length === 1, "Article 12 must remain in summary.notes");
+  assert(article05And12Summary.notes_summary?.some((group) => group.category === "article_05"), "notes_summary must include article_05");
+  assert(article05And12Summary.notes_summary?.some((group) => group.category === "article_12"), "notes_summary must include article_12");
+
   const article14Notes: DbNote[] = [
     {
       reviewer: "article_14_profanity_personal_insults",

@@ -21,6 +21,7 @@ import { buildLineageEvent, persistLineageEvents } from "./findingLineage.js";
 import { traceFindingPipelineStage, traceFindingPipelineSummary, type FindingPipelineTraceSnapshot } from "./findingPipelineTrace.js";
 import { emitPipelineTelemetryBlock, recordTelemetryFromSummary } from "./pipelineTelemetry.js";
 import {
+  NOTE_CATEGORY_ORDER as NOTE_CATEGORY_KEYS,
   countNoteCategoriesFromSummary,
   logNotePipelineStage,
   normalizeNoteCategoryKey,
@@ -283,6 +284,38 @@ export type SummaryJson = {
       created_at?: string | null;
     }>;
     commercial_entities: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+    article_05: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
+    article_12: Array<{
       id: string | null;
       reviewer: string | null;
       category: string;
@@ -1399,16 +1432,7 @@ type DbNote = {
 const SEVERITIES = ["low", "medium", "high", "critical"] as const;
 const SEVERITY_ORDER: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
 const RATIONALE_FALLBACK = "يتطلب تقييم مراجع مختص.";
-const NOTE_CATEGORY_ORDER: Array<keyof NonNullable<SummaryJson["notes"]>> = [
-  "media_credibility",
-  "medical_notes",
-  "classified_documents",
-  "religious_content",
-  "security_scenes",
-  "saudi_names",
-  "commercial_entities",
-  "article_14",
-];
+const NOTE_CATEGORY_ORDER: Array<keyof NonNullable<SummaryJson["notes"]>> = [...NOTE_CATEGORY_KEYS];
 const NOTE_CATEGORY_LABELS: Record<keyof NonNullable<SummaryJson["notes"]>, string> = {
   media_credibility: "Media Credibility",
   medical_notes: "Medical Notes",
@@ -1417,6 +1441,8 @@ const NOTE_CATEGORY_LABELS: Record<keyof NonNullable<SummaryJson["notes"]>, stri
   security_scenes: "Security Scenes",
   saudi_names: "Saudi Names",
   commercial_entities: "Commercial Entities",
+  article_05: "Article 05",
+  article_12: "Article 12",
 };
 
 type NoteSummaryItem = NonNullable<SummaryJson["notes"]>[keyof NonNullable<SummaryJson["notes"]>][number];
@@ -1482,19 +1508,11 @@ function buildNoteSummary(jobId: string, notes: DbNote[]): {
     }))
     .sort((a, b) => NOTE_CATEGORY_ORDER.indexOf(a.category as keyof NonNullable<SummaryJson["notes"]>) - NOTE_CATEGORY_ORDER.indexOf(b.category as keyof NonNullable<SummaryJson["notes"]>));
 
-  return {
-    notes_summary,
-    notes: {
-      media_credibility: groups.get("media_credibility") ?? [],
-      medical_notes: groups.get("medical_notes") ?? [],
-      classified_documents: groups.get("classified_documents") ?? [],
-      religious_content: groups.get("religious_content") ?? [],
-      security_scenes: groups.get("security_scenes") ?? [],
-      saudi_names: groups.get("saudi_names") ?? [],
-      commercial_entities: groups.get("commercial_entities") ?? [],
-      article_14: groups.get("article_14") ?? [],
-    },
-  };
+  const materializedNotes = Object.fromEntries(
+    NOTE_CATEGORY_ORDER.map((category) => [category, groups.get(category) ?? []]),
+  ) as NonNullable<SummaryJson["notes"]>;
+
+  return { notes_summary, notes: materializedNotes };
 }
 
 function compareCanonicalItemsStable(
