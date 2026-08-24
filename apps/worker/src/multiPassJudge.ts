@@ -2485,12 +2485,16 @@ export async function runMultiPassDetection(
     };
   }
 
-  // Run planned passes in parallel (completion order is arbitrary; UI shows debounced count)
+  // Run planned passes with concurrency limit (completion order is arbitrary; UI shows debounced count)
   let completed = 0;
   let findingsCount = 0;
-  const activeResultsRaw = await Promise.all(
-    plan.activePasses.map((pass) =>
-      runSinglePassWithHardTimeout(
+
+  const concurrencyLimit = parseInt(process.env.WORKER_JUDGE_CONCURRENCY || "4", 10);
+  const activeResultsRaw = await (async () => {
+    const results: Promise<any>[] = [];
+    const executing = new Set<Promise<any>>();
+    for (const pass of plan.activePasses) {
+      const p = runSinglePassWithHardTimeout(
         chunkText,
         chunkStart,
         chunkEnd,
@@ -2511,9 +2515,16 @@ export async function runMultiPassDetection(
           }
           return result;
         }
-      )
-    )
-  );
+      );
+      results.push(p);
+      const e = p.finally(() => executing.delete(e));
+      executing.add(e);
+      if (executing.size >= concurrencyLimit) {
+        await Promise.race(executing);
+      }
+    }
+    return Promise.all(results);
+  })();
   if (config.VIOLATION_SYSTEM_VERSION === "v5") {
     const missingResults = plan.activePasses.filter(
       (pass) => !activeResultsRaw.some((result) => result.passName === pass.name)

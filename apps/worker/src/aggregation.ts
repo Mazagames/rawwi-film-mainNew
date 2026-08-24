@@ -717,7 +717,7 @@ async function loadPriorReviewFindingRows(
   reportId: string,
   scriptId: string,
   versionId: string,
-): Promise<ExistingReviewFindingRow[]> {
+): Promise<{ validRows: ExistingReviewFindingRow[], priorRows: number, priorHumanReviewedRows: number, priorAiRows: number }> {
   const { data, error } = await supabase
     .from("analysis_review_findings")
     .select("id, report_id, script_id, version_id, finding_uuid, canonical_finding_id, source_kind, primary_article_id, primary_atom_id, severity, review_status, title_ar, description_ar, rationale_ar, evidence_snippet, manual_comment, page_number, start_offset_global, end_offset_global, start_offset_page, end_offset_page, anchor_status, anchor_method, anchor_text, anchor_confidence, approved_reason, include_in_report, reviewed_by, reviewed_at, edited_by, edited_at, is_hidden, is_manual, created_at, updated_at")
@@ -729,10 +729,19 @@ async function loadPriorReviewFindingRows(
 
   if (error) {
     logger.warn("Could not load prior review findings", { reportId, scriptId, versionId, error });
-    return [];
+    return { validRows: [], priorRows: 0, priorHumanReviewedRows: 0, priorAiRows: 0 };
   }
 
-  return (data ?? []) as ExistingReviewFindingRow[];
+  const allRows = (data ?? []) as ExistingReviewFindingRow[];
+  const validRows = allRows.filter(r => r.is_manual || r.reviewed_by || r.reviewed_at);
+  const priorAiRows = allRows.length - validRows.length;
+
+  return {
+    validRows,
+    priorRows: allRows.length,
+    priorHumanReviewedRows: validRows.length,
+    priorAiRows,
+  };
 }
 
 function applyPriorReviewState(
@@ -909,7 +918,9 @@ async function materializeReviewFindings(
   versionId: string,
   fullScriptText: string | null = null,
 ): Promise<void> {
-  const priorRows = await loadPriorReviewFindingRows(reportId, summary.script_id, versionId);
+  const priorData = await loadPriorReviewFindingRows(reportId, summary.script_id, versionId);
+  const priorRows = priorData.validRows;
+
   const baseRows = buildReviewFindingRows(reportId, summary, versionId)
     .map((row) => normalizeReviewFindingConsistency(row, fullScriptText));
   const carriedRows = baseRows
@@ -922,8 +933,10 @@ async function materializeReviewFindings(
   logger.info("Materializing reviewer findings", {
     reportId,
     jobId: summary.job_id,
-    rows: rows.length,
-    priorRows: priorRows.length,
+    currentJobRows: rows.length,
+    priorRows: priorData.priorRows,
+    priorHumanReviewedRows: priorData.priorHumanReviewedRows,
+    priorAiRows: priorData.priorAiRows,
     manualRows: manualRows.length,
   });
 
