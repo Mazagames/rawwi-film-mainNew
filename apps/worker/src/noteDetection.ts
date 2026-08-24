@@ -27,6 +27,7 @@ export type NotePassResult = {
   category: string;
   notes: NoteItem[];
   duration: number;
+  provider: "openai" | "gemini";
   model: string;
   promptTokens: number | null;
   completionTokens: number | null;
@@ -538,6 +539,7 @@ export async function runReviewerPack(
     category: result.definition.category,
     notes: result.notes,
     duration: result.duration,
+    provider: config.AI_PROVIDER,
     model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
     promptTokens: result.response?.usage?.prompt_tokens ?? null,
     completionTokens: result.response?.usage?.completion_tokens ?? null,
@@ -553,8 +555,16 @@ export async function runReviewerPack(
     fallbackProvider: result.diagnostics?.fallbackProvider ?? null,
     ...(result.error ? { reason: "failed", skipped: false } : {}),
   } satisfies NotePassResult));
+  const deduplicatedNotes = dedup(notes);
+  logger.info("Notes deduplication diagnostics", {
+    jobId: options.jobId,
+    chunkId: options.chunkId,
+    inputNoteCount: notes.length,
+    deduplicatedNoteCount: deduplicatedNotes.length,
+    deduplicationDroppedCount: notes.length - deduplicatedNotes.length,
+  });
   return {
-    notes: dedup(notes),
+    notes: deduplicatedNotes,
     violationCandidates: dedup(violationCandidates),
     passResults,
     executedPassCount: results.length,

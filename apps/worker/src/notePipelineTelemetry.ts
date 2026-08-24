@@ -1,6 +1,8 @@
 import { logger } from "./logger.js";
 
 export const NOTE_CATEGORY_ORDER = [
+  "article_05",
+  "article_12",
   "security_scenes",
   "saudi_names",
   "commercial_entities",
@@ -21,6 +23,8 @@ const NOTE_CATEGORY_LABELS: Record<NoteCategoryKey, string> = {
   media_credibility: "Media",
   classified_documents: "Classified",
   religious_content: "Religious",
+  article_05: "Article05",
+  article_12: "Article12",
   article_14: "Article14",
 };
 
@@ -32,6 +36,8 @@ const NOTE_CATEGORY_RENDERED_TABS: Record<NoteCategoryKey, string> = {
   media_credibility: "Media Credibility",
   classified_documents: "Classified Documents",
   religious_content: "محتوى ديني / مذهبي حساس",
+  article_05: "Article 05",
+  article_12: "Article 12",
   article_14: "Article 14",
 };
 
@@ -50,6 +56,10 @@ const NOTE_CATEGORY_ALIASES: Record<string, NoteCategoryKey> = {
   "Classified Documents": "classified_documents",
   religious_content: "religious_content",
   "محتوى ديني / مذهبي حساس": "religious_content",
+  article_05: "article_05",
+  "Article 05": "article_05",
+  article_12: "article_12",
+  "Article 12": "article_12",
   article_14: "article_14",
   "Article 14": "article_14",
 };

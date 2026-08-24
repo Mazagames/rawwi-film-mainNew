@@ -52,10 +52,12 @@ async function main(): Promise<void> {
   );
 
   assert(result.violationCandidates.length === 0, `expected zero violation candidates in the pilot, got ${result.violationCandidates.length}`);
-  assert(result.notes.length === 2, `expected 2 mock note outputs, got ${result.notes.length}`);
+  assert(result.notes.length === 4, `expected 4 mock note outputs, got ${result.notes.length}`);
   assert(result.notes.every((note) => typeof note.event_id === "number"), "all pilot Notes must preserve exact event_id values");
   assert(result.notes.every((note) => typeof note.quote === "string" && note.quote.length > 0), "all pilot Notes must preserve exact quote/evidence");
-  assert(result.notes.every((note) => note.category === "article_14"), "mocked pilot output remains article_14 note-only evidence");
+  assert(result.notes.some((note) => note.category === "article_05"), "Article 05 mock output must remain a Note");
+  assert(result.notes.some((note) => note.category === "article_12"), "Article 12 mock output must remain a Note");
+  assert(result.notes.filter((note) => note.category === "article_14").length === 2, "Article 14 mock output must preserve both Notes");
   assert(result.passResults.some((pass) => pass.passName === "article_14_profanity_personal_insults"), "Article 14 must use the shared note pass result");
   console.log("✓ pilot Article 05/12/14 reviewers are note-kind definitions in analysis_notes");
   console.log("✓ all 10 pilot reviewers are Note-compatible and preserve exact event_id/quote evidence");
