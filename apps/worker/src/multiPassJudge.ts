@@ -2403,9 +2403,20 @@ export async function runMultiPassDetection(
   throwIfAborted(signal);
   const plan = executionPlan ?? planDetectionPassExecution(chunkText, allArticles, lexiconTerms);
   const totalPasses = plan.activePasses.length;
-  const eventUnderstanding = config.VIOLATION_SYSTEM_VERSION === "v5"
+  let eventUnderstanding = config.VIOLATION_SYSTEM_VERSION === "v5"
       ? await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined)
       : null;
+
+  if (config.VIOLATION_SYSTEM_VERSION === "v5" && chunkText.trim().length > 0 && eventUnderstanding) {
+    if (eventUnderstanding.events.length === 0) {
+      logger.warn("Event Understanding returned 0 events for non-empty chunk. Retrying once...");
+      eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined);
+
+      if (eventUnderstanding.events.length === 0) {
+        throw new Error("event_understanding_empty: Event Understanding returned 0 events for non-empty chunk after retry.");
+      }
+    }
+  }
   const reviewerPromptContext = eventUnderstanding
     ? renderStructuredEventContext(eventUnderstanding)
     : promptContext;
