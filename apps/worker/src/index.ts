@@ -56,6 +56,7 @@ function getRuntimeConfigLogPayload() {
     analysisPipelineVersion: config.ANALYSIS_PIPELINE_VERSION,
     analysisEngine: config.ANALYSIS_ENGINE,
     violationSystemVersion: config.VIOLATION_SYSTEM_VERSION,
+    v5EventCandidateRunnerEnabled: config.V5_EVENT_CANDIDATE_RUNNER_ENABLED,
     analysisEvalLog: config.ANALYSIS_EVAL_LOG,
     analysisDeepAuditor: config.ANALYSIS_DEEP_AUDITOR,
     largeJobChunkThreshold: config.ANALYSIS_LARGE_JOB_CHUNK_THRESHOLD,

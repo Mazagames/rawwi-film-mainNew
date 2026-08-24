@@ -11,6 +11,10 @@ export function resolveViolationSystemVersion(
   return parseViolationSystemVersion(jobConfig?.violation_system_version, globalVersion);
 }
 
+export function resolveV5CandidateEngine(enabled: boolean): "legacy_v5" | "event_candidate_runner" {
+  return enabled ? "event_candidate_runner" : "legacy_v5";
+}
+
 /**
  * Worker env config. Load with dotenv in index or require env at startup.
  */
@@ -68,6 +72,8 @@ export const config = {
   ),
   NOTE_REVIEWER_CONCURRENCY: Math.max(1, parseInt(process.env.NOTE_REVIEWER_CONCURRENCY ?? "2", 10) || 2),
   NOTE_REVIEWER_RETRY_BUDGET_MS: Math.max(1_000, parseInt(process.env.NOTE_REVIEWER_RETRY_BUDGET_MS ?? "30000", 10) || 30_000),
+  V5_EVENT_CANDIDATE_RUNNER_ENABLED: (process.env.V5_EVENT_CANDIDATE_RUNNER_ENABLED ?? "false").toLowerCase() === "true",
+  V5_EVENT_CANDIDATE_RUNNER_ENABLED: (process.env.V5_EVENT_CANDIDATE_RUNNER_ENABLED ?? "false").toLowerCase() === "true",
   ANALYSIS_LARGE_JOB_CHUNK_THRESHOLD: Math.max(1, parseInt(process.env.ANALYSIS_LARGE_JOB_CHUNK_THRESHOLD ?? "35", 10) || 35),
   ANALYSIS_LARGE_JOB_TEXT_LENGTH_THRESHOLD: Math.max(10_000, parseInt(process.env.ANALYSIS_LARGE_JOB_TEXT_LENGTH_THRESHOLD ?? "180000", 10) || 180000),
   ANALYSIS_PASS_GATING_ENABLED: (process.env.ANALYSIS_PASS_GATING_ENABLED ?? "true").toLowerCase() !== "false",

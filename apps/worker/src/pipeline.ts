@@ -14,7 +14,7 @@ import { analyzeLexiconMatches } from "./lexiconMatcher.js";
 import { findStringMatches, getLexiconCache } from "./lexiconCache.js";
 import { logger } from "./logger.js";
 import { buildRouterTraceSummary, callJudgeRaw, callRouter, parseJudgeWithRepair } from "./openai.js";
-import { config, resolveViolationSystemVersion } from "./config.js";
+import { config, resolveV5CandidateEngine, resolveViolationSystemVersion } from "./config.js";
 import { isValidAtomForArticle, normalizeAtomId } from "./policyMap.js";
 import type { JudgeFinding } from "./schemas.js";
 import { runNotesDetection, toNoteInsertRows } from "./noteDetection.js";
@@ -46,10 +46,12 @@ import { PIPELINE_V2_SCRIPT_MEMORY_VERSION } from "./pipelineV2/scriptMemory.js"
 import { PIPELINE_EVIDENCE_GROUNDING_VERSION, groundFindingEvidenceToChunk } from "./evidenceGrounding.js";
 import { getEventConsistencyIssue } from "./eventConsistency.js";
 import type { StructuredEvent } from "./eventUnderstanding.js";
+import { buildEventUnderstandingPass } from "./eventUnderstanding.js";
 import { V3_SUBJECT_DEFINITIONS } from "./v3PromptPack.js";
 import { buildLineageEvent, ensureFindingLineageId, persistLineageEvents } from "./findingLineage.js";
 import { buildFindingUuid } from "./findingIdentity.js";
 import { canonicalStringify } from "./canonicalJson.js";
+import { runEventCandidateRunner, type EventCandidateRunnerResult } from "./eventCandidateRunner.js";
 
 export type FindingWithGlobal = JudgeFinding & {
   source?: "ai" | "lexicon_mandatory" | "manual";
@@ -69,7 +71,10 @@ export type FindingWithGlobal = JudgeFinding & {
   secondary_pillar_ids?: string[];
 };
 
-type MultiPassDetectionResult = Awaited<ReturnType<typeof runMultiPassDetection>>;
+type MultiPassDetectionResult = Awaited<ReturnType<typeof runMultiPassDetection>> & Partial<Pick<
+  EventCandidateRunnerResult,
+  "rawCandidateCount" | "parsedCandidateCount" | "groundedCandidateCount" | "ownershipSurvivorCount" | "finalAdjudicatorSurvivorCount"
+>>;
 type BenchmarkInstrumentationArgs = {
   jobId: string;
   chunkId: string;
@@ -2369,28 +2374,59 @@ export async function processChunkJudge(
     // 3) Multi-Pass Detection (specialized scanners running in parallel)
     allFindings = [];
     try {
+      logger.info(`Violation candidate engine: ${resolveV5CandidateEngine(config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && violationSystemVersion === "v5")}`, {
+        jobId,
+        chunkId: chunk.id,
+        provider: config.V5_VIOLATION_JUDGE_PROVIDER,
+        model: config.V5_VIOLATION_JUDGE_MODEL,
+        enabled: config.V5_EVENT_CANDIDATE_RUNNER_ENABLED,
+        violationSystemVersion,
+      });
       const passExecutionPlan = planDetectionPassExecution(chunkText, selectedArticles, terms, violationSystemVersion);
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
       const multiPassStartedAt = Date.now();
       throwIfAborted(signal);
-      multiPassResult = await runMultiPassDetection(
-        chunkText,
-        chunkStart,
-        chunkEnd,
-        selectedArticles,
-        terms,
-        { temperature, seed, analysis_signature_context: analysisSignatureBase },
-        { chunkId: chunk.id },
-        passExecutionPlan,
-        v2PromptContext ?? undefined,
-        signal,
-        {
+      if (config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && violationSystemVersion === "v5") {
+        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
+        multiPassResult = await runEventCandidateRunner({
+          chunkText,
+          eventUnderstanding,
+          signal,
+        });
+      } else {
+        multiPassResult = await runMultiPassDetection(
+          chunkText,
+          chunkStart,
+          chunkEnd,
+          selectedArticles,
+          terms,
+          { temperature, seed, analysis_signature_context: analysisSignatureBase },
+          { chunkId: chunk.id },
+          passExecutionPlan,
+          v2PromptContext ?? undefined,
+          signal,
+          {
+            jobId,
+            chunkId: chunk.id,
+            routerCandidates: routerOutputJson,
+          },
+          violationSystemVersion,
+        );
+      }
+      multiPassEventUnderstanding = multiPassResult.eventUnderstanding;
+      multiPassPassResults = multiPassResult.passResults;
+      if (config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && violationSystemVersion === "v5") {
+        logger.info("Event candidate runner execution summary", {
           jobId,
           chunkId: chunk.id,
-          routerCandidates: routerOutputJson,
-        },
-        violationSystemVersion,
-      );
+          articlePassCount: multiPassResult.passResults.length,
+          rawCandidates: multiPassResult.rawCandidateCount,
+          parsedCandidates: multiPassResult.parsedCandidateCount,
+          groundedCandidates: multiPassResult.groundedCandidateCount,
+          ownershipSurvivors: multiPassResult.ownershipSurvivorCount,
+          finalAdjudicatorSurvivors: multiPassResult.finalAdjudicatorSurvivorCount,
+        });
+      }
       throwIfAborted(signal);
       await setChunkPhase(chunk.id, "postprocess");
       logger.info("Post-multipass refinement starting", {
@@ -3725,7 +3761,7 @@ export async function processChunkJudge(
       }];
     });
 
-    if (violationSystemVersion === "v5") {
+    if (violationSystemVersion === "v5" && !config.V5_EVENT_CANDIDATE_RUNNER_ENABLED) {
       const { runFinalAdjudicator } = await import("./finalAdjudicator.js");
       rows = await runFinalAdjudicator(rows, multiPassEventUnderstanding?.events ?? [], normalizedText ?? "");
     }
