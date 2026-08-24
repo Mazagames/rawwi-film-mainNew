@@ -1,3 +1,16 @@
+export type ViolationSystemVersion = "v2" | "v3" | "v4" | "v5";
+
+export function parseViolationSystemVersion(value: unknown, fallback: ViolationSystemVersion = "v3"): ViolationSystemVersion {
+  return value === "v2" || value === "v3" || value === "v4" || value === "v5" ? value : fallback;
+}
+
+export function resolveViolationSystemVersion(
+  jobConfig: { violation_system_version?: unknown } | null | undefined,
+  globalVersion: ViolationSystemVersion,
+): ViolationSystemVersion {
+  return parseViolationSystemVersion(jobConfig?.violation_system_version, globalVersion);
+}
+
 /**
  * Worker env config. Load with dotenv in index or require env at startup.
  */
@@ -82,7 +95,7 @@ export const config = {
    * - v4: film-commission regulation pack (new regulation.md)
    * - v5: markdown reviewers loaded from reviewers/v5
    */
-  VIOLATION_SYSTEM_VERSION: ((): "v2" | "v3" | "v4" | "v5" => {
+  VIOLATION_SYSTEM_VERSION: ((): ViolationSystemVersion => {
     const value = (process.env.VIOLATION_SYSTEM_VERSION ?? "v3").toLowerCase();
     if (value === "v2") return "v2";
     if (value === "v4") return "v4";

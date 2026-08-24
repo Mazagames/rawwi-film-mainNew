@@ -29,7 +29,7 @@ import {
   setChunkCurrentPass,
 } from "./jobs.js";
 import { evaluatePassGating } from "./passGating.js";
-import { config } from "./config.js";
+import { config, parseViolationSystemVersion, type ViolationSystemVersion } from "./config.js";
 import {
   buildV3PromptOverlay,
   buildV3SubjectPromptSection,
@@ -198,17 +198,17 @@ const STRUCTURED_RATIONALE_INSTRUCTIONS = `قواعد الشرح الإلزام�
 11. ممنوع اختلاق أحداث أو عبارات غير موجودة حرفياً في السياق المحلي (مثل: "مقطع صوتي"، "أوامر سرية"، "الإعلام الرسمي") إذا لم ترد فعلاً في النص القريب.
 12. كلمة "النظام" لا تعني تلقائياً نظام الحكم: إذا كان السياق مدرسي/انضباطي (معلم، طلاب، فصل، مدرسة) فلا تصنفها سياسياً إلا بوجود قرينة سياسية صريحة.`;
 
-function applyViolationSystemOverlay(prompt: string, passName: string): string {
+function applyViolationSystemOverlay(prompt: string, passName: string, violationSystemVersion = config.VIOLATION_SYSTEM_VERSION): string {
   if (passName.startsWith("v5_")) return prompt;
   if (passName.startsWith("v3_") || passName.startsWith("v4_")) return prompt;
-  if (config.VIOLATION_SYSTEM_VERSION === "v3") {
+  if (violationSystemVersion === "v3") {
     const overlay = buildV3PromptOverlay(passName);
     if (!overlay) return prompt;
     return `${overlay}
 
 ${prompt}`;
   }
-  if (config.VIOLATION_SYSTEM_VERSION === "v4") {
+  if (violationSystemVersion === "v4") {
     const overlay = buildV4PromptOverlay(passName);
     if (!overlay) return prompt;
     return `${overlay}
@@ -256,9 +256,9 @@ ${subjectHardRules}
 { "findings": [] }`;
 }
 
-function getActiveSubjectDefinitions(): SubjectDefinition[] {
-  if (config.VIOLATION_SYSTEM_VERSION === "v3") return V3_SUBJECT_DEFINITIONS;
-  if (config.VIOLATION_SYSTEM_VERSION === "v4") return V4_SUBJECT_DEFINITIONS;
+function getActiveSubjectDefinitions(violationSystemVersion = config.VIOLATION_SYSTEM_VERSION): SubjectDefinition[] {
+  if (violationSystemVersion === "v3") return V3_SUBJECT_DEFINITIONS;
+  if (violationSystemVersion === "v4") return V4_SUBJECT_DEFINITIONS;
   return [];
 }
 
@@ -1592,22 +1592,22 @@ const LEGACY_DETECTION_PASSES: PassDefinition[] = [
   },
 ];
 
-const ACTIVE_SUBJECT_DEFINITIONS = getActiveSubjectDefinitions();
-
-const ACTIVE_SUBJECT_PASSES: PassDefinition[] = [
-  {
-    name: "glossary",
-    articleIds: [],
-    buildPrompt: buildGlossaryPrompt,
-    model: "gpt-4.1-mini",
-  },
-  ...ACTIVE_SUBJECT_DEFINITIONS.map((subject): PassDefinition => ({
-    name: subject.name,
-    articleIds: subject.articleIds,
-    buildPrompt: (articles: GCAMArticle[]) => buildSubjectPrompt(subject, articles),
-    model: subject.model,
-  })),
-];
+function buildSubjectPasses(violationSystemVersion: ViolationSystemVersion): PassDefinition[] {
+  return [
+    {
+      name: "glossary",
+      articleIds: [],
+      buildPrompt: buildGlossaryPrompt,
+      model: "gpt-4.1-mini",
+    },
+    ...getActiveSubjectDefinitions(violationSystemVersion).map((subject): PassDefinition => ({
+      name: subject.name,
+      articleIds: subject.articleIds,
+      buildPrompt: (articles: GCAMArticle[]) => buildSubjectPrompt(subject, articles),
+      model: subject.model,
+    })),
+  ];
+}
 
 function buildV5DetectionPasses(): PassDefinition[] {
   return getV5ReviewerDefinitions()
@@ -1638,15 +1638,13 @@ You must trust the structured events below.
   }));
 }
 
-export const DETECTION_PASSES: PassDefinition[] = (() => {
-  if (config.VIOLATION_SYSTEM_VERSION === "v5") {
-    return buildV5DetectionPasses();
-  }
-  if (config.VIOLATION_SYSTEM_VERSION === "v3" || config.VIOLATION_SYSTEM_VERSION === "v4") {
-    return ACTIVE_SUBJECT_PASSES;
-  }
+export function getDetectionPassesForViolationSystem(violationSystemVersion: ViolationSystemVersion): PassDefinition[] {
+  if (violationSystemVersion === "v5") return buildV5DetectionPasses();
+  if (violationSystemVersion === "v3" || violationSystemVersion === "v4") return buildSubjectPasses(violationSystemVersion);
   return LEGACY_DETECTION_PASSES;
-})();
+}
+
+export const DETECTION_PASSES: PassDefinition[] = getDetectionPassesForViolationSystem(config.VIOLATION_SYSTEM_VERSION);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // EXECUTION ENGINE
@@ -1832,19 +1830,21 @@ function getPassArticleIds(pass: PassDefinition, lexiconTerms: LexiconTerm[]): n
   return pass.articleIds;
 }
 
-function sortPassResultsStable(results: PassResult[]): PassResult[] {
-  const order = new Map(DETECTION_PASSES.map((pass, index) => [pass.name, index]));
+function sortPassResultsStable(results: PassResult[], detectionPasses: PassDefinition[] = DETECTION_PASSES): PassResult[] {
+  const order = new Map(detectionPasses.map((pass, index) => [pass.name, index]));
   return [...results].sort((a, b) => (order.get(a.passName) ?? 999) - (order.get(b.passName) ?? 999));
 }
 
 export function planDetectionPassExecution(
   chunkText: string,
   allArticles: GCAMArticle[],
-  lexiconTerms: LexiconTerm[]
+  lexiconTerms: LexiconTerm[],
+  violationSystemVersion: ViolationSystemVersion = config.VIOLATION_SYSTEM_VERSION,
 ): DetectionPassExecutionPlan {
-  if (config.VIOLATION_SYSTEM_VERSION === "v5") {
+  const detectionPasses = getDetectionPassesForViolationSystem(violationSystemVersion);
+  if (violationSystemVersion === "v5") {
     return {
-      activePasses: DETECTION_PASSES,
+      activePasses: detectionPasses,
       skippedPasses: [],
     };
   }
@@ -1852,7 +1852,7 @@ export function planDetectionPassExecution(
   const activePasses: PassDefinition[] = [];
   const skippedPasses: PlannedPassSkip[] = [];
 
-  for (const pass of DETECTION_PASSES) {
+  for (const pass of detectionPasses) {
     const articleIds = getPassArticleIds(pass, lexiconTerms);
     const articles = allArticles.filter((article) => articleIds.includes(article.id));
 
@@ -1896,7 +1896,8 @@ async function runSinglePass(
   jobConfig: { temperature: number; seed: number; analysis_signature_context?: AnalysisExecutionSignatureInput | null },
   promptContext?: string,
   signal?: AbortSignal,
-  diagnosticContext?: JudgeDiagnosticContext
+  diagnosticContext?: JudgeDiagnosticContext,
+  violationSystemVersion: ViolationSystemVersion = config.VIOLATION_SYSTEM_VERSION,
 ): Promise<PassResult> {
   const startTime = Date.now();
   
@@ -1909,7 +1910,7 @@ async function runSinglePass(
       articleIds = [...new Set(lexiconTerms.map(t => t.gcam_article_id))];
     }
 
-    const isV5Reviewer = config.VIOLATION_SYSTEM_VERSION === "v5" || pass.name.startsWith("v5_");
+    const isV5Reviewer = violationSystemVersion === "v5" || pass.name.startsWith("v5_");
     const articles = isV5Reviewer
       ? articleIds.map((articleId) => getScriptStandardArticle(articleId))
       : allArticles.filter((a) => articleIds.includes(a.id));
@@ -1927,7 +1928,7 @@ async function runSinglePass(
 
     // Build specialized prompt
     const promptBase = pass.buildPrompt(articles, lexiconTerms);
-    const promptVersioned = applyViolationSystemOverlay(promptBase, pass.name);
+    const promptVersioned = applyViolationSystemOverlay(promptBase, pass.name, violationSystemVersion);
     const prompt = isV5Reviewer
       ? promptVersioned
       : promptContext && promptContext.trim().length > 0
@@ -2304,7 +2305,8 @@ async function runSinglePassWithHardTimeout(
   jobConfig: { temperature: number; seed: number; analysis_signature_context?: AnalysisExecutionSignatureInput | null },
   promptContext?: string,
   signal?: AbortSignal,
-  diagnosticContext?: JudgeDiagnosticContext
+  diagnosticContext?: JudgeDiagnosticContext,
+  violationSystemVersion: ViolationSystemVersion = config.VIOLATION_SYSTEM_VERSION,
 ): Promise<PassResult> {
   return new Promise<PassResult>((resolve, reject) => {
     throwIfAborted(signal);
@@ -2362,7 +2364,8 @@ async function runSinglePassWithHardTimeout(
       jobConfig,
       promptContext,
       passAbortController.signal,
-      diagnosticContext
+      diagnosticContext,
+      violationSystemVersion,
     ).then(
       (result) => {
         resolveOnce(result);
@@ -2408,7 +2411,8 @@ export async function runMultiPassDetection(
   executionPlan?: DetectionPassExecutionPlan,
   promptContext?: string,
   signal?: AbortSignal,
-  diagnosticContext?: JudgeDiagnosticContext
+  diagnosticContext?: JudgeDiagnosticContext,
+  violationSystemVersion: ViolationSystemVersion = config.VIOLATION_SYSTEM_VERSION,
 ): Promise<{
   findings: JudgeFinding[];
   passResults: PassResult[];
@@ -2419,13 +2423,14 @@ export async function runMultiPassDetection(
 }> {
   const startTime = Date.now();
   throwIfAborted(signal);
-  const plan = executionPlan ?? planDetectionPassExecution(chunkText, allArticles, lexiconTerms);
+  const detectionPasses = getDetectionPassesForViolationSystem(violationSystemVersion);
+  const plan = executionPlan ?? planDetectionPassExecution(chunkText, allArticles, lexiconTerms, violationSystemVersion);
   const totalPasses = plan.activePasses.length;
-  let eventUnderstanding = config.VIOLATION_SYSTEM_VERSION === "v5"
+  let eventUnderstanding = violationSystemVersion === "v5"
       ? await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined)
       : null;
 
-  if (config.VIOLATION_SYSTEM_VERSION === "v5" && chunkText.trim().length > 0 && eventUnderstanding) {
+  if (violationSystemVersion === "v5" && chunkText.trim().length > 0 && eventUnderstanding) {
     if (eventUnderstanding.events.length === 0) {
       logger.warn("Event Understanding returned 0 events for non-empty chunk. Retrying once...");
       eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined);
@@ -2446,7 +2451,8 @@ export async function runMultiPassDetection(
     allArticlesCount: allArticles.length,
     allArticleIds: allArticles.map(a => a.id),
     lexiconTermsCount: lexiconTerms.length,
-    passCount: DETECTION_PASSES.length,
+    violationSystemVersion,
+    passCount: detectionPasses.length,
     activePassCount: plan.activePasses.length,
     skippedPassCount: plan.skippedPasses.length,
     hasPromptContext: Boolean(reviewerPromptContext && reviewerPromptContext.trim().length > 0),
@@ -2455,10 +2461,11 @@ export async function runMultiPassDetection(
   logger.info("Starting multi-pass detection", { 
     chunkStart, 
     chunkEnd, 
-    passCount: DETECTION_PASSES.length,
+    passCount: detectionPasses.length,
     activePassCount: plan.activePasses.length,
     skippedPassCount: plan.skippedPasses.length,
     lexiconTermsCount: lexiconTerms.length,
+    violationSystemVersion,
     hasPromptContext: Boolean(reviewerPromptContext && reviewerPromptContext.trim().length > 0),
   });
 
@@ -2495,7 +2502,8 @@ export async function runMultiPassDetection(
           reason: skipped.reason,
           matchedSignals: skipped.matchedSignals,
           model: skipped.model,
-        }))
+        })),
+        detectionPasses,
       ),
       totalDuration: Date.now() - startTime,
       executedPassCount: 0,
@@ -2523,7 +2531,8 @@ export async function runMultiPassDetection(
         jobConfig,
         reviewerPromptContext,
         signal,
-        diagnosticContext
+        diagnosticContext,
+        violationSystemVersion,
       ).then(
         (result) => {
           completed++;
@@ -2544,7 +2553,7 @@ export async function runMultiPassDetection(
     }
     return Promise.all(results);
   })();
-  if (config.VIOLATION_SYSTEM_VERSION === "v5") {
+  if (violationSystemVersion === "v5") {
     const missingResults = plan.activePasses.filter(
       (pass) => !activeResultsRaw.some((result) => result.passName === pass.name)
     );
@@ -2599,7 +2608,7 @@ export async function runMultiPassDetection(
       matchedSignals: skipped.matchedSignals,
       model: skipped.model,
     })),
-  ]);
+  ], detectionPasses);
 
   // Collect all findings
   const allFindings = activeResults.flatMap(r => r.findings);

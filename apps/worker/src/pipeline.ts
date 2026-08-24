@@ -14,13 +14,13 @@ import { analyzeLexiconMatches } from "./lexiconMatcher.js";
 import { findStringMatches, getLexiconCache } from "./lexiconCache.js";
 import { logger } from "./logger.js";
 import { buildRouterTraceSummary, callJudgeRaw, callRouter, parseJudgeWithRepair } from "./openai.js";
-import { config } from "./config.js";
+import { config, resolveViolationSystemVersion } from "./config.js";
 import { isValidAtomForArticle, normalizeAtomId } from "./policyMap.js";
 import type { JudgeFinding } from "./schemas.js";
 import { runNotesDetection, toNoteInsertRows } from "./noteDetection.js";
 import { getScriptStandardRouterList } from "./gcam.js";
 import { ROUTER_SYSTEM_MSG, JUDGE_SYSTEM_MSG, injectLexiconIntoPrompts, PROMPT_VERSIONS } from "./aiConstants.js";
-import { runMultiPassDetection, DETECTION_PASSES, planDetectionPassExecution, type LexiconTerm } from "./multiPassJudge.js";
+import { runMultiPassDetection, getDetectionPassesForViolationSystem, planDetectionPassExecution, type LexiconTerm } from "./multiPassJudge.js";
 import { PASS_GATING_VERSION } from "./passGating.js";
 import { normalizeFindingTitleDecision } from "./findingTitleNormalize.js";
 import { persistJudgeDiagnostic } from "./judgeDiagnostics.js";
@@ -84,6 +84,7 @@ type BenchmarkInstrumentationArgs = {
   resolvedFindings: FindingWithGlobal[];
   multiPassEventUnderstanding: MultiPassDetectionResult["eventUnderstanding"];
   multiPassPassResults: MultiPassDetectionResult["passResults"];
+  violationSystemVersion: string;
 };
 
 type AnalysisEngineMode = "v2";
@@ -299,7 +300,7 @@ async function isPartialFinalizeRequested(jobId: string): Promise<boolean> {
 }
 
 async function runBenchmarkInstrumentation(args: BenchmarkInstrumentationArgs): Promise<void> {
-  if (config.VIOLATION_SYSTEM_VERSION !== "v5" || !args.multiPassEventUnderstanding) {
+  if (args.violationSystemVersion !== "v5" || !args.multiPassEventUnderstanding) {
     return;
   }
 
@@ -381,7 +382,7 @@ async function runBenchmarkInstrumentation(args: BenchmarkInstrumentationArgs): 
       passResults: args.multiPassPassResults,
       finalFindings: args.resolvedFindings,
       memory2Enabled: isMemory2Mode(args.job),
-      useEventConsistencyChecks: config.VIOLATION_SYSTEM_VERSION === "v5",
+      useEventConsistencyChecks: args.violationSystemVersion === "v5",
     });
     const validatorAuditHtml = buildValidatorAuditHtml(validatorAuditReport);
     logger.info("Validator audit report", toValidatorAuditLog(validatorAuditReport));
@@ -1782,6 +1783,8 @@ export async function processChunkJudge(
   const chunkStartedAt = Date.now();
   const { id: jobId, script_id: scriptId, version_id: versionId } = job;
   const jobConfig = (job.config_snapshot as any) || {};
+  const violationSystemVersion = resolveViolationSystemVersion(jobConfig, config.VIOLATION_SYSTEM_VERSION);
+  const detectionPasses = getDetectionPassesForViolationSystem(violationSystemVersion);
   const analysisProfile =
     jobConfig.analysis_profile === "quality" || jobConfig.analysis_profile === "turbo" || jobConfig.analysis_profile === "balanced"
       ? jobConfig.analysis_profile
@@ -2115,7 +2118,7 @@ export async function processChunkJudge(
 
   // 1b) Idempotency Check & Config Setup
   // Build logicVersion dynamically so cache invalidates automatically when prompts/passes change.
-  const passSignature = DETECTION_PASSES.map((p) => `${p.name}:${p.model ?? "default"}`).join("|");
+  const passSignature = detectionPasses.map((p) => `${p.name}:${p.model ?? "default"}`).join("|");
   const v2PromptContext =
     pipelineVersion === "v2" && typeof jobConfig.v2_prompt_context === "string" && jobConfig.v2_prompt_context.trim().length > 0
       ? jobConfig.v2_prompt_context.trim()
@@ -2187,7 +2190,7 @@ export async function processChunkJudge(
     validator_version: config.AUDITOR_LAYER_VERSION,
     aggregation_version: PIPELINE_LOGIC_VERSION,
     auditor_version: PROMPT_VERSIONS.auditor,
-    violation_system_version: config.VIOLATION_SYSTEM_VERSION,
+    violation_system_version: violationSystemVersion,
     summary_hash: analysisSignatureConfig?.summary_hash ?? null,
     memory_hash: analysisSignatureConfig?.memory_hash ?? null,
     summary_source: analysisSignatureConfig?.summary_source ?? null,
@@ -2197,7 +2200,7 @@ export async function processChunkJudge(
     chunk_size: analysisSignatureConfig?.chunk_size ?? 2_500,
     overlap_size: analysisSignatureConfig?.overlap_size ?? 0,
     total_chunks: analysisSignatureConfig?.total_chunks ?? Math.max(0, job.progress_total - 1),
-    total_detection_passes: analysisSignatureConfig?.total_detection_passes ?? DETECTION_PASSES.length,
+    total_detection_passes: analysisSignatureConfig?.total_detection_passes ?? detectionPasses.length,
     diagnostics_enabled: config.ENABLE_AI_DIAGNOSTICS,
     lineage_enabled: config.ENABLE_FINDING_LINEAGE,
   } as const;
@@ -2366,7 +2369,7 @@ export async function processChunkJudge(
     // 3) Multi-Pass Detection (specialized scanners running in parallel)
     allFindings = [];
     try {
-      const passExecutionPlan = planDetectionPassExecution(chunkText, selectedArticles, terms);
+      const passExecutionPlan = planDetectionPassExecution(chunkText, selectedArticles, terms, violationSystemVersion);
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
       const multiPassStartedAt = Date.now();
       throwIfAborted(signal);
@@ -2385,7 +2388,8 @@ export async function processChunkJudge(
           jobId,
           chunkId: chunk.id,
           routerCandidates: routerOutputJson,
-        }
+        },
+        violationSystemVersion,
       );
       throwIfAborted(signal);
       await setChunkPhase(chunk.id, "postprocess");
@@ -2433,7 +2437,7 @@ export async function processChunkJudge(
       const groundedResults = evidencePinned.map((f) => {
         const passName = (f as { detection_pass?: string | null }).detection_pass ?? null;
         const judgeCallIndex = passName != null
-          ? DETECTION_PASSES.findIndex((pass) => pass.name === passName)
+          ? detectionPasses.findIndex((pass) => pass.name === passName)
           : -1;
         const startOffset = typeof f.location?.start_offset === "number" ? f.location.start_offset : null;
         const endOffset = typeof f.location?.end_offset === "number" ? f.location.end_offset : null;
@@ -2565,7 +2569,7 @@ export async function processChunkJudge(
             issue: qualityIssue,
             evidence: f.evidence_snippet?.slice(0, 80),
           });
-          const isV5TrustedEventGrounding = config.VIOLATION_SYSTEM_VERSION === "v5" && f.event_id != null && qualityIssue !== "missing_offsets";
+          const isV5TrustedEventGrounding = violationSystemVersion === "v5" && f.event_id != null && qualityIssue !== "missing_offsets";
           if (!objectiveEvidenceIssues.has(qualityIssue) || isValidatorAdvisoryIssue(qualityIssue) || isV5TrustedEventGrounding) {
             validatorWarnings.push({
               stage: "evidence_quality",
@@ -3106,9 +3110,10 @@ export async function processChunkJudge(
     resolvedFindings: structuredClone(resolvedFindings),
     multiPassEventUnderstanding: multiPassEventUnderstanding ? structuredClone(multiPassEventUnderstanding) : null,
     multiPassPassResults: structuredClone(multiPassPassResults),
+    violationSystemVersion,
   });
 
-  if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
+  if (violationSystemVersion === "v5" && multiPassEventUnderstanding) {
     try {
       const noteDetectionResult = await runNotesDetection(
         chunk.text,
@@ -3240,10 +3245,10 @@ export async function processChunkJudge(
 
       const modelSnippet = typeof f.evidence_snippet === "string" ? f.evidence_snippet : "";
       const structuredEvent =
-        config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding
+        violationSystemVersion === "v5" && multiPassEventUnderstanding
           ? getStructuredEventById(multiPassEventUnderstanding.events, findingEventId)
           : null;
-      if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding && findingEventId != null && !structuredEvent) {
+      if (violationSystemVersion === "v5" && multiPassEventUnderstanding && findingEventId != null && !structuredEvent) {
         const findingUuid = f.finding_uuid ?? f.lineage_id ?? null;
         logValidatorRejection({
           jobId,
@@ -3291,7 +3296,7 @@ export async function processChunkJudge(
       const evidenceAlignedFinding = structuredEvent ? { ...f, evidence_snippet: excerpt } : f;
 
       const eventConsistencyResult =
-        config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding
+        violationSystemVersion === "v5" && multiPassEventUnderstanding
           ? getEventConsistencyIssue(evidenceAlignedFinding, multiPassEventUnderstanding.events)
           : null;
 
@@ -3313,7 +3318,7 @@ export async function processChunkJudge(
           canonicalSnippet: canonicalSnippet.slice(0, 80),
         });
         const isV5TrustedEventGrounding =
-          config.VIOLATION_SYSTEM_VERSION === "v5" &&
+          violationSystemVersion === "v5" &&
           findingEventId != null &&
           hasSaneGlobalOffsets &&
           eventConsistencyResult?.issue == null;
@@ -3420,7 +3425,7 @@ export async function processChunkJudge(
         eventConsistencyPassedCount++;
       }
 
-      if (config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding) {
+      if (violationSystemVersion === "v5" && multiPassEventUnderstanding) {
         const quoteEventId = eventConsistencyResult?.matchedEvent?.event_id ?? null;
         const pageEventId = quoteEventId;
         if (
@@ -3499,7 +3504,7 @@ export async function processChunkJudge(
         }
       }
 
-      if (config.VIOLATION_SYSTEM_VERSION !== "v5") {
+      if (violationSystemVersion !== "v5") {
         const passSpecificEvidenceIssue = getPassSpecificEvidenceIssue(evidenceAlignedFinding, excerpt, normalizedText, sceneIndex);
         if (passSpecificEvidenceIssue) {
           logger.warn("Pass-specific final evidence issue (advisory only)", {
@@ -3597,7 +3602,7 @@ export async function processChunkJudge(
         detectionPass: (f as { detection_pass?: string }).detection_pass ?? null,
         articleId: f.article_id,
         canonicalAtom: f.canonical_atom ?? null,
-        allowSemanticRewrite: config.VIOLATION_SYSTEM_VERSION !== "v5",
+        allowSemanticRewrite: violationSystemVersion !== "v5",
       });
       if (config.TITLE_NORMALIZATION_AUDIT) {
         logger.info("Title normalization audit", {
@@ -3720,7 +3725,7 @@ export async function processChunkJudge(
       }];
     });
 
-    if (config.VIOLATION_SYSTEM_VERSION === "v5") {
+    if (violationSystemVersion === "v5") {
       const { runFinalAdjudicator } = await import("./finalAdjudicator.js");
       rows = await runFinalAdjudicator(rows, multiPassEventUnderstanding?.events ?? [], normalizedText ?? "");
     }

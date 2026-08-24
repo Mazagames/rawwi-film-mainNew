@@ -55,6 +55,7 @@ function getRuntimeConfigLogPayload() {
     deterministicMode: config.DETERMINISTIC_MODE,
     analysisPipelineVersion: config.ANALYSIS_PIPELINE_VERSION,
     analysisEngine: config.ANALYSIS_ENGINE,
+    violationSystemVersion: config.VIOLATION_SYSTEM_VERSION,
     analysisEvalLog: config.ANALYSIS_EVAL_LOG,
     analysisDeepAuditor: config.ANALYSIS_DEEP_AUDITOR,
     largeJobChunkThreshold: config.ANALYSIS_LARGE_JOB_CHUNK_THRESHOLD,

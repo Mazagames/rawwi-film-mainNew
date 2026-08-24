@@ -3445,6 +3445,7 @@ export function ScriptWorkspace() {
         forceFresh: true,
         analysisProfile: analysisModeProfile,
         pipelineVersion: 'v2',
+        violationSystemVersion: 'v5',
       });
       setAnalysisJobId(jobId);
       setAnalysisJob(null);

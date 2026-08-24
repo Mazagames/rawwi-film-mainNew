@@ -54,6 +54,7 @@ type JobRow = {
   partial_finalize_requested_at?: string | null;
   config_snapshot?: {
     pipeline_version?: "v1" | "v2";
+    violation_system_version?: "v2" | "v3" | "v4" | "v5";
     analysis_profile?: "quality" | "balanced" | "turbo";
     analysis_engine?: "v2";
     analysis_signature?: {
@@ -293,6 +294,7 @@ function toCamel(job: JobRow) {
     analysisMode: job.config_snapshot?.analysis_profile ?? "balanced",
     analysisMemoryMode: job.config_snapshot?.analysis_memory_mode ?? "memory1",
     pipelineVersion: job.config_snapshot?.pipeline_version ?? "v1",
+    violationSystemVersion: job.config_snapshot?.violation_system_version ?? null,
     analysisEngine: job.config_snapshot?.analysis_engine ?? null,
     progressTotal: job.progress_total,
     progressDone: job.progress_done,
@@ -661,6 +663,9 @@ Deno.serve(async (req: Request) => {
   const requestedPipelineVersion = body?.pipelineVersion === "v2" || body?.pipelineVersion === "v1"
     ? body.pipelineVersion
     : defaultPipelineVersion;
+  const requestedViolationSystemVersion = body?.violationSystemVersion === "v2" || body?.violationSystemVersion === "v3" || body?.violationSystemVersion === "v4" || body?.violationSystemVersion === "v5"
+    ? body.violationSystemVersion
+    : "v5";
   const requestedAnalysisProfile =
     body?.analysisProfile === "quality" || body?.analysisProfile === "turbo" || body?.analysisProfile === "balanced"
       ? body.analysisProfile
@@ -789,7 +794,7 @@ Deno.serve(async (req: Request) => {
   const manualReviewSnapshot = await loadManualReviewSnapshot(supabase, scriptId, versionId.trim());
   const chunkSize = 2_500;
   const overlapSize = 0;
-  const totalDetectionPasses = 11;
+  const totalDetectionPasses = requestedViolationSystemVersion === "v5" ? 21 : 11;
 
   const { data: job, error: jobErr } = await supabase
     .from("analysis_jobs")
@@ -808,6 +813,7 @@ Deno.serve(async (req: Request) => {
         ...DEFAULT_DETERMINISTIC_CONFIG,
         analysis_memory_mode: analysisMemoryMode,
         pipeline_version: requestedPipelineVersion,
+        violation_system_version: requestedViolationSystemVersion,
         force_fresh: forceFresh,
         analysis_profile: analysisProfilePreset.analysisProfile,
         analysis_engine: "v2",

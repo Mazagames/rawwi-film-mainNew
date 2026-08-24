@@ -25,6 +25,7 @@ export enum OverrideEventType {
 
 export type AnalysisModeProfile = 'quality' | 'balanced' | 'turbo';
 export type AnalysisPipelineVersion = 'v1' | 'v2';
+export type ViolationSystemVersion = 'v2' | 'v3' | 'v4' | 'v5';
 export type AnalysisEngine = 'v2';
 export type NoteCategoryKey =
   | 'media_credibility'
@@ -183,6 +184,7 @@ export interface AnalysisJob {
   status: string;
   analysisMode?: AnalysisModeProfile | null;
   pipelineVersion?: AnalysisPipelineVersion | null;
+  violationSystemVersion?: ViolationSystemVersion | null;
   analysisEngine?: AnalysisEngine | null;
   manualReviewContextCount?: number;
   progressTotal: number;
