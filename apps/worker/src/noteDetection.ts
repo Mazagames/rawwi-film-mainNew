@@ -31,6 +31,15 @@ export type NotePassResult = {
   promptTokens: number | null;
   completionTokens: number | null;
   totalTokens: number | null;
+  requestStartedAt: string | null;
+  responseReceivedAt: string | null;
+  rawResponseLength: number;
+  generatedNoteCount: number;
+  parsedNoteCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  parseValidationError: string | null;
+  fallbackProvider: "openai" | null;
   skipped?: boolean;
   reason?: string;
 };
@@ -280,7 +289,6 @@ export async function retryTransientProviderFailure<T>(
       await delay(Math.min(backoffMs, remainingMs));
     }
   }
-  throw new Error("Retry operation exhausted");
 }
 
 export async function runNotesProviderWithFallback<T>(args: {
@@ -288,6 +296,7 @@ export async function runNotesProviderWithFallback<T>(args: {
   primary: () => Promise<T>;
   fallback: () => Promise<T>;
   retryBudgetMs?: number;
+  onFallback?: () => void;
 }): Promise<T> {
   try {
     return await retryTransientProviderFailure(args.primary, { budgetMs: args.retryBudgetMs });
@@ -300,10 +309,10 @@ export async function runNotesProviderWithFallback<T>(args: {
       fallbackProvider: "openai",
       error: error instanceof Error ? error.message : String(error),
     });
+    args.onFallback?.();
     return args.fallback();
   }
 }
-
 export async function runWithBoundedConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -390,12 +399,17 @@ export async function runReviewerPack(
   const events = eventUnderstanding?.events ?? [];
   const results = await runWithBoundedConcurrency(definitions, config.NOTE_REVIEWER_CONCURRENCY, async (definition) => {
     const passStartedAt = Date.now();
+    const requestStartedAt = new Date(passStartedAt).toISOString();
+    let responseReceivedAt: string | null = null;
+    let fallbackProvider: "openai" | null = null;
+    let rawResponseLength = 0;
     const provider = config.AI_PROVIDER;
     const model = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL;
     try {
       const { response, parsed } = await runNotesProviderWithFallback({
         primaryProvider: provider,
         retryBudgetMs: config.NOTE_REVIEWER_RETRY_BUDGET_MS,
+        onFallback: () => { fallbackProvider = "openai"; },
         primary: async () => {
           const response = options.reviewerResponse ? null : await callNotesOpenAI({
             definition,
@@ -408,12 +422,16 @@ export async function runReviewerPack(
             timeoutMs: Math.min(config.JUDGE_TIMEOUT_MS, Math.max(1_000, Math.floor(config.NOTE_REVIEWER_RETRY_BUDGET_MS / 3))),
           });
           const rawResponse = options.reviewerResponse ? await options.reviewerResponse(definition) : response!.rawResponse;
+          responseReceivedAt = new Date().toISOString();
+          rawResponseLength = rawResponse.length;
           return { response, parsed: definition.kind === "note"
             ? await parseNotesWithRepair(rawResponse, config.OPENAI_JUDGE_MODEL, options.signal)
             : await parseJudgeWithRepair(rawResponse, model, { signal: options.signal, passName: definition.id }) };
         },
         fallback: async () => {
           const response = await callNotesOpenAI({ definition, events, chunkText, temperature: jobConfig.temperature, seed: jobConfig.seed, signal: options.signal, provider: "openai", timeoutMs: config.JUDGE_TIMEOUT_MS });
+          responseReceivedAt = new Date().toISOString();
+          rawResponseLength = response.rawResponse.length;
           return { response, parsed: definition.kind === "note"
             ? await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal)
             : await parseJudgeWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, { signal: options.signal, finishReason: response.finishReason, passName: definition.id }) };
@@ -421,12 +439,45 @@ export async function runReviewerPack(
       });
       if (definition.kind === "note") {
         const notes: NoteItem[] = [];
+        let rejectedCount = 0;
+        const rejectionReasons: string[] = [];
         for (const candidate of parsed.notes ?? []) {
           const validated = validateNoteCandidate(candidate);
           const normalized = validated.note ? normalizeNote(validated.note, definition.id) : null;
-          if (normalized) notes.push(normalized);
+          if (normalized) {
+            notes.push(normalized);
+          } else {
+            rejectedCount += 1;
+            rejectionReasons.push(validated.rejectionReason ?? "unknown note category");
+          }
         }
-        return { definition, notes, findings: [], response, duration: Date.now() - passStartedAt };
+        logger.info("Note reviewer completion diagnostics", {
+          jobId: options.jobId,
+          chunkId: options.chunkId,
+          reviewer: definition.id,
+          provider,
+          model,
+          requestStartedAt,
+          responseReceivedAt,
+          rawResponseLength,
+          generatedNoteCount: parsed.notes?.length ?? 0,
+          parsedNoteCount: parsed.notes?.length ?? 0,
+          acceptedCount: notes.length,
+          rejectedCount,
+          parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
+          fallbackProvider,
+        });
+        return { definition, notes, findings: [], response, duration: Date.now() - passStartedAt, diagnostics: {
+          requestStartedAt,
+          responseReceivedAt,
+          rawResponseLength,
+          generatedNoteCount: parsed.notes?.length ?? 0,
+          parsedNoteCount: parsed.notes?.length ?? 0,
+          acceptedCount: notes.length,
+          rejectedCount,
+          parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
+          fallbackProvider,
+        } };
       }
       const articleId = reviewerArticleId(definition);
       const findings = (parsed as { findings?: JudgeFinding[] }).findings ?? [];
@@ -443,7 +494,32 @@ export async function runReviewerPack(
       };
     } catch (error) {
       logger.warn("Reviewer pack entry failed", { jobId: options.jobId, chunkId: options.chunkId, reviewer: definition.id, error: error instanceof Error ? error.message : String(error) });
-      return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: String(error) };
+      logger.warn("Note reviewer completion diagnostics", {
+        jobId: options.jobId,
+        chunkId: options.chunkId,
+        reviewer: definition.id,
+        provider,
+        model,
+        requestStartedAt,
+        responseReceivedAt,
+        rawResponseLength: 0,
+        generatedNoteCount: 0,
+        parsedNoteCount: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        parseValidationError: error instanceof Error ? error.message : String(error),
+        fallbackProvider,
+      });
+      return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: String(error), diagnostics: {
+        requestStartedAt,
+        responseReceivedAt,
+        generatedNoteCount: 0,
+        parsedNoteCount: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        parseValidationError: error instanceof Error ? error.message : String(error),
+        fallbackProvider,
+      } };
     }
   });
   const notes = results.flatMap((result) => result.notes);
@@ -466,6 +542,15 @@ export async function runReviewerPack(
     promptTokens: result.response?.usage?.prompt_tokens ?? null,
     completionTokens: result.response?.usage?.completion_tokens ?? null,
     totalTokens: result.response?.usage?.total_tokens ?? null,
+    requestStartedAt: result.diagnostics?.requestStartedAt ?? null,
+    responseReceivedAt: result.diagnostics?.responseReceivedAt ?? null,
+    rawResponseLength: result.diagnostics?.rawResponseLength ?? result.response?.rawResponse.length ?? 0,
+    generatedNoteCount: result.diagnostics?.generatedNoteCount ?? 0,
+    parsedNoteCount: result.diagnostics?.parsedNoteCount ?? 0,
+    acceptedCount: result.diagnostics?.acceptedCount ?? result.notes.length,
+    rejectedCount: result.diagnostics?.rejectedCount ?? 0,
+    parseValidationError: result.diagnostics?.parseValidationError ?? result.error ?? null,
+    fallbackProvider: result.diagnostics?.fallbackProvider ?? null,
     ...(result.error ? { reason: "failed", skipped: false } : {}),
   } satisfies NotePassResult));
   return {

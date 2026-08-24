@@ -61,6 +61,9 @@ const DEFAULT_ACTIONABLE_ARTICLE_ID = policyArticlesForForm[0]?.articleId ?? 4;
 const VIOLATION_TYPES_OPTIONS = violationTypesForChecklist();
 const DEFAULT_VIOLATION_TYPE_ID = VIOLATION_TYPES_OPTIONS[0]?.id ?? 'other';
 const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
+  { key: 'article_05', labelAr: 'العنف والقتل والتعذيب', labelEn: 'Article 05' },
+  { key: 'article_12', labelAr: 'حماية الأطفال والقُصّر', labelEn: 'Article 12' },
+  { key: 'article_14', labelAr: 'الألفاظ النابية والإهانات', labelEn: 'Article 14' },
   { key: 'security_scenes', labelAr: 'مشاهد أمنية', labelEn: 'Security Scenes' },
   { key: 'saudi_names', labelAr: 'أسماء سعودية', labelEn: 'Saudi Names' },
   { key: 'commercial_entities', labelAr: 'كيانات تجارية', labelEn: 'Commercial Entities' },
@@ -70,6 +73,9 @@ const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelE
   { key: 'religious_content', labelAr: 'محتوى ديني / مذهبي حساس', labelEn: 'Religious Content' },
 ];
 const EMPTY_NOTES_BY_CATEGORY: Record<NoteCategoryKey, ReportNote[]> = {
+  article_05: [],
+  article_12: [],
+  article_14: [],
   media_credibility: [],
   medical_notes: [],
   classified_documents: [],
@@ -1152,6 +1158,9 @@ export function Results() {
     setNotesState((prev) => {
       const next: Record<NoteCategoryKey, ReportNote[]> = {
         ...prev,
+        article_05: [...(prev.article_05 ?? [])],
+        article_12: [...(prev.article_12 ?? [])],
+        article_14: [...(prev.article_14 ?? [])],
         media_credibility: [...(prev.media_credibility ?? [])],
         medical_notes: [...(prev.medical_notes ?? [])],
         classified_documents: [...(prev.classified_documents ?? [])],

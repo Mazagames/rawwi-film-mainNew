@@ -28,6 +28,9 @@ export type AnalysisPipelineVersion = 'v1' | 'v2';
 export type ViolationSystemVersion = 'v2' | 'v3' | 'v4' | 'v5';
 export type AnalysisEngine = 'v2';
 export type NoteCategoryKey =
+  | 'article_05'
+  | 'article_12'
+  | 'article_14'
   | 'media_credibility'
   | 'medical_notes'
   | 'classified_documents'
@@ -434,6 +437,9 @@ export interface Report {
     }>;
     notes_summary?: ReportNotesSummaryGroup[];
     notes?: {
+      article_05: ReportNote[];
+      article_12: ReportNote[];
+      article_14: ReportNote[];
       media_credibility: ReportNote[];
       medical_notes: ReportNote[];
       classified_documents: ReportNote[];
