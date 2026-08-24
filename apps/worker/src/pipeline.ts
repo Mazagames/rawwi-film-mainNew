@@ -3222,7 +3222,7 @@ export async function processChunkJudge(
     let rows = resolvedFindings.flatMap((f) => {
       const reviewerArticleId = parseReviewerArticleId((f as { detection_pass?: string | null }).detection_pass ?? null, f.article_id ?? null);
       const traceId = (f as { lineage_id?: string | null }).lineage_id ?? "";
-      const findingEventId = getFindingDeclaredEventId(f);
+      let findingEventId = getFindingDeclaredEventId(f);
       const validatorBypassReasons: string[] = [];
       let validatorDecision: "accepted" | "rejected" = "accepted";
       let validatorDropReason: string | null = null;
@@ -3485,6 +3485,9 @@ export async function processChunkJudge(
             message: "Finding event id did not match the matched structured event.",
           });
           return [];
+        }
+        if (findingEventId == null && quoteEventId != null) {
+          findingEventId = quoteEventId;
         }
       }
 
