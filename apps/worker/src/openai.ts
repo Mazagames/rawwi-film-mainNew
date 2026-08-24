@@ -30,6 +30,7 @@ type OpenAiCallOptions = {
   signal?: AbortSignal;
   userContentOverride?: string | null;
   finishReason?: string | null;
+  isV5EventFirst?: boolean;
 };
 
 function buildRouterArticlesPayload(articleList: GCAMArticle[]): string {
@@ -173,7 +174,12 @@ export async function callJudgeRaw(
   const userContentCore = overrideContent.length > 0
     ? overrideContent
     : `${buildJudgeArticlesPayload(selectedArticles)}\n\n---\nمقطع النص (start_offset=${globalStart}، end_offset=${globalEnd}):\n${textSlice}`;
-  const userContent = `${userContentCore}\n\nقواعد تنسيق إلزامية:\n- article_id (اختياري): إذا استخدمته فيجب أن يكون رقماً صحيحاً من المواد المعروضة فقط: [${allowedArticleIds}]. إذا لم تُحدده استخدم canonical_atom.\n- canonical_atom مطلوب: واحدة من INSULT, VIOLENCE, SEXUAL, SUBSTANCES, DISCRIMINATION, CHILD_SAFETY, WOMEN, MISINFORMATION, PUBLIC_ORDER, EXTREMISM, INTERNATIONAL, ECONOMIC, PRIVACY, APPEARANCE.\n- intensity, context_impact, legal_sensitivity, audience_risk مطلوبة وكل واحدة رقماً بين 1 و 4.\n- title_ar مطلوب: عنوان عربي قصير ودقيق للمخالفة، ولا تتركه null أو فارغاً.\n- rationale_ar مطلوبة: جملة أو جملتان بالعربية تشرح أين يظهر المقتطف، ما الذي تم رصده، ولماذا يندرج تحت المادة. امنع الشرح العام مثل \"وجود لفظ مخالف\" دون توضيح.\n- يجب أن يطابق rationale_ar المادة الأساسية المختارة، ولا تذكر مادة مختلفة عنها في الشرح.\n- لا تُرجع severity — تُحسب في الخلفية.\n- evidence_snippet يجب أن يكون أصغر اقتباس حرفي ممكن يثبت المخالفة، وليس فقرة واسعة إلا إذا تعذر غير ذلك.\n- location.start_offset و location.end_offset يجب أن يحددا نفس المقتطف القصير داخل chunk الحالي (لا تُرجع null ولا نافذة واسعة بلا حاجة).\n- confidence رقماً بين 0 و 1.\n- evidence_snippet نصاً غير null.\n${!overrideContent && userPromptAddition && userPromptAddition.trim().length > 0 ? `\n${userPromptAddition.trim()}\n` : ""}أرجع JSON بمصفوفة findings فقط.`;
+  const isV5EventFirst = options.isV5EventFirst === true;
+  const legacyFormattingSuffix = `\n\nقواعد تنسيق إلزامية:\n- article_id (اختياري): إذا استخدمته فيجب أن يكون رقماً صحيحاً من المواد المعروضة فقط: [${allowedArticleIds}]. إذا لم تُحدده استخدم canonical_atom.\n- canonical_atom مطلوب: واحدة من INSULT, VIOLENCE, SEXUAL, SUBSTANCES, DISCRIMINATION, CHILD_SAFETY, WOMEN, MISINFORMATION, PUBLIC_ORDER, EXTREMISM, INTERNATIONAL, ECONOMIC, PRIVACY, APPEARANCE.\n- intensity, context_impact, legal_sensitivity, audience_risk مطلوبة وكل واحدة رقماً بين 1 و 4.\n- title_ar مطلوب: عنوان عربي قصير ودقيق للمخالفة، ولا تتركه null أو فارغاً.\n- rationale_ar مطلوبة: جملة أو جملتان بالعربية تشرح أين يظهر المقتطف، ما الذي تم رصده، ولماذا يندرج تحت المادة. امنع الشرح العام مثل "وجود لفظ مخالف" دون توضيح.\n- يجب أن يطابق rationale_ar المادة الأساسية المختارة، ولا تذكر مادة مختلفة عنها في الشرح.\n- لا تُرجع severity — تُحسب في الخلفية.\n- evidence_snippet يجب أن يكون أصغر اقتباس حرفي ممكن يثبت المخالفة، وليس فقرة واسعة إلا إذا تعذر غير ذلك.\n- location.start_offset و location.end_offset يجب أن يحددا نفس المقتطف القصير داخل chunk الحالي (لا تُرجع null ولا نافذة واسعة بلا حاجة).\n- confidence رقماً بين 0 و 1.\n- evidence_snippet نصاً غير null.\n${!overrideContent && userPromptAddition && userPromptAddition.trim().length > 0 ? `\n${userPromptAddition.trim()}\n` : ""}أرجع JSON بمصفوفة findings فقط.`;
+
+  const v5FormattingSuffix = `\n\nقواعد التنسيق (V5):\n- يجب إرجاع مصفوفة findings بصيغة JSON فقط.\n- كل مخالفة (finding) يجب أن ترتبط بحدث واحد فقط وتحتوي على:\n  - event_id (معرف الحدث المطابق)\n  - title_ar (عنوان المخالفة)\n  - rationale_ar (شرح المخالفة)\n  - evidence_snippet (الاقتباس الحرفي من الحدث)\n  - confidence (بين 0 و 1)\n- لا تقم بإنشاء أو إرجاع start_offset أو end_offset أو canonical_atom أو intensity أو أي تفاصيل أخرى لم تُطلب منك صراحة (سيتم حسابها تلقائياً).\nأرجع JSON بمصفوفة findings فقط.`;
+
+  const userContent = `${userContentCore}${isV5EventFirst ? v5FormattingSuffix : legacyFormattingSuffix}`;
   const promptHash = config.ENABLE_AI_DIAGNOSTICS
     ? sha256(canonicalStringify({
         system: systemPrompt,

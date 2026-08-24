@@ -1991,7 +1991,7 @@ async function runSinglePass(
       { judge_model: model, temperature: jobConfig.temperature, seed: jobConfig.seed, analysis_signature_context: jobConfig.analysis_signature_context ?? null },
       prompt,
       userPromptAddition,
-      { signal, userContentOverride: reviewerInputOverride }
+      { signal, userContentOverride: reviewerInputOverride, isV5EventFirst: isV5Reviewer }
     );
     throwIfAborted(signal);
     if (diagnosticContext) {

@@ -77,6 +77,7 @@ export const judgeFindingSchema = z.object({
   evidence_hash: z.string().optional().nullable().transform((v) => v ?? null),
   evidence_snippet: z.string().nullable().transform((v) => v ?? ""),
   location: locationSchema
+    .optional()
     .nullable()
     .transform((v) => v ?? { start_offset: 0, end_offset: 0, start_line: null, end_line: null }),
 });
