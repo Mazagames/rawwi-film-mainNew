@@ -19,6 +19,7 @@ import { callJudgeRaw, parseJudgeWithRepair } from "./openai.js";
 import { extractRawFindingCount, persistJudgeDiagnostic } from "./judgeDiagnostics.js";
 import { logger } from "./logger.js";
 import { buildLineageEvent, ensureFindingLineageId, persistLineageEvents } from "./findingLineage.js";
+import { enforceDeterministicOwnership } from "./deterministicOwnership.js";
 import { getFrameworkPromptSection } from "./canonicalAtomFramework.js";
 import {
   flushChunkFindingsCount,
@@ -2657,8 +2658,13 @@ export async function runMultiPassDetection(
     });
   }
 
+  const ownershipResult = enforceDeterministicOwnership(deduplicated, eventUnderstanding.events, chunkText);
+  if (ownershipResult.diagnostics.droppedByOwnership > 0 || ownershipResult.diagnostics.droppedByEventMismatch > 0) {
+    logger.info("Deterministic ownership resolver dropped findings", ownershipResult.diagnostics);
+  }
+
   return {
-    findings: deduplicated,
+    findings: ownershipResult.finalFindings,
     passResults,
     totalDuration,
     executedPassCount: activeResults.length,
