@@ -3383,7 +3383,7 @@ export async function processChunkJudge(
             excerpt: excerpt.slice(0, 120),
           });
           eventConsistencyDroppedCount++;
-          continue;
+          return [];
         }
         logger.warn("Event consistency issue (advisory only)", {
           jobId,
