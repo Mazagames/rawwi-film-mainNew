@@ -6,6 +6,7 @@ import {
   buildNoteSystemPrompt,
   normalizeNote,
   retryTransientProviderFailure,
+  runNotesProviderWithFallback,
   runWithBoundedConcurrency,
 } from "./noteDetection.js";
 import type { NoteItem } from "./schemas.js";
@@ -118,12 +119,51 @@ async function testBoundedConcurrencyAndTransientRetries() {
   console.log("✓ Notes use bounded concurrency, transient retries, failure isolation, and unchanged deduplication");
 }
 
+async function testNotesProviderFallback() {
+  let geminiCalls = 0;
+  let openAiCalls = 0;
+  const fallbackResult = await runNotesProviderWithFallback({
+    primaryProvider: "gemini",
+    primary: async () => {
+      geminiCalls += 1;
+      throw Object.assign(new Error("503 UNAVAILABLE"), { status: 503 });
+    },
+    fallback: async () => {
+      openAiCalls += 1;
+      return "accepted note";
+    },
+    retryBudgetMs: 10_000,
+  });
+  assert(fallbackResult === "accepted note", "OpenAI fallback should preserve the successful note result");
+  assert(geminiCalls === 3 && openAiCalls === 1, "exhausted Gemini retries should invoke OpenAI exactly once");
+
+  geminiCalls = 0;
+  openAiCalls = 0;
+  const primaryResult = await runNotesProviderWithFallback({
+    primaryProvider: "gemini",
+    primary: async () => {
+      geminiCalls += 1;
+      return "gemini note";
+    },
+    fallback: async () => {
+      openAiCalls += 1;
+      return "unexpected fallback";
+    },
+  });
+  assert(primaryResult === "gemini note" && geminiCalls === 1 && openAiCalls === 0, "successful Gemini must not call OpenAI");
+  console.log("✓ Notes fall back from exhausted Gemini transient failures and preserve Gemini successes");
+}
+
 testNormalizeNoteStripsLineIds();
 testNormalizeNoteMultipleLineIds();
 testNormalizeNotePreservesMiddleLineIds();
 testNormalizeNotePreservesNewlines();
 testBuildNoteSystemPrompt();
 testBoundedConcurrencyAndTransientRetries().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+testNotesProviderFallback().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

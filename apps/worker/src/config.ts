@@ -54,6 +54,7 @@ export const config = {
     parseInt(process.env.WORKER_CHUNK_CONCURRENCY ?? process.env.export_WORKER_CHUNK_CONCURRENCY ?? "1", 10) || 1
   ),
   NOTE_REVIEWER_CONCURRENCY: Math.max(1, parseInt(process.env.NOTE_REVIEWER_CONCURRENCY ?? "2", 10) || 2),
+  NOTE_REVIEWER_RETRY_BUDGET_MS: Math.max(1_000, parseInt(process.env.NOTE_REVIEWER_RETRY_BUDGET_MS ?? "30000", 10) || 30_000),
   ANALYSIS_LARGE_JOB_CHUNK_THRESHOLD: Math.max(1, parseInt(process.env.ANALYSIS_LARGE_JOB_CHUNK_THRESHOLD ?? "35", 10) || 35),
   ANALYSIS_LARGE_JOB_TEXT_LENGTH_THRESHOLD: Math.max(10_000, parseInt(process.env.ANALYSIS_LARGE_JOB_TEXT_LENGTH_THRESHOLD ?? "180000", 10) || 180000),
   ANALYSIS_PASS_GATING_ENABLED: (process.env.ANALYSIS_PASS_GATING_ENABLED ?? "true").toLowerCase() !== "false",

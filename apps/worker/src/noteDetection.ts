@@ -113,6 +113,8 @@ async function callNotesOpenAI(args: {
   temperature: number;
   seed: number;
   signal?: AbortSignal;
+  provider: "openai" | "gemini";
+  timeoutMs: number;
 }): Promise<{
   rawResponse: string;
   responseId: string | null;
@@ -132,19 +134,21 @@ async function callNotesOpenAI(args: {
   logger.info("[DEBUG] Note reviewer request prepared", {
     reviewer: args.definition.id,
     category: args.definition.category,
-    model: config.OPENAI_JUDGE_MODEL,
+    model: args.provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    provider: args.provider,
     eventCount: args.events.length,
     chunkLength: args.chunkText.length,
   });
 
   const response = await generateStructuredCompletion({
-    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    model: args.provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
     systemPrompt: systemPrompt,
     userPrompt: userPrompt,
     temperature: args.temperature,
     seed: args.seed,
     maxTokens: config.AI_PROVIDER === "gemini" ? 16384 : 8192,
-    timeoutMs: config.JUDGE_TIMEOUT_MS,
+    timeoutMs: args.timeoutMs,
+    providerOverride: args.provider,
     signal: args.signal,
   });
 
@@ -239,21 +243,46 @@ export function isTransientProviderError(error: unknown): boolean {
 
 export async function retryTransientProviderFailure<T>(
   operation: () => Promise<T>,
-  options: { maxAttempts?: number; delay?: (milliseconds: number) => Promise<void> } = {},
+  options: { maxAttempts?: number; budgetMs?: number; delay?: (milliseconds: number) => Promise<void> } = {},
 ): Promise<T> {
   const maxAttempts = options.maxAttempts ?? 3;
   const delay = options.delay ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const startedAt = Date.now();
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
-      if (!isTransientProviderError(error) || attempt === maxAttempts) {
+      if (!isTransientProviderError(error) || attempt === maxAttempts || (options.budgetMs !== undefined && Date.now() - startedAt >= options.budgetMs)) {
         throw error;
       }
-      await delay(2 ** (attempt - 1) * 1000);
+      const backoffMs = 2 ** (attempt - 1) * 1000;
+      const remainingMs = options.budgetMs === undefined ? backoffMs : options.budgetMs - (Date.now() - startedAt);
+      if (remainingMs <= 0) throw error;
+      await delay(Math.min(backoffMs, remainingMs));
     }
   }
   throw new Error("Retry operation exhausted");
+}
+
+export async function runNotesProviderWithFallback<T>(args: {
+  primaryProvider: "openai" | "gemini";
+  primary: () => Promise<T>;
+  fallback: () => Promise<T>;
+  retryBudgetMs?: number;
+}): Promise<T> {
+  try {
+    return await retryTransientProviderFailure(args.primary, { budgetMs: args.retryBudgetMs });
+  } catch (error) {
+    if (args.primaryProvider !== "gemini" || !isTransientProviderError(error)) {
+      throw error;
+    }
+    logger.warn("Note reviewer primary provider exhausted transient retries; falling back", {
+      primaryProvider: args.primaryProvider,
+      fallbackProvider: "openai",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return args.fallback();
+  }
 }
 
 export async function runWithBoundedConcurrency<T, R>(
@@ -358,7 +387,11 @@ export async function runNotesDetection(
     async (definition) => {
       const passStartedAt = Date.now();
       try {
-      const { response, parsed } = await retryTransientProviderFailure(async () => {
+      const primaryProvider = config.AI_PROVIDER;
+      const { response, parsed } = await runNotesProviderWithFallback({
+        primaryProvider,
+        retryBudgetMs: config.NOTE_REVIEWER_RETRY_BUDGET_MS,
+        primary: async () => {
         const response = await callNotesOpenAI({
           definition,
           events,
@@ -366,9 +399,29 @@ export async function runNotesDetection(
           temperature: jobConfig.temperature,
           seed: jobConfig.seed,
           signal: options.signal,
+          provider: primaryProvider,
+          timeoutMs: Math.min(
+            config.JUDGE_TIMEOUT_MS,
+            Math.max(1_000, Math.floor(config.NOTE_REVIEWER_RETRY_BUDGET_MS / 3)),
+          ),
         });
         const parsed = await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal);
         return { response, parsed };
+        },
+        fallback: async () => {
+          const response = await callNotesOpenAI({
+            definition,
+            events,
+            chunkText,
+            temperature: jobConfig.temperature,
+            seed: jobConfig.seed,
+            signal: options.signal,
+            provider: "openai",
+            timeoutMs: config.JUDGE_TIMEOUT_MS,
+          });
+          const parsed = await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal);
+          return { response, parsed };
+        },
       });
       const generatedNotes = Array.isArray(parsed.notes) ? parsed.notes : [];
       const normalizedNotes: NoteItem[] = [];
