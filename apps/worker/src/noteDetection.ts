@@ -81,21 +81,26 @@ Notes are not violations.
 Do not generate findings[].
 Do not classify GCAM violations.
 Do not change article ownership.
-Do not merge multiple observations into one note.
 Return ONLY valid JSON.
 The response must be a single JSON object.
 The response must contain the word JSON.
-Use only structured events for event_id and subject selection.
-Use the screenplay chunk only to select the surrounding paragraph and quote.
-Each note must contain category, title, description, paragraph, quote, event_id, and confidence.
-paragraph must be the surrounding 5-10 screenplay lines.
-quote must be the shortest verbatim excerpt that supports the note.
 
-These fields are evidence copied from the screenplay/event source. They MUST remain verbatim in the original language of the supplied screenplay/event. Do not translate, rewrite, summarize, paraphrase, normalize, correct, or reinterpret them.
+**CRITICAL EVALUATION RULES:**
+1. You MUST evaluate EVERY SINGLE structured event provided. Do not stop after finding one match.
+2. Score each event against the category definition. Retain ALL events that are clearly relevant.
+3. If an event represents a strong, explicit scene (e.g., a full police raid, explicit visuals), do not ignore it in favor of a weak lexical mention in another event.
+4. For every genuinely relevant event, produce a separate note. Missing a clearly relevant note is worse than producing multiple legitimate notes. Do not force one note per category.
 
-The 4-digit prefixes (e.g., 0109:) in the Screenplay Chunk are INTERNAL REVIEW IDS and MUST NEVER appear in the quote, paragraph, evidence_snippet, title, or description. Evidence must contain the original screenplay text only.
-
-When extracting quote or paragraph that spans multiple lines, preserve the original spaces and line breaks. Do not merge or concatenate words across line boundaries.
+**EVIDENCE RULES:**
+- Use only structured events for event_id and subject selection.
+- Use the screenplay chunk ONLY to retrieve the exact verbatim paragraph and quote for the selected event.
+- Never use an AI-generated event summary as note evidence.
+- Each note must contain category, title, description, paragraph, quote, event_id, and confidence.
+- paragraph must be the surrounding 5-10 screenplay lines.
+- quote must be the shortest verbatim excerpt from the screenplay that supports the note.
+- These fields are evidence copied from the screenplay/event source. They MUST remain verbatim in the original language of the supplied screenplay/event. Do not translate, rewrite, summarize, paraphrase, normalize, correct, or reinterpret them.
+- The 4-digit prefixes (e.g., 0109:) in the Screenplay Chunk are INTERNAL REVIEW IDS and MUST NEVER appear in the quote, paragraph, evidence_snippet, title, or description. Evidence must contain the original screenplay text only.
+- When extracting quote or paragraph that spans multiple lines, preserve the original spaces and line breaks. Do not merge or concatenate words across line boundaries.
 
 If any required field cannot be produced, omit that note.
 If no note exists, return {"notes":[]}.`;
@@ -465,11 +470,50 @@ export async function runNotesDetection(
     noteCounts: countNoteCategoriesFromArray(allNotes),
   });
 
+  // Deterministic Deduplication Phase
+  // 1. Group by event_id + category, OR normalized quote + category
+  const dedupGroups = new Map<string, NoteItem[]>();
+  for (const note of allNotes) {
+    const key =
+      typeof note.event_id === "number"
+        ? `event_${note.event_id}_${note.category}`
+        : `quote_${normalizeText(note.quote ?? "")}_${note.category}`;
+    if (!dedupGroups.has(key)) {
+      dedupGroups.set(key, []);
+    }
+    dedupGroups.get(key)!.push(note);
+  }
+
+  const deduplicatedNotes: NoteItem[] = [];
+  const droppedNotes = [];
+
+  for (const [key, group] of dedupGroups.entries()) {
+    if (group.length === 1) {
+      deduplicatedNotes.push(group[0]);
+    } else {
+      // Sort by confidence descending, keep the first
+      group.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+      deduplicatedNotes.push(group[0]);
+      
+      // Log dropped notes
+      for (let i = 1; i < group.length; i++) {
+        droppedNotes.push(group[i]);
+        logger.info("Note dropped by deterministic deduplication", {
+          jobId: options.jobId,
+          chunkId: options.chunkId,
+          category: group[i].category,
+          eventId: group[i].event_id,
+          reason: "Duplicate note for the same event/quote",
+        });
+      }
+    }
+  }
+
   return {
-    notes: allNotes,
+    notes: deduplicatedNotes,
     passResults,
-    executedPassCount: passResults.filter((pass) => pass.reason !== "failed").length,
-    skippedPassCount: passResults.filter((pass) => pass.skipped).length,
+    executedPassCount: passResults.filter((p) => !p.skipped).length,
+    skippedPassCount: passResults.filter((p) => p.skipped).length,
     totalDuration: Date.now() - startedAt,
   };
 }
