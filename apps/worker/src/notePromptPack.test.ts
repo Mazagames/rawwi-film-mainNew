@@ -18,7 +18,7 @@ function testRepositoryNotePackLoads(): void {
   const noteDirectory = resolveNoteDirectoryForTests(process.cwd());
   const pack = loadNotePackFromDirectoryForTests(noteDirectory);
   const noteDefinitions = pack.noteDefinitions.filter((definition) => definition.kind === "note");
-  assert(noteDefinitions.length === 8, `expected 8 note reviewers, got ${noteDefinitions.length}`);
+  assert(noteDefinitions.length === 10, `expected 10 note reviewers, got ${noteDefinitions.length}`);
 
   const expectedCategories = [
     "media_credibility",
@@ -28,6 +28,8 @@ function testRepositoryNotePackLoads(): void {
     "security_scenes",
     "commercial_entities",
     "religious_content",
+    "article_05",
+    "article_12",
     "article_14",
   ];
 
@@ -50,12 +52,30 @@ function testRepositoryNotePackLoads(): void {
 function testNoteDefinitionsAccessibleFromRuntime(): void {
   const definitions = getNoteDefinitions();
   const noteDefinitions = definitions.filter((definition) => definition.kind === "note");
-  assert(noteDefinitions.length === 8, `expected 8 loaded note definitions, got ${noteDefinitions.length}`);
+  assert(noteDefinitions.length === 10, `expected 10 loaded note definitions, got ${noteDefinitions.length}`);
   for (const definition of noteDefinitions) {
     assert(definition.prompt.trim().length > 0, `note prompt should not be empty for ${definition.id}`);
     assert(definition.category.trim().length > 0, `note category should not be empty for ${definition.id}`);
   }
   console.log("✓ note definitions are accessible from the runtime cache");
+}
+
+function testPilotArticlesAreOrdinaryNotes(): void {
+  const definitions = getNoteDefinitions();
+  const ids = [
+    "article_05_violence_torture",
+    "article_12_child_protection_exploitation",
+    "article_14_profanity_personal_insults",
+  ];
+
+  for (const id of ids) {
+    const definition = definitions.find((entry) => entry.id === id);
+    assert(definition, `missing pilot reviewer definition: ${id}`);
+    assert(definition.kind === "note", `${id} must be registered as kind=note`);
+    assert(definition.destination === "analysis_notes", `${id} must persist to analysis_notes`);
+  }
+
+  console.log("✓ pilot Articles 05/12/14 are registered as ordinary Notes in analysis_notes");
 }
 
 function testNoteMarkdownFilesExist(): void {
@@ -70,4 +90,5 @@ function testNoteMarkdownFilesExist(): void {
 
 testRepositoryNotePackLoads();
 testNoteDefinitionsAccessibleFromRuntime();
+testPilotArticlesAreOrdinaryNotes();
 testNoteMarkdownFilesExist();
