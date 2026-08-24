@@ -200,9 +200,11 @@ export async function callJudgeRaw(
     );
   }
 
-  const provider = config.AI_PROVIDER;
-  const configuredModel = jobConfig.judge_model;
-  const resolvedModel = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : configuredModel;
+  const provider = isV5EventFirst ? config.V5_VIOLATION_JUDGE_PROVIDER : config.AI_PROVIDER;
+  const configuredModel = isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : jobConfig.judge_model;
+  const resolvedModel = provider === "gemini"
+    ? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : config.GEMINI_JUDGE_MODEL)
+    : configuredModel;
 
   logger.info("[DEBUG] Judge request prepared", {
     configuredModel,
@@ -214,6 +216,7 @@ export async function callJudgeRaw(
     chunkPreviewLength: textSlice.length,
     globalStart,
     globalEnd,
+    isV5EventFirst
   });
 
   const resp = await generateStructuredCompletion({
@@ -226,6 +229,7 @@ export async function callJudgeRaw(
     thinkingBudget: provider === "gemini" ? 4096 : undefined,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
     signal: options.signal,
+    providerOverride: provider,
   });
 
   const content = resp.content ?? '{"findings":[]}';

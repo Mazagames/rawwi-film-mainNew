@@ -14,6 +14,8 @@ export const config = {
   OPENAI_ROUTER_MODEL: process.env.OPENAI_ROUTER_MODEL ?? "gpt-4.1-mini",
   OPENAI_JUDGE_MODEL: process.env.OPENAI_JUDGE_MODEL ?? "gpt-4.1",
   OPENAI_AUDITOR_MODEL: process.env.OPENAI_AUDITOR_MODEL ?? "gpt-4.1",
+  V5_VIOLATION_JUDGE_PROVIDER: (process.env.V5_VIOLATION_JUDGE_PROVIDER ?? process.env.AI_PROVIDER ?? "openai").toLowerCase() as "openai" | "gemini",
+  V5_VIOLATION_JUDGE_MODEL: process.env.V5_VIOLATION_JUDGE_MODEL ?? process.env.OPENAI_JUDGE_MODEL ?? "gpt-4.1",
   /** Model for rationale-only pass. Use gpt-4.1 by default (gpt-4o if your project has access). */
   OPENAI_RATIONALE_MODEL: process.env.OPENAI_RATIONALE_MODEL ?? "gpt-4.1",
   JUDGE_TIMEOUT_MS: parseInt(process.env.JUDGE_TIMEOUT_MS ?? "120000", 10),

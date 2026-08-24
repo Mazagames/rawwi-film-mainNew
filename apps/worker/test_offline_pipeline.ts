@@ -1,5 +1,10 @@
 import { config as loadEnv } from 'dotenv';
 loadEnv();
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || "https://example.supabase.co";
+process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "fake";
+process.env.AI_PROVIDER = process.env.AI_PROVIDER || "gemini";
+process.env.V5_VIOLATION_JUDGE_PROVIDER = process.env.V5_VIOLATION_JUDGE_PROVIDER || "openai";
+process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "fake";
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -423,8 +428,8 @@ async function main() {
   console.log("V5 CANDIDATE GENERATION TESTS");
   console.log("-------------------------------------------");
 
-  const { parseJudgeWithRepair } = await import('./src/openai.js');
-  const { groundFindingEvidenceToChunk } = await import('./src/evidenceGrounding.js');
+  const { parseJudgeWithRepair: parseJudgeWithRepair2 } = await import('./src/openai.js');
+  const { groundFindingEvidenceToChunk: groundFindingEvidenceToChunk2 } = await import('./src/evidenceGrounding.js');
   const { renderBoundedStructuredEventContext: renderBoundedStructuredEventContext2 } = await import('./src/eventUnderstanding.js');
 
   const v5Events = [
@@ -481,7 +486,7 @@ async function main() {
     ]
   });
 
-  const parsed = await parseJudgeWithRepair(v5MockResponse, "test", [{ id: 5, title_ar: "Article 5" } as any]);
+  const parsed = await parseJudgeWithRepair2(v5MockResponse, "test", [{ id: 5, title_ar: "Article 5" } as any]);
 
   if (parsed.findings.length !== 3) {
     console.error("[FAIL] V5 schema failed to parse findings without offsets.");
@@ -492,7 +497,7 @@ async function main() {
 
   // Grounding tests
   const finding8 = parsed.findings.find(f => f.event_id === 8);
-  const grounded8 = groundFindingEvidenceToChunk(finding8 as any, v5ChunkText);
+  const grounded8 = groundFindingEvidenceToChunk2(finding8 as any, v5ChunkText, 0, v5ChunkText.length);
   if (grounded8.grounded && grounded8.finding.location?.start_offset === 0 && grounded8.finding.location?.end_offset === 27) {
     console.log("[PASS] Grounding successfully reconstructed exact offsets for Event 8: [0, 27]");
   } else {
@@ -501,7 +506,7 @@ async function main() {
   }
 
   const findingFabricated = parsed.findings.find(f => f.event_id === 99);
-  const groundedFabricated = groundFindingEvidenceToChunk(findingFabricated as any, v5ChunkText);
+  const groundedFabricated = groundFindingEvidenceToChunk2(findingFabricated as any, v5ChunkText, 0, v5ChunkText.length);
   if (!groundedFabricated.grounded) {
     console.log("[PASS] Fabricated finding successfully rejected during grounding.");
   } else {

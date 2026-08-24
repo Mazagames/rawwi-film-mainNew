@@ -19,9 +19,10 @@ export interface AICompletionRequest {
   temperature?: number;
   seed?: number; // Only respected by OpenAI natively
   maxTokens?: number;
+  thinkingBudget?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
-  thinkingBudget?: number;
+  providerOverride?: "openai" | "gemini";
 }
 
 export interface AICompletionResponse {
@@ -126,7 +127,8 @@ async function generateGeminiCompletion(req: AICompletionRequest): Promise<AICom
 }
 
 export async function generateStructuredCompletion(req: AICompletionRequest): Promise<AICompletionResponse> {
-  if (config.AI_PROVIDER === "gemini") {
+  const provider = req.providerOverride ?? config.AI_PROVIDER;
+  if (provider === "gemini") {
     // The @google/genai SDK (v2.17.1) does not natively support AbortSignal or timeout.
     // We intentionally avoid Promise.race here because it would only reject the caller
     // while leaving the underlying network request running, which violates the
