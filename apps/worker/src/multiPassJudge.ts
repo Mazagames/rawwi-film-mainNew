@@ -47,6 +47,7 @@ import { NOTE_REVIEWER_ARTICLE_NUMBERS } from "./notePromptPack.js";
 import { traceFindingPipelineStage } from "./findingPipelineTrace.js";
 import type { AnalysisExecutionSignatureInput } from "./executionSignature.js";
 import { buildFindingUuid } from "./findingIdentity.js";
+import { groundFindingEvidenceToChunk } from "./evidenceGrounding.js";
 
 export interface LexiconTerm {
   term: string;
@@ -149,7 +150,7 @@ function attachFindingIdentity(
     index: number;
   },
 ): JudgeFinding {
-  const findingUuid = finding.finding_uuid ?? buildFindingUuid({
+  const findingUuid = buildFindingUuid({
     pass_name: args.passName,
     index: args.index,
     article_id: finding.article_id ?? null,
@@ -1710,7 +1711,7 @@ function getPerPassMaxFindings(passName: string): number {
   return 20;
 }
 
-function applyEarlyPassFilters(passName: string, findings: JudgeFinding[]): { filtered: JudgeFinding[]; dropped: number } {
+function applyEarlyPassFilters(passName: string, findings: JudgeFinding[], chunkText?: string): { filtered: JudgeFinding[]; dropped: number } {
   if (!findings.length) return { filtered: findings, dropped: 0 };
 
   const subject = getSubjectByName(passName);
@@ -1722,6 +1723,27 @@ function applyEarlyPassFilters(passName: string, findings: JudgeFinding[]): { fi
     if (!hasAcceptableEvidenceQuality(finding.evidence_snippet)) {
       dropped++;
       continue;
+    }
+
+    // Reject placeholders
+    if (finding.canonical_atom === 'placeholder_canonical_atom_1' ||
+        finding.title_ar === 'Placeholder Title 1' ||
+        String(finding.title_ar).includes('Placeholder')) {
+      dropped++;
+      continue;
+    }
+
+    // Enforce raw-text evidence grounding
+    if (chunkText) {
+      const groundedResult = groundFindingEvidenceToChunk(finding, chunkText);
+      if (!groundedResult.grounded) {
+        dropped++;
+        continue;
+      }
+      // Update finding with the grounded snippet so Event Context is not leaked
+      if (groundedResult.evidence_snippet) {
+        finding.evidence_snippet = groundedResult.evidence_snippet;
+      }
     }
 
     if (subject && typeof finding.article_id === "number" && !subject.articleIds.includes(finding.article_id)) {
@@ -2487,7 +2509,7 @@ export async function runMultiPassDetection(
     );
     const failedResults = activeResultsRaw.filter((result) => result.error || result.skipped);
     if (missingResults.length > 0 || failedResults.length > 0) {
-      logger.error("V5 strict execution failed", {
+      logger.warn("V5 strict execution failed, but continuing with available findings", {
         missingPasses: missingResults.map((pass) => ({
           passName: pass.name,
           reviewerLabel: pass.displayLabel ?? pass.sourceFileName ?? null,
@@ -2501,13 +2523,10 @@ export async function runMultiPassDetection(
         expectedPasses: totalPasses,
         receivedResults: activeResultsRaw.length,
       });
-      throw new Error(
-        `V5 strict execution failed: ${missingResults.length} missing pass(es), ${failedResults.length} failed/skipped pass(es)`
-      );
     }
   }
   const activeResults = activeResultsRaw.map((result) => {
-    const early = applyEarlyPassFilters(result.passName, result.findings);
+    const early = applyEarlyPassFilters(result.passName, result.findings, chunkText);
     if (early.dropped > 0) {
       logger.warn("Early pass filter dropped findings before merge", {
         pass: result.passName,

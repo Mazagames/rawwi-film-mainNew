@@ -338,7 +338,7 @@ async function generateScriptSummaryInternal(fullText: string, scriptTitle?: str
       systemPrompt: SYSTEM_MSG,
       userPrompt: userContent,
       temperature: 0,
-      maxTokens: 1024,
+      maxTokens: 8192,
     });
     const raw = resp.content ?? "{}";
     const first = raw.indexOf("{");
