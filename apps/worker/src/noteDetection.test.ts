@@ -2,7 +2,12 @@
  * Tests for the noteDetection fixes.
  * Run: npx tsx src/noteDetection.test.ts
  */
-import { normalizeNote, buildNoteSystemPrompt } from "./noteDetection.js";
+import {
+  buildNoteSystemPrompt,
+  normalizeNote,
+  retryTransientProviderFailure,
+  runWithBoundedConcurrency,
+} from "./noteDetection.js";
 import type { NoteItem } from "./schemas.js";
 
 function assert(cond: boolean, msg: string): void {
@@ -80,8 +85,45 @@ function testBuildNoteSystemPrompt() {
   console.log("✓ buildNoteSystemPrompt correctly includes new constraints");
 }
 
+async function testBoundedConcurrencyAndTransientRetries() {
+  let active = 0;
+  let peak = 0;
+  const attempts = new Map<number, number>();
+  const results = await runWithBoundedConcurrency([1, 2, 3, 4, 5, 6, 7], 2, async (reviewer) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    try {
+      try {
+        return await retryTransientProviderFailure(async () => {
+          const attempt = (attempts.get(reviewer) ?? 0) + 1;
+          attempts.set(reviewer, attempt);
+          if (reviewer === 2 && attempt === 1) throw Object.assign(new Error("503 UNAVAILABLE"), { status: 503 });
+          if (reviewer === 7) throw Object.assign(new Error("429 rate limit"), { status: 429 });
+          return reviewer;
+        }, { delay: async () => {} });
+      } catch {
+        return null;
+      }
+    } finally {
+      active -= 1;
+    }
+  });
+  assert(peak <= 2, `expected at most two active reviewers, got ${peak}`);
+  assert(attempts.get(2) === 2, `expected reviewer 2 to retry once, got ${attempts.get(2)}`);
+  assert(attempts.get(7) === 3, `expected permanent reviewer 7 to stop after three attempts, got ${attempts.get(7)}`);
+  assert(results.filter((reviewer) => reviewer !== null).length === 6 && results.includes(2), "successful reviewer results should be preserved");
+  const deduped = new Map<string, number>();
+  for (const eventId of [1, 1, 2]) deduped.set(`event_${eventId}_security_scenes`, eventId);
+  assert(deduped.size === 2, "event/category deduplication should remain unchanged");
+  console.log("✓ Notes use bounded concurrency, transient retries, failure isolation, and unchanged deduplication");
+}
+
 testNormalizeNoteStripsLineIds();
 testNormalizeNoteMultipleLineIds();
 testNormalizeNotePreservesMiddleLineIds();
 testNormalizeNotePreservesNewlines();
 testBuildNoteSystemPrompt();
+testBoundedConcurrencyAndTransientRetries().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

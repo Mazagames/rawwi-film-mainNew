@@ -230,6 +230,50 @@ function normalizeEvidenceField(text: string | null | undefined): string {
   return text.replace(/^\s*\d{4}:\s?/gm, "").trim();
 }
 
+export function isTransientProviderError(error: unknown): boolean {
+  const candidate = error as { status?: unknown; code?: unknown; message?: unknown } | null;
+  const message = typeof candidate?.message === "string" ? candidate.message : String(error);
+  return candidate?.status === 429 || candidate?.status === 503 || candidate?.code === 429 || candidate?.code === 503
+    || /(?:\b429\b|\b503\b|rate.?limit|too many requests|service unavailable|unavailable)/i.test(message);
+}
+
+export async function retryTransientProviderFailure<T>(
+  operation: () => Promise<T>,
+  options: { maxAttempts?: number; delay?: (milliseconds: number) => Promise<void> } = {},
+): Promise<T> {
+  const maxAttempts = options.maxAttempts ?? 3;
+  const delay = options.delay ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientProviderError(error) || attempt === maxAttempts) {
+        throw error;
+      }
+      await delay(2 ** (attempt - 1) * 1000);
+    }
+  }
+  throw new Error("Retry operation exhausted");
+}
+
+export async function runWithBoundedConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const runWorker = async (): Promise<void> => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => runWorker()));
+  return results;
+}
+
 export function normalizeNote(note: NoteItem, reviewerId: string): NoteItem | null {
   const emittedCategory = String(note.category ?? "").trim();
   if (!emittedCategory) {
@@ -308,19 +352,24 @@ export async function runNotesDetection(
   const passResults: NotePassResult[] = [];
   const allNotes: NoteItem[] = [];
 
-  const concurrentResults = await Promise.all(
-    noteDefinitions.map(async (definition) => {
+  const concurrentResults = await runWithBoundedConcurrency(
+    noteDefinitions,
+    config.NOTE_REVIEWER_CONCURRENCY,
+    async (definition) => {
       const passStartedAt = Date.now();
       try {
-      const response = await callNotesOpenAI({
-        definition,
-        events,
-        chunkText,
-        temperature: jobConfig.temperature,
-        seed: jobConfig.seed,
-        signal: options.signal,
+      const { response, parsed } = await retryTransientProviderFailure(async () => {
+        const response = await callNotesOpenAI({
+          definition,
+          events,
+          chunkText,
+          temperature: jobConfig.temperature,
+          seed: jobConfig.seed,
+          signal: options.signal,
+        });
+        const parsed = await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal);
+        return { response, parsed };
       });
-      const parsed = await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal);
       const generatedNotes = Array.isArray(parsed.notes) ? parsed.notes : [];
       const normalizedNotes: NoteItem[] = [];
       const noteTelemetry = {
@@ -468,7 +517,8 @@ export async function runNotesDetection(
         normalizedNotes: [],
       };
     }
-  }));
+    },
+  );
 
   for (const result of concurrentResults) {
     if (result.passResult) {
