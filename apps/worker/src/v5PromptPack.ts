@@ -27,7 +27,12 @@ type ParsedV5ReviewerMarkdown = {
   prompt: string;
 };
 
-const EXPECTED_V5_REVIEWER_COUNT = 24;
+const LEGACY_V5_EXCLUDED_FILENAMES = new Set([
+  "article_05_violence_torture.md",
+  "article_12_child_protection_exploitation.md",
+  "article_14_profanity_personal_insults.md",
+]);
+const EXPECTED_V5_REVIEWER_COUNT = 21;
 const EXPECTED_ARTICLE_MIN = 1;
 const EXPECTED_ARTICLE_MAX = 24;
 const MODULE_URL = import.meta.url;
@@ -70,6 +75,10 @@ function isMarkdownFile(fileName: string): boolean {
 
 function isV5ArticleReviewerFile(fileName: string): boolean {
   return /^article_\d{2}_.+\.md$/i.test(fileName);
+}
+
+function isLegacyV5ReviewerFile(fileName: string): boolean {
+  return isV5ArticleReviewerFile(fileName) && !LEGACY_V5_EXCLUDED_FILENAMES.has(fileName);
 }
 
 function normalizeMarkdown(markdown: string): string {
@@ -180,7 +189,7 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
     .filter((entry: DirectoryEntryLike) => entry.isFile())
     .map((entry: DirectoryEntryLike) => entry.name)
     .filter(isMarkdownFile)
-    .filter(isV5ArticleReviewerFile);
+    .filter(isLegacyV5ReviewerFile);
 
   if (reviewerFiles.length === 0) {
     failV5ReviewerLoad("No V5 reviewer markdown files were found", {
@@ -225,6 +234,9 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
 
   const missingArticleNumbers: number[] = [];
   for (let articleNumber = EXPECTED_ARTICLE_MIN; articleNumber <= EXPECTED_ARTICLE_MAX; articleNumber += 1) {
+    if (articleNumber === 5 || articleNumber === 12 || articleNumber === 14) {
+      continue;
+    }
     if (!byArticle.has(articleNumber)) {
       missingArticleNumbers.push(articleNumber);
     }
@@ -239,7 +251,7 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
   }
 
   if (parsedReviewers.length !== EXPECTED_V5_REVIEWER_COUNT) {
-    failV5ReviewerLoad("V5 reviewer pack must contain exactly 24 markdown files", {
+    failV5ReviewerLoad("V5 reviewer pack must contain exactly 21 markdown files", {
       reviewerDirectory,
       reviewerCount: parsedReviewers.length,
       expectedCount: EXPECTED_V5_REVIEWER_COUNT,
