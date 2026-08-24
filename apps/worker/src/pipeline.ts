@@ -3368,6 +3368,23 @@ export async function processChunkJudge(
           ? getEventConsistencyIssue(evidenceAlignedFinding, multiPassEventUnderstanding.events)
           : null;
       if (eventConsistencyResult?.issue) {
+        if (eventConsistencyResult.issue === "event_evidence_mismatch" || eventConsistencyResult.issue === "event_span_mismatch") {
+          logger.info("Event consistency mismatch (rejected)", {
+            jobId,
+            chunkId: chunk.id,
+            runKey,
+            article: f.article_id,
+            pass: f.detection_pass ?? null,
+            canonicalAtom: f.canonical_atom ?? null,
+            issue: eventConsistencyResult.issue,
+            matchedEventId: eventConsistencyResult.matchedEvent?.event_id ?? null,
+            matchedScore: eventConsistencyResult.matchedScore,
+            runnerUpScore: eventConsistencyResult.runnerUpScore,
+            excerpt: excerpt.slice(0, 120),
+          });
+          eventConsistencyDroppedCount++;
+          continue;
+        }
         logger.warn("Event consistency issue (advisory only)", {
           jobId,
           chunkId: chunk.id,

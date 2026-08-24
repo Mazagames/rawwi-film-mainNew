@@ -50,7 +50,7 @@ export function enforceDeterministicOwnership(
     
     let issue: string | null = null;
     if (matchedEvent) {
-      issue = getEventConsistencyIssue(finding as any, matchedEvent);
+      issue = getEventConsistencyIssue(finding as any, [matchedEvent]).issue;
     }
 
     const groupKey = matchedEvent ? `event_${matchedEvent.event_id}` : `span_${normalizeSpan(finding)}`;
