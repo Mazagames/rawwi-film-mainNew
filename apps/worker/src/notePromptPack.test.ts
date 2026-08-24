@@ -17,7 +17,8 @@ function assert(cond: boolean, msg: string): void {
 function testRepositoryNotePackLoads(): void {
   const noteDirectory = resolveNoteDirectoryForTests(process.cwd());
   const pack = loadNotePackFromDirectoryForTests(noteDirectory);
-  assert(pack.noteDefinitions.length === 7, `expected 7 note reviewers, got ${pack.noteDefinitions.length}`);
+  const noteDefinitions = pack.noteDefinitions.filter((definition) => definition.kind === "note");
+  assert(noteDefinitions.length === 7, `expected 7 note reviewers, got ${noteDefinitions.length}`);
 
   const expectedCategories = [
     "media_credibility",
@@ -31,15 +32,15 @@ function testRepositoryNotePackLoads(): void {
 
   for (const category of expectedCategories) {
     assert(
-      pack.noteDefinitions.some((definition) => definition.category === category),
+      noteDefinitions.some((definition) => definition.category === category),
       `missing note category: ${category}`,
     );
   }
 
-  const entityNote = pack.noteDefinitions.find((definition) => definition.id === "note_entities_and_brand");
+  const entityNote = noteDefinitions.find((definition) => definition.id === "note_entities_and_brand");
   assert(entityNote?.filename === "note_entities_and_brands.md", "expected pluralized entity note filename");
   assert(entityNote?.prompt.includes("#"), "expected note prompt to contain markdown content");
-  const securityNote = pack.noteDefinitions.find((definition) => definition.id === "notes_security_scenes");
+  const securityNote = noteDefinitions.find((definition) => definition.id === "notes_security_scenes");
   assert(securityNote?.displayLabel === "المشاهد الأمنية", "expected Security Scenes display label");
 
   console.log("✓ repository note pack loads and preserves all seven categories");
@@ -47,8 +48,9 @@ function testRepositoryNotePackLoads(): void {
 
 function testNoteDefinitionsAccessibleFromRuntime(): void {
   const definitions = getNoteDefinitions();
-  assert(definitions.length === 7, `expected 7 loaded note definitions, got ${definitions.length}`);
-  for (const definition of definitions) {
+  const noteDefinitions = definitions.filter((definition) => definition.kind === "note");
+  assert(noteDefinitions.length === 7, `expected 7 loaded note definitions, got ${noteDefinitions.length}`);
+  for (const definition of noteDefinitions) {
     assert(definition.prompt.trim().length > 0, `note prompt should not be empty for ${definition.id}`);
     assert(definition.category.trim().length > 0, `note category should not be empty for ${definition.id}`);
   }
@@ -57,7 +59,7 @@ function testNoteDefinitionsAccessibleFromRuntime(): void {
 
 function testNoteMarkdownFilesExist(): void {
   const noteDirectory = resolveNoteDirectoryForTests(process.cwd());
-  const definitions = getNoteDefinitions();
+  const definitions = getNoteDefinitions().filter((definition) => definition.kind === "note");
   for (const definition of definitions) {
     const content = readFileSync(join(noteDirectory, definition.filename), "utf8");
     assert(content.trim().length > 0, `expected reviewer markdown to be non-empty: ${definition.filename}`);

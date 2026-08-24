@@ -17,7 +17,7 @@ import { buildRouterTraceSummary, callJudgeRaw, callRouter, parseJudgeWithRepair
 import { config, resolveV5CandidateEngine, resolveViolationSystemVersion } from "./config.js";
 import { isValidAtomForArticle, normalizeAtomId } from "./policyMap.js";
 import type { JudgeFinding } from "./schemas.js";
-import { runNotesDetection, toNoteInsertRows } from "./noteDetection.js";
+import { runNotesDetection, runReviewerPack, toNoteInsertRows } from "./noteDetection.js";
 import { getScriptStandardRouterList } from "./gcam.js";
 import { ROUTER_SYSTEM_MSG, JUDGE_SYSTEM_MSG, injectLexiconIntoPrompts, PROMPT_VERSIONS } from "./aiConstants.js";
 import { runMultiPassDetection, getDetectionPassesForViolationSystem, planDetectionPassExecution, type LexiconTerm } from "./multiPassJudge.js";
@@ -51,6 +51,7 @@ import { V3_SUBJECT_DEFINITIONS } from "./v3PromptPack.js";
 import { buildLineageEvent, ensureFindingLineageId, persistLineageEvents } from "./findingLineage.js";
 import { buildFindingUuid } from "./findingIdentity.js";
 import { canonicalStringify } from "./canonicalJson.js";
+import { enforceDeterministicOwnership } from "./deterministicOwnership.js";
 import { runEventCandidateRunner, type EventCandidateRunnerResult } from "./eventCandidateRunner.js";
 
 export type FindingWithGlobal = JudgeFinding & {
@@ -2249,6 +2250,7 @@ export async function processChunkJudge(
   let multiPassResult: MultiPassDetectionResult | null = null;
   let multiPassEventUnderstanding: MultiPassDetectionResult["eventUnderstanding"] = null;
   let multiPassPassResults: MultiPassDetectionResult["passResults"] = [];
+  let sharedReviewerPackResult: Awaited<ReturnType<typeof runReviewerPack>> | null = null;
 
   const cachedValidated = ((cachedRun?.validated_ai_findings as any[]) || []) as FindingWithGlobal[];
   const cachedLegacy = ((cachedRun?.ai_findings as any[]) || []) as FindingWithGlobal[];
@@ -2388,7 +2390,30 @@ export async function processChunkJudge(
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
       const multiPassStartedAt = Date.now();
       throwIfAborted(signal);
-      if (useArticle14Experiment) {
+      if (config.V5_SHARED_REVIEWER_PACK_ENABLED && violationSystemVersion === "v5") {
+        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
+        sharedReviewerPackResult = await runReviewerPack(
+          chunkText,
+          eventUnderstanding,
+          { temperature, seed },
+          { jobId, chunkId: chunk.id, signal },
+        );
+        const ownership = enforceDeterministicOwnership(
+          sharedReviewerPackResult.violationCandidates,
+          eventUnderstanding.events,
+          chunkText,
+        );
+        multiPassResult = {
+          findings: ownership.finalFindings,
+          passResults: sharedReviewerPackResult.passResults.filter((result) =>
+            ["article_05_violence_torture", "article_12_child_protection_exploitation", "article_14_profanity_personal_insults"].includes(result.passName),
+          ),
+          totalDuration: sharedReviewerPackResult.totalDuration,
+          executedPassCount: sharedReviewerPackResult.executedPassCount,
+          skippedPassCount: sharedReviewerPackResult.skippedPassCount,
+          eventUnderstanding,
+        } as MultiPassDetectionResult;
+      } else if (useArticle14Experiment) {
         const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
         multiPassResult = await runEventCandidateRunner({
           chunkText,
@@ -3484,7 +3509,20 @@ export async function processChunkJudge(
         eventConsistencyPassedCount++;
       }
 
-      if (violationSystemVersion === "v5" && multiPassEventUnderstanding) {
+  if (config.V5_SHARED_REVIEWER_PACK_ENABLED && violationSystemVersion === "v5" && sharedReviewerPackResult && multiPassEventUnderstanding) {
+    try {
+      const noteRows = toNoteInsertRows(jobId, sharedReviewerPackResult.notes);
+      if (noteRows.length > 0) {
+        await supabase.from("analysis_notes").upsert(noteRows, {
+          onConflict: "job_id,reviewer,event_id,category,title",
+          ignoreDuplicates: false,
+        });
+      }
+      logger.info("Shared reviewer pack Notes persisted", { jobId, chunkId: chunk.id, noteCount: noteRows.length });
+    } catch (error) {
+      logger.warn("Shared reviewer pack Notes failed but analysis will continue", { jobId, chunkId: chunk.id, error: String(error) });
+    }
+  } else if (violationSystemVersion === "v5" && multiPassEventUnderstanding) {
         const quoteEventId = eventConsistencyResult?.matchedEvent?.event_id ?? null;
         const pageEventId = quoteEventId;
         if (

@@ -3,12 +3,17 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "./logger.js";
 
+export type ReviewerKind = "note" | "violation";
+export type ReviewerDestination = "analysis_notes" | "analysis_findings";
+
 export type NoteReviewerDefinition = {
   id: string;
   category: string;
   displayLabel: string;
   filename: string;
   prompt: string;
+  kind: ReviewerKind;
+  destination: ReviewerDestination;
 };
 
 type LoadedNotePack = {
@@ -21,6 +26,8 @@ type NotePackEntry = {
   category: string;
   displayLabel: string;
   filename: string;
+  kind: ReviewerKind;
+  destination: ReviewerDestination;
 };
 
 const MODULE_URL = import.meta.url;
@@ -32,42 +39,80 @@ const NOTE_PACK_ENTRIES: NotePackEntry[] = [
     category: "media_credibility",
     displayLabel: "مصداقية الإعلام",
     filename: "article_11_media_credibility.md",
+    kind: "note",
+    destination: "analysis_notes",
   },
   {
     id: "article_13_medical_health_misinformation",
     category: "medical_notes",
     displayLabel: "ملاحظات طبية وصحية",
     filename: "article_13_medical_health_misinformation.md",
+    kind: "note",
+    destination: "analysis_notes",
   },
   {
     id: "article_21_classified_documents",
     category: "classified_documents",
     displayLabel: "الوثائق السرية",
     filename: "article_21_classified_documents.md",
+    kind: "note",
+    destination: "analysis_notes",
   },
   {
     id: "note_saudi_names",
     category: "saudi_names",
     displayLabel: "الأسماء السعودية",
     filename: "note_saudi_names.md",
+    kind: "note",
+    destination: "analysis_notes",
   },
   {
     id: "notes_security_scenes",
     category: "security_scenes",
     displayLabel: "المشاهد الأمنية",
     filename: "notes_security_scenes.md",
+    kind: "note",
+    destination: "analysis_notes",
   },
   {
     id: "note_entities_and_brand",
     category: "commercial_entities",
     displayLabel: "الكيانات والعلامات التجارية",
     filename: "note_entities_and_brands.md",
+    kind: "note",
+    destination: "analysis_notes",
   },
   {
     id: "note_religious_content",
     category: "religious_content",
     displayLabel: "محتوى ديني / مذهبي حساس",
     filename: "note_religious_content.md",
+    kind: "note",
+    destination: "analysis_notes",
+  },
+  {
+    id: "article_05_violence_torture",
+    category: "article_05",
+    displayLabel: "العنف والقتل والتعذيب",
+    filename: "article_05_violence_torture.md",
+    kind: "violation",
+    destination: "analysis_findings",
+  },
+  {
+    id: "article_12_child_protection_exploitation",
+    category: "article_12",
+    displayLabel: "حماية الأطفال والقُصّر",
+    filename: "article_12_child_protection_exploitation.md",
+    kind: "violation",
+    destination: "analysis_findings",
+  },
+  {
+    id: "article_14_profanity_personal_insults",
+    category: "article_14",
+    displayLabel: "الألفاظ النابية والشتائم والإهانات الشخصية",
+    filename: "article_14_profanity_personal_insults.md",
+    kind: "violation",
+    destination: "analysis_findings",
   },
 ];
 

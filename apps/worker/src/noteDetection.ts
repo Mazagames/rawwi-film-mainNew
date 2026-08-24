@@ -5,6 +5,9 @@ import { canonicalStringify } from "./canonicalJson.js";
 import { extractJsonFromText, noteOutputSchema, noteSchema, type NoteItem, type NoteOutput } from "./schemas.js";
 import { logger } from "./logger.js";
 import { getNoteDefinitions, type NoteReviewerDefinition } from "./notePromptPack.js";
+import type { ReviewerKind } from "./notePromptPack.js";
+import { parseJudgeWithRepair } from "./openai.js";
+import type { JudgeFinding } from "./schemas.js";
 import type { EventUnderstandingPassResult, StructuredEvent } from "./eventUnderstanding.js";
 import {
   countNoteCategoriesFromArray,
@@ -34,6 +37,15 @@ export type NotePassResult = {
 
 export type NoteDetectionResult = {
   notes: NoteItem[];
+  passResults: NotePassResult[];
+  executedPassCount: number;
+  skippedPassCount: number;
+  totalDuration: number;
+};
+
+export type ReviewerPackResult = {
+  notes: NoteItem[];
+  violationCandidates: JudgeFinding[];
   passResults: NotePassResult[];
   executedPassCount: number;
   skippedPassCount: number;
@@ -74,6 +86,13 @@ function buildLineNumberedChunk(chunkText: string): string {
 }
 
 export function buildNoteSystemPrompt(definition: NoteReviewerDefinition): string {
+  if (definition.kind === "violation") {
+    return `${definition.prompt}
+
+Return ONLY valid JSON with a findings array.
+Each finding must contain article_id, event_id, title_ar, rationale_ar, evidence_snippet, and confidence.
+Evaluate every StructuredEvent independently and preserve exact event_id and evidence_snippet values.`;
+  }
   return `${definition.prompt}
 
 You are a notes reviewer.
@@ -349,6 +368,116 @@ export function toNoteInsertRows(jobId: string, notes: NoteItem[]): NoteInsertRo
   return notes.map((note) => toNoteInsertRow(jobId, note));
 }
 
+function reviewerArticleId(definition: NoteReviewerDefinition): number | null {
+  const match = /^article_(\d{2})_/.exec(definition.id);
+  return match ? Number(match[1]) : null;
+}
+
+export async function runReviewerPack(
+  chunkText: string,
+  eventUnderstanding: EventUnderstandingPassResult | null,
+  jobConfig: { temperature: number; seed: number },
+  options: {
+    jobId: string;
+    chunkId: string;
+    signal?: AbortSignal;
+    definitions?: NoteReviewerDefinition[];
+    reviewerResponse?: (definition: NoteReviewerDefinition) => Promise<string>;
+  },
+): Promise<ReviewerPackResult> {
+  const startedAt = Date.now();
+  const definitions = options.definitions ?? getNoteDefinitions();
+  const events = eventUnderstanding?.events ?? [];
+  const results = await runWithBoundedConcurrency(definitions, config.NOTE_REVIEWER_CONCURRENCY, async (definition) => {
+    const passStartedAt = Date.now();
+    const provider = config.AI_PROVIDER;
+    const model = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL;
+    try {
+      const { response, parsed } = await runNotesProviderWithFallback({
+        primaryProvider: provider,
+        retryBudgetMs: config.NOTE_REVIEWER_RETRY_BUDGET_MS,
+        primary: async () => {
+          const response = options.reviewerResponse ? null : await callNotesOpenAI({
+            definition,
+            events,
+            chunkText,
+            temperature: jobConfig.temperature,
+            seed: jobConfig.seed,
+            signal: options.signal,
+            provider,
+            timeoutMs: Math.min(config.JUDGE_TIMEOUT_MS, Math.max(1_000, Math.floor(config.NOTE_REVIEWER_RETRY_BUDGET_MS / 3))),
+          });
+          const rawResponse = options.reviewerResponse ? await options.reviewerResponse(definition) : response!.rawResponse;
+          return { response, parsed: definition.kind === "note"
+            ? await parseNotesWithRepair(rawResponse, config.OPENAI_JUDGE_MODEL, options.signal)
+            : await parseJudgeWithRepair(rawResponse, model, { signal: options.signal, passName: definition.id }) };
+        },
+        fallback: async () => {
+          const response = await callNotesOpenAI({ definition, events, chunkText, temperature: jobConfig.temperature, seed: jobConfig.seed, signal: options.signal, provider: "openai", timeoutMs: config.JUDGE_TIMEOUT_MS });
+          return { response, parsed: definition.kind === "note"
+            ? await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal)
+            : await parseJudgeWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, { signal: options.signal, finishReason: response.finishReason, passName: definition.id }) };
+        },
+      });
+      if (definition.kind === "note") {
+        const notes: NoteItem[] = [];
+        for (const candidate of parsed.notes ?? []) {
+          const validated = validateNoteCandidate(candidate);
+          const normalized = validated.note ? normalizeNote(validated.note, definition.id) : null;
+          if (normalized) notes.push(normalized);
+        }
+        return { definition, notes, findings: [], response, duration: Date.now() - passStartedAt };
+      }
+      const articleId = reviewerArticleId(definition);
+      const findings = (parsed as { findings?: JudgeFinding[] }).findings ?? [];
+      return {
+        definition,
+        notes: [],
+        findings: findings.map((finding) => ({
+          ...finding,
+          article_id: articleId ?? finding.article_id,
+          detection_pass: definition.id,
+        })),
+        response,
+        duration: Date.now() - passStartedAt,
+      };
+    } catch (error) {
+      logger.warn("Reviewer pack entry failed", { jobId: options.jobId, chunkId: options.chunkId, reviewer: definition.id, error: error instanceof Error ? error.message : String(error) });
+      return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: String(error) };
+    }
+  });
+  const notes = results.flatMap((result) => result.notes);
+  const violationCandidates = results.flatMap((result) => result.findings);
+  const dedup = <T extends { event_id?: number | null; category?: string; article_id?: number | null; evidence_snippet?: string }>(items: T[]) => {
+    const seen = new Map<string, T>();
+    for (const item of items) {
+      const key = `${item.event_id ?? item.evidence_snippet ?? ""}|${item.category ?? item.article_id ?? ""}`;
+      if (!seen.has(key)) seen.set(key, item);
+    }
+    return [...seen.values()];
+  };
+  const passResults = results.map((result) => ({
+    passName: result.definition.id,
+    reviewerId: result.definition.id,
+    category: result.definition.category,
+    notes: result.notes,
+    duration: result.duration,
+    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    promptTokens: result.response?.usage?.prompt_tokens ?? null,
+    completionTokens: result.response?.usage?.completion_tokens ?? null,
+    totalTokens: result.response?.usage?.total_tokens ?? null,
+    ...(result.error ? { reason: "failed", skipped: false } : {}),
+  } satisfies NotePassResult));
+  return {
+    notes: dedup(notes),
+    violationCandidates: dedup(violationCandidates),
+    passResults,
+    executedPassCount: results.length,
+    skippedPassCount: 0,
+    totalDuration: Date.now() - startedAt,
+  };
+}
+
 export async function runNotesDetection(
   chunkText: string,
   eventUnderstanding: EventUnderstandingPassResult | null,
@@ -359,6 +488,19 @@ export async function runNotesDetection(
     signal?: AbortSignal;
   },
 ): Promise<NoteDetectionResult> {
+  const sharedResult = await runReviewerPack(chunkText, eventUnderstanding, jobConfig, {
+    ...options,
+    definitions: getNoteDefinitions().filter((definition) => definition.kind === "note"),
+  });
+  return {
+    notes: sharedResult.notes,
+    passResults: sharedResult.passResults,
+    executedPassCount: sharedResult.executedPassCount,
+    skippedPassCount: sharedResult.skippedPassCount,
+    totalDuration: sharedResult.totalDuration,
+  };
+
+  /* Legacy implementation retained below for comparison during the controlled migration. */
   let noteDefinitions: NoteReviewerDefinition[] = [];
   try {
     noteDefinitions = getNoteDefinitions();
