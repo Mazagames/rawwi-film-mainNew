@@ -18,8 +18,8 @@ export type StructuredEvent = {
   intent: string;
   consequence: string;
   quote: string;
-  start_offset: number;
-  end_offset: number;
+  start_offset: number | null;
+  end_offset: number | null;
   dominant_meaning: string;
 };
 
@@ -76,8 +76,8 @@ const EVENT_UNDERSTANDING_EVENT_SCHEMA = z.object({
   intent: z.preprocess(toStringValue, z.string()),
   consequence: z.preprocess(toStringValue, z.string()),
   quote: z.preprocess(toStringValue, z.string()),
-  start_offset: z.preprocess(toNumber, z.number().int().min(0)),
-  end_offset: z.preprocess(toNumber, z.number().int().min(0)),
+  start_offset: z.preprocess((val) => (val == null ? null : toNumber(val)), z.number().int().min(0).nullable()),
+  end_offset: z.preprocess((val) => (val == null ? null : toNumber(val)), z.number().int().min(0).nullable()),
   dominant_meaning: z.preprocess(toStringValue, z.string()),
 });
 
@@ -541,27 +541,90 @@ or:
 }`;
 }
 
+function compactSpace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeForSearch(text: string): string {
+  return compactSpace(text).toLowerCase();
+}
+
+export function groundEventQuoteToChunk(
+  quote: string | null | undefined,
+  chunkText: string,
+  hintStart: number | null
+): { start: number | null; end: number | null } {
+  if (!quote || quote.length < 3) return { start: null, end: null };
+
+  const exactIdx = chunkText.indexOf(quote);
+  if (exactIdx !== -1 && chunkText.indexOf(quote, exactIdx + 1) === -1) {
+    return { start: exactIdx, end: exactIdx + quote.length };
+  }
+
+  const rawOccurrences: number[] = [];
+  let rawPos = 0;
+  while (true) {
+    const idx = chunkText.indexOf(quote, rawPos);
+    if (idx === -1) break;
+    rawOccurrences.push(idx);
+    rawPos = idx + 1;
+  }
+
+  if (rawOccurrences.length === 1) {
+    return { start: rawOccurrences[0], end: rawOccurrences[0] + quote.length };
+  }
+
+  if (rawOccurrences.length > 1 && hintStart != null) {
+    let bestDist = Infinity;
+    let bestStart: number | null = null;
+    for (const start of rawOccurrences) {
+      const dist = Math.abs(start - hintStart);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestStart = start;
+      }
+    }
+    if (bestStart !== null && bestDist <= 500) {
+      return { start: bestStart, end: bestStart + quote.length };
+    }
+  }
+
+  return { start: null, end: null };
+}
+
 export function parseEventUnderstandingOutput(
   raw: string,
   chunkStart: number,
   chunkEnd: number,
+  chunkText?: string,
 ): EventUnderstandingPassResult {
   const json = extractJsonFromText(raw);
   const parsed = JSON.parse(json) as unknown;
   const output = EVENT_UNDERSTANDING_OUTPUT_SCHEMA.parse(parsed);
-  const events = output.events.map((event) => ({
-    event_id: event.event_id,
-    event_summary: event.event_summary,
-    actor: event.actor,
-    target: event.target,
-    action: event.action,
-    intent: event.intent,
-    consequence: event.consequence,
-    quote: event.quote,
-    start_offset: event.start_offset,
-    end_offset: event.end_offset,
-    dominant_meaning: event.dominant_meaning,
-  }));
+  const events = output.events.map((event) => {
+    let finalStart = event.start_offset;
+    let finalEnd = event.end_offset;
+
+    if (chunkText) {
+      const grounded = groundEventQuoteToChunk(event.quote, chunkText, event.start_offset);
+      finalStart = grounded.start;
+      finalEnd = grounded.end;
+    }
+
+    return {
+      event_id: event.event_id,
+      event_summary: event.event_summary,
+      actor: event.actor,
+      target: event.target,
+      action: event.action,
+      intent: event.intent,
+      consequence: event.consequence,
+      quote: event.quote,
+      start_offset: finalStart,
+      end_offset: finalEnd,
+      dominant_meaning: event.dominant_meaning,
+    };
+  });
 
   return {
     chunk_start: chunkStart,
@@ -571,7 +634,10 @@ export function parseEventUnderstandingOutput(
   };
 }
 
-export function parseEventUnderstandingVerificationOutput(raw: string): {
+export function parseEventUnderstandingVerificationOutput(
+  raw: string,
+  chunkText?: string,
+): {
   status: "ok" | "corrected";
   events: StructuredEvent[];
 } {
@@ -584,7 +650,31 @@ export function parseEventUnderstandingVerificationOutput(raw: string): {
   }
 
   if ("status" in output && output.status === "corrected") {
-    return { status: "corrected", events: output.events };
+    const events = output.events.map((event) => {
+      let finalStart = event.start_offset;
+      let finalEnd = event.end_offset;
+
+      if (chunkText) {
+        const grounded = groundEventQuoteToChunk(event.quote, chunkText, event.start_offset);
+        finalStart = grounded.start;
+        finalEnd = grounded.end;
+      }
+
+      return {
+        event_id: event.event_id,
+        event_summary: event.event_summary,
+        actor: event.actor,
+        target: event.target,
+        action: event.action,
+        intent: event.intent,
+        consequence: event.consequence,
+        quote: event.quote,
+        start_offset: finalStart,
+        end_offset: finalEnd,
+        dominant_meaning: event.dominant_meaning,
+      };
+    });
+    return { status: "corrected", events };
   }
 
   return { status: "ok", events: [] };
@@ -721,10 +811,11 @@ export async function buildEventUnderstandingPass(
       chunkEnd,
     );
     const raw = aiResult.rawResponse;
-    const parsed = parseEventUnderstandingOutput(raw, chunkStart, chunkEnd);
+    const parsed = parseEventUnderstandingOutput(raw, chunkStart, chunkEnd, chunkText);
     const verification = await callEventUnderstandingVerificationOpenAI(parsed);
     const parsedVerification = parseEventUnderstandingVerificationOutput(
       verification.rawResponse,
+      chunkText,
     );
     const finalEvents =
       parsedVerification.status === "corrected"

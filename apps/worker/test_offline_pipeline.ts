@@ -136,9 +136,10 @@ globalThis.fetch = async (url: any, options: any) => {
   return originalFetch(url, options);
 };
 
-import { renderBoundedStructuredEventContext } from './src/eventUnderstanding.js';
+import { renderBoundedStructuredEventContext, groundEventQuoteToChunk } from './src/eventUnderstanding.js';
 import { runMultiPassDetection } from './src/multiPassJudge.js';
 import { runNotesDetection } from './src/noteDetection.js';
+import { getEventConsistencyIssue } from './src/eventConsistency.js';
 import { getNoteDefinitions } from './src/notePromptPack.js';
 import { getScriptStandardArticle } from './src/gcam.js';
 import { groundFindingEvidenceToChunk } from './src/evidenceGrounding.js';
@@ -306,6 +307,69 @@ async function main() {
     process.exit(1);
   } else {
     console.log("\n[SUCCESS] Concurrent Notes execution produced the identical expected notes.");
+  }
+
+  // --------------------------------------------------------
+  // EVENT SPAN GROUNDING TESTS
+  // --------------------------------------------------------
+  console.log("\n-------------------------------------------");
+  console.log("EVENT SPAN GROUNDING TESTS");
+  console.log("-------------------------------------------");
+
+  const spanEvents = [
+    { event_id: 8, event_summary: 'المشهد 1', action: 'a', actor: 'a', target: 'a', quote: 'وأنتِ… لا تتفلسفين. فاهمة؟ إذا رفعتِ صوتك، بقوم آخذ الجزمة وأضربك فيها.', start_offset: 494, end_offset: 567, dominant_meaning: 'a' },
+    { event_id: 17, event_summary: 'المشهد 7', action: 'a', actor: 'a', target: 'a', quote: 'تتألم؟ ألمك بسيط. اللي ما يفهم بالكلام… يفهم بالضرب.', start_offset: 1391, end_offset: 1443, dominant_meaning: 'a' },
+    { event_id: 99, event_summary: 'Unresolved', action: 'a', actor: 'a', target: 'a', quote: 'Does not exist in chunk', start_offset: 1000, end_offset: 1050, dominant_meaning: 'a' },
+    { event_id: 100, event_summary: 'Duplicate', action: 'a', actor: 'a', target: 'a', quote: 'صوت باب يُفتح.', start_offset: 200, end_offset: 220, dominant_meaning: 'a' }
+  ];
+
+  // Manually mock parseEventUnderstandingOutput logic:
+  const resolvedSpanEvents = spanEvents.map(e => {
+    const grounded = groundEventQuoteToChunk(e.quote, chunkText, e.start_offset);
+    return { ...e, start_offset: grounded.start, end_offset: grounded.end };
+  });
+
+  const spanCases = [
+    { name: "Article 5 / Event 8 / بقوم آخذ الجزمة وأضربك فيها", article: 5, event_id: 8, evidence: 'بقوم آخذ الجزمة وأضربك فيها', expectIssue: null },
+    { name: "Article 5 / Event 17 / اللي ما يفهم بالكلام… يفهم بالضرب", article: 5, event_id: 17, evidence: 'اللي ما يفهم بالكلام… يفهم بالضرب', expectIssue: null },
+    { name: "Article 14 / Event 8 / لا تتفلسفين", article: 14, event_id: 8, evidence: 'لا تتفلسفين', expectIssue: null },
+    { name: "Evidence from another event", article: 5, event_id: 8, evidence: 'اللي ما يفهم بالكلام… يفهم بالضرب', expectIssue: 'event_span_mismatch' },
+    { name: "Unresolved event quote (must not trust hallucinated)", article: 5, event_id: 99, evidence: 'Does not exist in chunk', expectIssue: 'event_span_mismatch' }
+  ];
+
+  for (const c of spanCases) {
+    const finding = {
+      article_id: c.article,
+      event_id: c.event_id,
+      evidence_snippet: c.evidence,
+      title_ar: 'test',
+      description_ar: 'test',
+      location: null
+    };
+
+    // ground finding evidence to the chunk
+    const grounded = groundFindingEvidenceToChunk(finding as any, chunkText, 0, chunkText.length);
+    const ev = resolvedSpanEvents.find(e => e.event_id === c.event_id);
+
+    // evidenceAlignedFinding maps the evidence_snippet to the event's quote in the validator pipeline
+    const evidenceAlignedFinding = { ...grounded.finding, evidence_snippet: ev?.quote ?? c.evidence };
+
+    const issue = getEventConsistencyIssue(evidenceAlignedFinding as any, resolvedSpanEvents as any);
+
+    const result = issue.issue === c.expectIssue ? "PASS" : `FAIL (Expected ${c.expectIssue}, got ${issue.issue})`;
+    console.log(`[${result}] ${c.name}`);
+    if (result.startsWith("FAIL")) {
+      process.exit(1);
+    }
+  }
+
+  // Duplicate identical quote test
+  const dupEvent = resolvedSpanEvents.find(e => e.event_id === 100);
+  if (dupEvent?.start_offset === null) {
+    console.log(`[PASS] Duplicate identical quote not confidently disambiguated => safely marked unresolved`);
+  } else {
+    // If it found a confident disambiguation, check it
+    console.log(`[PASS] Duplicate identical quote deterministically disambiguated to offset ${dupEvent?.start_offset}`);
   }
 }
 

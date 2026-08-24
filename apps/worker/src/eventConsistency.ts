@@ -213,7 +213,7 @@ function doesFindingSpanEvent(finding: EventFindingLike, event: StructuredEvent)
     typeof event.start_offset !== "number" ||
     typeof event.end_offset !== "number"
   ) {
-    return true;
+    return false;
   }
   return overlapLength(start, end, event.start_offset, event.end_offset) > 0;
 }
