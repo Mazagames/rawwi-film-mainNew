@@ -446,6 +446,46 @@ export function renderStructuredEventContext(
   ].join("\n\n");
 }
 
+export function renderBoundedStructuredEventContext(
+  result: EventUnderstandingPassResult,
+): string {
+  const boundedEvents = result.events.map((event, index) => {
+    const prevEvent = index > 0 ? result.events[index - 1] : null;
+    const nextEvent = index < result.events.length - 1 ? result.events[index + 1] : null;
+    return {
+      event_id: event.event_id,
+      scene_heading: event.event_summary ?? "Unknown",
+      actor: event.actor ?? "Unknown",
+      target: event.target ?? "Unknown",
+      action: event.action ?? "Unknown",
+      quote: event.quote ?? "",
+      previous_event_quote: prevEvent?.quote ?? null,
+      next_event_quote: nextEvent?.quote ?? null
+    };
+  });
+
+  const payload = canonicalStringify({
+    understanding_layer: "semantic_event_understanding",
+    one_event_one_finding: true,
+    domain_neutrality: true,
+    event_count: result.event_count,
+    events: boundedEvents,
+  });
+
+  return [
+    "The screenplay has already been read and understood.",
+    "You are NOT responsible for understanding the screenplay.",
+    "You must trust the structured events below.",
+    "Evaluate ONLY those events.",
+    "Do not rediscover events.",
+    "Do not reinterpret dialogue.",
+    "Do not infer new actions.",
+    "Do not merge events.",
+    "Do not split events.",
+    payload,
+  ].join("\n\n");
+}
+
 export const EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT = `You are a screenplay understanding verifier.
 
 You are NOT a GCAM reviewer.

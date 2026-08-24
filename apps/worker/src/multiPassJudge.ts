@@ -42,7 +42,7 @@ import {
   V4_SUBJECT_DEFINITIONS,
   type V4SubjectDefinition,
 } from "./v4PromptPack.js";
-import { buildEventUnderstandingPass, renderStructuredEventContext, type EventUnderstandingPassResult } from "./eventUnderstanding.js";
+import { buildEventUnderstandingPass, renderStructuredEventContext, renderBoundedStructuredEventContext, type EventUnderstandingPassResult } from "./eventUnderstanding.js";
 import { getV5ReviewerDefinitions } from "./v5PromptPack.js";
 import { NOTE_REVIEWER_ARTICLE_NUMBERS } from "./notePromptPack.js";
 import { traceFindingPipelineStage } from "./findingPipelineTrace.js";
@@ -1616,7 +1616,23 @@ function buildV5DetectionPasses(): PassDefinition[] {
     name: `v5_article_${String(reviewer.articleNumber).padStart(2, "0")}`,
     displayLabel: reviewer.displayLabel,
     articleIds: [reviewer.articleNumber],
-    buildPrompt: () => `${reviewer.prompt}\n\n# Runtime Input (Structured Events Only)\n\nThe screenplay has already been read and understood.\nYou are NOT responsible for understanding the screenplay.\nYou must trust the structured events below.\nEvaluate ONLY those events.\nDo not rediscover events.\nDo not reinterpret dialogue.\nDo not infer new actions.\nDo not merge events.\nDo not split events.\n\nThe reviewer receives deterministic structured events extracted from the screenplay.\nThe raw screenplay prose is not provided to the reviewer.\n\n- One finding must reference exactly one event_id.\n- A reviewer may ignore events that do not belong to its assigned article.\n- A reviewer must never merge multiple events into one finding.\n- title_ar is required and must never be null, omitted, or empty.`,
+    buildPrompt: () => `${reviewer.prompt}
+
+# Runtime Input (Structured Events Only)
+
+You are reviewing structured events extracted from the screenplay.
+The raw screenplay prose is not provided to the reviewer.
+You must trust the structured events below.
+
+**CRITICAL EVALUATION RULES (HIGH RECALL):**
+1. You MUST evaluate EVERY SINGLE structured event provided in the array below. Do not stop after finding one match.
+2. For every genuinely relevant event, produce a separate candidate finding.
+3. The output MUST be a JSON array of findings. If no event is relevant, return an empty array [].
+4. Do NOT choose only one event if multiple events are relevant.
+5. Do NOT invent events or use unrelated neighboring events merely because they are nearby.
+6. A single finding must reference exactly one \`event_id\`. Never merge multiple events into one finding.
+7. \`evidence_snippet\` MUST be an exact substring of the selected event's raw source quote/span. Do not paraphrase or summarize.
+8. \`title_ar\` is required and must never be null, omitted, or empty.`,
     model: config.OPENAI_JUDGE_MODEL,
     sourceFileName: reviewer.filename,
   }));
@@ -2419,7 +2435,7 @@ export async function runMultiPassDetection(
     }
   }
   const reviewerPromptContext = eventUnderstanding
-    ? renderStructuredEventContext(eventUnderstanding)
+    ? renderBoundedStructuredEventContext(eventUnderstanding)
     : promptContext;
 
   logger.info("[DEBUG] runMultiPassDetection started", {
@@ -2483,6 +2499,7 @@ export async function runMultiPassDetection(
       totalDuration: Date.now() - startTime,
       executedPassCount: 0,
       skippedPassCount: plan.skippedPasses.length,
+      eventUnderstanding: null,
     };
   }
 
@@ -2658,7 +2675,7 @@ export async function runMultiPassDetection(
     });
   }
 
-  const ownershipResult = enforceDeterministicOwnership(deduplicated, eventUnderstanding.events, chunkText);
+  const ownershipResult = enforceDeterministicOwnership(deduplicated, eventUnderstanding?.events ?? [], chunkText);
   if (ownershipResult.diagnostics.droppedByOwnership > 0 || ownershipResult.diagnostics.droppedByEventMismatch > 0) {
     logger.info("Deterministic ownership resolver dropped findings", ownershipResult.diagnostics);
   }
