@@ -1859,17 +1859,17 @@ export async function processChunkJudge(
   const jobResourcesDurationMs = Date.now() - jobResourcesStartedAt;
   const pageNumAt = (off: number) =>
     pageRows.length > 0 ? offsetToPageNumber(off, pageRows) : null;
-  
+
   const terms = promptLexiconTerms;
   const { router: routerPrompt, judge: judgePrompt } = injectLexiconIntoPrompts(
     ROUTER_SYSTEM_MSG,
     JUDGE_SYSTEM_MSG,
     terms
   );
-  
-  logger.info("Lexicon terms injected into prompts", { 
-    jobId, 
-    chunkId: chunk.id, 
+
+  logger.info("Lexicon terms injected into prompts", {
+    jobId,
+    chunkId: chunk.id,
     termsCount: terms.length,
     sampleTerms: terms.slice(0, 3).map(t => t.term)
   });
@@ -2425,7 +2425,7 @@ export async function processChunkJudge(
           })),
         });
       }
-      
+
       // Enforce atom_ids and prefer literal local evidence from chunk offsets.
       const enforced = multiPassResult.findings.map(f => enforceAtomIds([f])[0]);
       const precisionRefined = enforced.map((f) => refineAtomPrecision(f));
@@ -2565,7 +2565,8 @@ export async function processChunkJudge(
             issue: qualityIssue,
             evidence: f.evidence_snippet?.slice(0, 80),
           });
-          if (!objectiveEvidenceIssues.has(qualityIssue) || isValidatorAdvisoryIssue(qualityIssue)) {
+          const isV5TrustedEventGrounding = config.VIOLATION_SYSTEM_VERSION === "v5" && f.event_id != null && qualityIssue !== "missing_offsets";
+          if (!objectiveEvidenceIssues.has(qualityIssue) || isValidatorAdvisoryIssue(qualityIssue) || isV5TrustedEventGrounding) {
             validatorWarnings.push({
               stage: "evidence_quality",
               issue: qualityIssue,
@@ -2657,7 +2658,7 @@ export async function processChunkJudge(
         lowQualityDroppedCount: enriched.length - qualityFiltered.length,
         globalizedCount: withGlobal.length,
       });
-      
+
       // Final guardrail: keep only findings anchored to literal script text.
       const beforeVerbatimCount = withGlobal.length;
       logger.info("Verbatim guardrail starting", {
@@ -2700,7 +2701,7 @@ export async function processChunkJudge(
         stageName: "reviewer_output",
         findings: multiPassResult.findings,
       });
-      
+
       logger.info("Multi-pass detection stats", {
         chunkId: chunk.id,
         runKey,
@@ -3289,6 +3290,11 @@ export async function processChunkJudge(
       let excerpt = structuredEvent?.quote ?? (canonicalSnippet.length > 0 ? canonicalSnippet : modelSnippet);
       const evidenceAlignedFinding = structuredEvent ? { ...f, evidence_snippet: excerpt } : f;
 
+      const eventConsistencyResult =
+        config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding
+          ? getEventConsistencyIssue(evidenceAlignedFinding, multiPassEventUnderstanding.events)
+          : null;
+
       let finalEvidenceIssue = getStoredEvidenceQualityIssue(
         excerpt,
         normalizedText,
@@ -3306,7 +3312,13 @@ export async function processChunkJudge(
           modelSnippet: modelSnippet.slice(0, 80),
           canonicalSnippet: canonicalSnippet.slice(0, 80),
         });
-        if (objectiveEvidenceIssues.has(finalEvidenceIssue) && !isValidatorAdvisoryIssue(finalEvidenceIssue)) {
+        const isV5TrustedEventGrounding =
+          config.VIOLATION_SYSTEM_VERSION === "v5" &&
+          findingEventId != null &&
+          hasSaneGlobalOffsets &&
+          eventConsistencyResult?.issue == null;
+
+        if (objectiveEvidenceIssues.has(finalEvidenceIssue) && !isValidatorAdvisoryIssue(finalEvidenceIssue) && !isV5TrustedEventGrounding) {
           validatorDecision = "rejected";
           validatorDropReason = finalEvidenceIssue;
           logValidatorRejection({
@@ -3363,10 +3375,6 @@ export async function processChunkJudge(
         storedEvidencePassedCount++;
       }
 
-      const eventConsistencyResult =
-        config.VIOLATION_SYSTEM_VERSION === "v5" && multiPassEventUnderstanding
-          ? getEventConsistencyIssue(evidenceAlignedFinding, multiPassEventUnderstanding.events)
-          : null;
       if (eventConsistencyResult?.issue) {
         if (eventConsistencyResult.issue === "event_evidence_mismatch" || eventConsistencyResult.issue === "event_span_mismatch") {
           logger.info("Event consistency mismatch (rejected)", {
