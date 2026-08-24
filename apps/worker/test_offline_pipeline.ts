@@ -112,14 +112,14 @@ globalThis.fetch = async (url: any, options: any) => {
     else if (systemPrompt.includes("Media Credibility")) {
       mockResponseText = JSON.stringify({
         notes: [
-          { category: "media_credibility", title: "حسابات وهمية", description: "...", quote: "نستخدم حسابات وهمية", event_id: 23, confidence: 0.9 },
-          { category: "media_credibility", title: "قصص مركبة", description: "...", quote: "نركّب قصص", event_id: 24, confidence: 0.9 }
+          { category: "media_credibility", title: "حسابات وهمية", description: "استخدام حسابات وهمية لنشر إشاعات", paragraph: "نستخدم حسابات وهمية، نكتب إشاعات", quote: "نستخدم حسابات وهمية", event_id: 23, confidence: 0.9 },
+          { category: "media_credibility", title: "قصص مركبة", description: "تركيب قصص كاذبة عن فساد", paragraph: "ونركّب قصص عن فساد وتستر", quote: "نركّب قصص", event_id: 24, confidence: 0.9 }
         ]
       });
     }
     else if (systemPrompt.includes("Classified Documents")) {
       mockResponseText = JSON.stringify({
-        notes: [ { category: "classified_documents", title: "ملف مسرب", description: "...", quote: "ملف مسرّب", event_id: 25, confidence: 0.9 } ]
+        notes: [ { category: "classified_documents", title: "ملف مسرب", description: "ملف مسرب من جهة حكومية", paragraph: "ملف مسرّب من الداخلية", quote: "ملف مسرّب", event_id: 25, confidence: 0.9 } ]
       });
     }
 

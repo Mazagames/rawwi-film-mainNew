@@ -143,7 +143,7 @@ async function callNotesOpenAI(args: {
     userPrompt: userPrompt,
     temperature: args.temperature,
     seed: args.seed,
-    maxTokens: 4096,
+    maxTokens: config.AI_PROVIDER === "gemini" ? 16384 : 8192,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
     signal: args.signal,
   });
