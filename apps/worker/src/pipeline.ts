@@ -3509,20 +3509,7 @@ export async function processChunkJudge(
         eventConsistencyPassedCount++;
       }
 
-  if (config.V5_SHARED_REVIEWER_PACK_ENABLED && violationSystemVersion === "v5" && sharedReviewerPackResult && multiPassEventUnderstanding) {
-    try {
-      const noteRows = toNoteInsertRows(jobId, sharedReviewerPackResult.notes);
-      if (noteRows.length > 0) {
-        await supabase.from("analysis_notes").upsert(noteRows, {
-          onConflict: "job_id,reviewer,event_id,category,title",
-          ignoreDuplicates: false,
-        });
-      }
-      logger.info("Shared reviewer pack Notes persisted", { jobId, chunkId: chunk.id, noteCount: noteRows.length });
-    } catch (error) {
-      logger.warn("Shared reviewer pack Notes failed but analysis will continue", { jobId, chunkId: chunk.id, error: String(error) });
-    }
-  } else if (violationSystemVersion === "v5" && multiPassEventUnderstanding) {
+      if (violationSystemVersion === "v5" && multiPassEventUnderstanding) {
         const quoteEventId = eventConsistencyResult?.matchedEvent?.event_id ?? null;
         const pageEventId = quoteEventId;
         if (
@@ -3822,7 +3809,22 @@ export async function processChunkJudge(
       }];
     });
 
-    if (violationSystemVersion === "v5" && !config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && !config.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED) {
+    if (config.V5_SHARED_REVIEWER_PACK_ENABLED && violationSystemVersion === "v5" && sharedReviewerPackResult && multiPassEventUnderstanding) {
+      try {
+        const noteRows = toNoteInsertRows(jobId, sharedReviewerPackResult.notes);
+        if (noteRows.length > 0) {
+          await supabase.from("analysis_notes").upsert(noteRows, {
+            onConflict: "job_id,reviewer,event_id,category,title",
+            ignoreDuplicates: false,
+          });
+        }
+        logger.info("Shared reviewer pack Notes persisted", { jobId, chunkId: chunk.id, noteCount: noteRows.length });
+      } catch (error) {
+        logger.warn("Shared reviewer pack Notes failed but analysis will continue", { jobId, chunkId: chunk.id, error: String(error) });
+      }
+    }
+
+    if (violationSystemVersion === "v5" && !config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && !config.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED && !config.V5_SHARED_REVIEWER_PACK_ENABLED) {
       const { runFinalAdjudicator } = await import("./finalAdjudicator.js");
       rows = await runFinalAdjudicator(rows, multiPassEventUnderstanding?.events ?? [], normalizedText ?? "");
     }
