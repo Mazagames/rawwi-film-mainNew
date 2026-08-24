@@ -3219,7 +3219,7 @@ export async function processChunkJudge(
     let passSpecificBypassedCount = 0;
     let canonicalModelPassedCount = 0;
     let explicitScenePassedCount = 0;
-    const rows = resolvedFindings.flatMap((f) => {
+    let rows = resolvedFindings.flatMap((f) => {
       const reviewerArticleId = parseReviewerArticleId((f as { detection_pass?: string | null }).detection_pass ?? null, f.article_id ?? null);
       const traceId = (f as { lineage_id?: string | null }).lineage_id ?? "";
       const findingEventId = getFindingDeclaredEventId(f);
@@ -3708,6 +3708,11 @@ export async function processChunkJudge(
         }),
       }];
     });
+
+    if (config.VIOLATION_SYSTEM_VERSION === "v5") {
+      const { runFinalAdjudicator } = await import("./finalAdjudicator.js");
+      rows = await runFinalAdjudicator(rows, multiPassEventUnderstanding?.events ?? [], normalizedText ?? "");
+    }
 
     recordTelemetryFromFindings({
       jobId,
