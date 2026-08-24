@@ -712,6 +712,76 @@ export function parseEventUnderstandingVerificationOutput(
   return { status: "ok", events: [] };
 }
 
+async function executeEventUnderstandingWithRetry(req: AICompletionRequest): Promise<AICompletionResponse & { resolvedModel: string }> {
+  let provider = config.AI_PROVIDER;
+  let model = req.model;
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    try {
+      logger.info("EVENT_UNDERSTANDING_PROVIDER_ATTEMPT", {
+        provider,
+        model,
+        attempt: attempts,
+        error: null,
+        fallback: false
+      });
+
+      const response = await generateStructuredCompletion({
+        ...req,
+        model,
+        providerOverride: provider as "openai" | "gemini",
+      });
+
+      return { ...response, resolvedModel: model };
+    } catch (error: any) {
+      const is503 = error?.status === 503 || error?.message?.includes('503') || error?.message?.includes('UNAVAILABLE') || error?.code === 503;
+      
+      logger.warn("EVENT_UNDERSTANDING_PROVIDER_ATTEMPT", {
+        provider,
+        model,
+        attempt: attempts,
+        error: error?.message || String(error),
+        fallback: false
+      });
+
+      if (is503 && provider === "gemini" && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+        continue;
+      }
+      
+      if (provider === "gemini") {
+        provider = "openai";
+        model = config.OPENAI_JUDGE_MODEL || "gpt-4.1";
+        
+        logger.warn("EVENT_UNDERSTANDING_PROVIDER_ATTEMPT", {
+          provider,
+          model,
+          attempt: attempts,
+          error: "Fallback to OpenAI after Gemini failures",
+          fallback: true
+        });
+        
+        try {
+          const fallbackResponse = await generateStructuredCompletion({
+            ...req,
+            model,
+            providerOverride: "openai",
+          });
+          return { ...fallbackResponse, resolvedModel: model };
+        } catch (fallbackError: any) {
+          throw fallbackError;
+        }
+      }
+      
+      throw error;
+    }
+  }
+  throw new Error("Max attempts reached");
+}
+
 async function callEventUnderstandingOpenAI(
   chunkText: string,
   chunkStart: number,
@@ -739,7 +809,7 @@ async function callEventUnderstandingOpenAI(
     chunkLength: chunkText.length,
   });
 
-  const response = await generateStructuredCompletion({
+  const response = await executeEventUnderstandingWithRetry({
     model: resolvedModel,
     systemPrompt: EVENT_UNDERSTANDING_SYSTEM_PROMPT,
     userPrompt: userPrompt,
@@ -753,7 +823,7 @@ async function callEventUnderstandingOpenAI(
   const content = response.content;
 
   logger.info("[DEBUG] Event understanding response received", {
-    model: resolvedModel,
+    model: response.resolvedModel,
     contentLength: content.length,
     finishReason: response.finishReason,
   });
@@ -792,7 +862,7 @@ async function callEventUnderstandingVerificationOpenAI(
     eventCount: result.event_count,
   });
 
-  const response = await generateStructuredCompletion({
+  const response = await executeEventUnderstandingWithRetry({
     model: resolvedModel,
     systemPrompt: EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT,
     userPrompt: userPrompt,
@@ -805,7 +875,7 @@ async function callEventUnderstandingVerificationOpenAI(
 
   const content = response.content;
   logger.info("[DEBUG] Event understanding verifier response received", {
-    model: resolvedModel,
+    model: response.resolvedModel,
     contentLength: content.length,
     finishReason: response.finishReason,
   });

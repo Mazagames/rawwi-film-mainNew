@@ -41,7 +41,7 @@ export interface AICompletionResponse {
 async function generateOpenAICompletion(req: AICompletionRequest): Promise<AICompletionResponse> {
   if (!openai) {
     if (!config.OPENAI_API_KEY) throw new Error("OpenAI API key not configured");
-    openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
+    openai = new OpenAI({ apiKey: config.OPENAI_API_KEY, fetch: globalThis.fetch as any });
   }
 
   const response = await openai.chat.completions.create(
