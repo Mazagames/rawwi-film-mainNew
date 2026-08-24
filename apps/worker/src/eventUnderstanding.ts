@@ -100,8 +100,18 @@ const EVENT_UNDERSTANDING_OUTPUT_SCHEMA = z.object({
   events: z.array(EVENT_UNDERSTANDING_EVENT_SCHEMA),
 });
 
+const EVENT_UNDERSTANDING_VERIFICATION_CORRECTION_SCHEMA = z.object({
+  action: z.enum(["add", "update", "delete"]),
+  event_id: z.number().int().min(1),
+  event: EVENT_UNDERSTANDING_EVENT_SCHEMA.optional(),
+});
+
 const EVENT_UNDERSTANDING_VERIFICATION_OUTPUT_SCHEMA = z.union([
   z.object({ status: z.literal("ok") }),
+  z.object({
+    status: z.literal("corrected"),
+    corrections: z.array(EVENT_UNDERSTANDING_VERIFICATION_CORRECTION_SCHEMA).min(1),
+  }),
   z.object({
     status: z.literal("corrected"),
     events: z.array(EVENT_UNDERSTANDING_EVENT_SCHEMA).min(1),
@@ -534,10 +544,14 @@ ${canonicalStringify({
 Return only valid JSON matching one of these shapes:
 { "status": "ok" }
 
-or:
+or if you must make corrections, return a list of specific operations (do NOT return the full event list):
 {
   "status": "corrected",
-  "events": [ ... corrected structured events ... ]
+  "corrections": [
+    { "action": "update", "event_id": 12, "event": { ... full corrected event ... } },
+    { "action": "delete", "event_id": 13 },
+    { "action": "add", "event_id": 999, "event": { ... new event ... } }
+  ]
 }`;
 }
 
@@ -637,6 +651,7 @@ export function parseEventUnderstandingOutput(
 export function parseEventUnderstandingVerificationOutput(
   raw: string,
   chunkText?: string,
+  originalEvents?: StructuredEvent[],
 ): {
   status: "ok" | "corrected";
   events: StructuredEvent[];
@@ -650,7 +665,24 @@ export function parseEventUnderstandingVerificationOutput(
   }
 
   if ("status" in output && output.status === "corrected") {
-    const events = output.events.map((event) => {
+    let finalEvents = originalEvents ? [...originalEvents] : [];
+
+    if ("corrections" in output && output.corrections) {
+      for (const correction of output.corrections) {
+        if (correction.action === "delete") {
+          finalEvents = finalEvents.filter(e => e.event_id !== correction.event_id);
+        } else if (correction.action === "update" && correction.event) {
+          const idx = finalEvents.findIndex(e => e.event_id === correction.event_id);
+          if (idx !== -1) finalEvents[idx] = correction.event as StructuredEvent;
+        } else if (correction.action === "add" && correction.event) {
+          finalEvents.push(correction.event as StructuredEvent);
+        }
+      }
+    } else if ("events" in output && output.events) {
+      finalEvents = output.events as StructuredEvent[];
+    }
+
+    finalEvents = finalEvents.map((event) => {
       let finalStart = event.start_offset;
       let finalEnd = event.end_offset;
 
@@ -674,7 +706,7 @@ export function parseEventUnderstandingVerificationOutput(
         dominant_meaning: event.dominant_meaning,
       };
     });
-    return { status: "corrected", events };
+    return { status: "corrected", events: finalEvents };
   }
 
   return { status: "ok", events: [] };
@@ -816,6 +848,7 @@ export async function buildEventUnderstandingPass(
     const parsedVerification = parseEventUnderstandingVerificationOutput(
       verification.rawResponse,
       chunkText,
+      parsed.events
     );
     const finalEvents =
       parsedVerification.status === "corrected"

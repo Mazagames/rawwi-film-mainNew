@@ -371,6 +371,50 @@ async function main() {
     // If it found a confident disambiguation, check it
     console.log(`[PASS] Duplicate identical quote deterministically disambiguated to offset ${dupEvent?.start_offset}`);
   }
+
+  // --------------------------------------------------------
+  // VERIFIER COMPACT SCHEMA TESTS
+  // --------------------------------------------------------
+  console.log("\n-------------------------------------------");
+  console.log("VERIFIER COMPACT SCHEMA TESTS");
+  console.log("-------------------------------------------");
+
+  const { parseEventUnderstandingVerificationOutput } = await import('./src/eventUnderstanding.js');
+
+  const mockOriginalEvents = [
+    { event_id: 1, event_summary: 'Keep me', action: 'a', actor: 'a', target: 'a', quote: 'a', start_offset: 10, end_offset: 20, dominant_meaning: 'a' },
+    { event_id: 2, event_summary: 'Update me', action: 'a', actor: 'a', target: 'a', quote: 'a', start_offset: 30, end_offset: 40, dominant_meaning: 'a' },
+    { event_id: 3, event_summary: 'Delete me', action: 'a', actor: 'a', target: 'a', quote: 'a', start_offset: 50, end_offset: 60, dominant_meaning: 'a' }
+  ];
+
+  const mockVerifierResponse = JSON.stringify({
+    status: "corrected",
+    corrections: [
+      { action: "update", event_id: 2, event: { event_id: 2, event_summary: 'Updated!', action: 'b', actor: 'b', target: 'b', quote: 'b', start_offset: 30, end_offset: 40, dominant_meaning: 'b' } },
+      { action: "delete", event_id: 3 },
+      { action: "add", event_id: 4, event: { event_id: 4, event_summary: 'Added!', action: 'c', actor: 'c', target: 'c', quote: 'c', start_offset: 70, end_offset: 80, dominant_meaning: 'c' } }
+    ]
+  });
+
+  const parsedVerifierResult = parseEventUnderstandingVerificationOutput(mockVerifierResponse, undefined, mockOriginalEvents as any);
+
+  if (parsedVerifierResult.status !== "corrected") {
+    console.error(`[FAIL] Verifier schema failed to parse correctly.`);
+    process.exit(1);
+  }
+
+  const finalEvs = parsedVerifierResult.events;
+  const keepEv = finalEvs.find(e => e.event_id === 1);
+  const updatedEv = finalEvs.find(e => e.event_id === 2);
+  const deletedEv = finalEvs.find(e => e.event_id === 3);
+  const addedEv = finalEvs.find(e => e.event_id === 4);
+
+  if (keepEv && updatedEv?.event_summary === 'Updated!' && !deletedEv && addedEv?.event_summary === 'Added!' && finalEvs.length === 3) {
+    console.log(`[PASS] Verifier compact schema correctly parsed and merged events.`);
+  } else {
+    console.error(`[FAIL] Verifier compact schema merge failed. Events:`, finalEvs);
+    process.exit(1);
+  }
 }
 
 main().catch(console.error);
