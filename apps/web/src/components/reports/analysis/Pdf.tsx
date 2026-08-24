@@ -15,6 +15,7 @@ const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelE
   { key: "medical_notes", labelAr: "ملاحظات طبية", labelEn: "Medical Notes" },
   { key: "media_credibility", labelAr: "مصداقية الوسائط", labelEn: "Media Credibility" },
   { key: "classified_documents", labelAr: "وثائق مصنفة", labelEn: "Classified Documents" },
+  { key: "religious_content", labelAr: "محتوى ديني / مذهبي حساس", labelEn: "Religious Content" },
 ];
 
 export interface ScriptSummaryForPdf {

@@ -144,17 +144,45 @@ function testNotesAreGroupedSeparately() {
       snippet: "فقرة أخرى",
       event_id: 13,
       confidence: 0.7,
-      status: "new",
       included_in_report: false,
     },
+    {
+      reviewer: "notes_security_scenes",
+      category: "security_scenes",
+      title: "مشهد آخر",
+      description: "وصف جديد",
+      snippet: "فقرة ثالثة",
+      event_id: 14,
+      confidence: 0.9,
+      status: "new",
+      included_in_report: false,
+    }
   ];
   const summary = buildSummaryJson("job1", "script1", findings, undefined, undefined, undefined, undefined, notes);
   assert(Array.isArray(summary.notes_summary), "notes_summary should exist");
   assert((summary.notes?.saudi_names ?? []).length === 1, "Saudi names note should be grouped separately");
-  assert((summary.notes?.security_scenes ?? []).length === 1, "Security scenes note should be grouped separately");
+  assert((summary.notes?.security_scenes ?? []).length === 2, "Security scenes should contain 2 notes for multiple events");
   assert(summary.notes_summary?.some((group) => group.category === "saudi_names"), "notes_summary should include saudi_names");
   assert(summary.notes_summary?.some((group) => group.category === "security_scenes"), "notes_summary should include security_scenes");
-  console.log("✓ Notes are grouped separately from violations");
+
+  // Also verify Religious Content UI Mapping
+  const religiousNotes: DbNote[] = [
+    {
+      reviewer: "note_religious_content",
+      category: "religious_content",
+      title: "محتوى ديني",
+      description: "وصف",
+      snippet: "اقتباس",
+      event_id: 5,
+      confidence: 0.9,
+      status: "new"
+    }
+  ];
+  const religiousSummary = buildSummaryJson("job2", "script2", findings, undefined, undefined, undefined, undefined, religiousNotes);
+  assert((religiousSummary.notes?.religious_content ?? []).length === 1, "Religious notes should be mapped to religious_content");
+  assert(religiousSummary.notes_summary?.some((group) => group.category === "religious_content"), "notes_summary should include religious_content");
+
+  console.log("✓ Notes are grouped separately from violations, with multiple events preserved");
 }
 
 function testUnknownNoteCategoryRejected() {

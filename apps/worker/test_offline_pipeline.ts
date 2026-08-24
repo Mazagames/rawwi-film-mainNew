@@ -12,21 +12,24 @@ import * as path from 'path';
 // Intercept HTTP requests to Gemini to return offline mock data
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url: any, options: any) => {
-  if (url.toString().includes('generativelanguage.googleapis.com')) {
-    const body = JSON.parse(options.body as string);
-    // GenAI SDK puts system and user prompt in contents
-    const textParts = body.contents?.flatMap((c: any) => c.parts.map((p: any) => p.text)) || [];
-
-    // The first part is usually systemPrompt, second is userPrompt
-    // Or if using systemInstruction, it's in body.systemInstruction
+  if (url.toString().includes('generativelanguage.googleapis.com') || url.toString().includes('api.openai.com')) {
     let systemPrompt = "";
     let userPrompt = "";
-    if (body.systemInstruction) {
-      systemPrompt = body.systemInstruction.parts?.[0]?.text || "";
-      userPrompt = textParts.join("\n");
+
+    if (url.toString().includes('api.openai.com')) {
+      const body = JSON.parse(options.body as string);
+      systemPrompt = body.messages.find((m: any) => m.role === 'system')?.content || "";
+      userPrompt = body.messages.find((m: any) => m.role === 'user')?.content || "";
     } else {
-      systemPrompt = textParts[0] || "";
-      userPrompt = textParts[1] || textParts[0] || "";
+      const body = JSON.parse(options.body as string);
+      const textParts = body.contents?.flatMap((c: any) => c.parts.map((p: any) => p.text)) || [];
+      if (body.systemInstruction) {
+        systemPrompt = body.systemInstruction.parts?.[0]?.text || "";
+        userPrompt = textParts.join("\n");
+      } else {
+        systemPrompt = textParts[0] || "";
+        userPrompt = textParts[1] || textParts[0] || "";
+      }
     }
 
     let mockResponseText = "{}";
@@ -136,14 +139,30 @@ globalThis.fetch = async (url: any, options: any) => {
       });
     }
 
-    const mockResponse = {
-      candidates: [{
-        content: { parts: [{ text: mockResponseText }], role: "model" },
-        finishReason: "STOP"
-      }],
-      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10, totalTokenCount: 20 }
-    };
-    return new Response(JSON.stringify(mockResponse), { status: 200 });
+    if (url.toString().includes('api.openai.com')) {
+      const mockResponse = {
+        id: "chatcmpl-mock",
+        object: "chat.completion",
+        created: Date.now(),
+        model: "gpt-4",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: mockResponseText },
+          finish_reason: "stop"
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
+      };
+      return new Response(JSON.stringify(mockResponse), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } else {
+      const mockResponse = {
+        candidates: [{
+          content: { parts: [{ text: mockResponseText }], role: "model" },
+          finishReason: "STOP"
+        }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10, totalTokenCount: 20 }
+      };
+      return new Response(JSON.stringify(mockResponse), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
   }
 
   return originalFetch(url, options);

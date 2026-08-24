@@ -31,6 +31,7 @@ const NOTE_CATEGORY_ORDER: NoteCategoryKey[] = [
   "medical_notes",
   "media_credibility",
   "classified_documents",
+  "religious_content",
 ];
 
 function resolveWordExportFindingData(params: DownloadAnalysisWordParams) {
@@ -595,6 +596,7 @@ function buildNotesBlock(params: DownloadAnalysisWordParams): string {
       medical_notes: { ar: "ملاحظات طبية", en: "Medical Notes" },
       media_credibility: { ar: "مصداقية الوسائط", en: "Media Credibility" },
       classified_documents: { ar: "وثائق مصنفة", en: "Classified Documents" },
+      religious_content: { ar: "محتوى ديني / مذهبي حساس", en: "Religious Content" },
     };
     return params.lang === "ar" ? labels[key].ar : labels[key].en;
   };

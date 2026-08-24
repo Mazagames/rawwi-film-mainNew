@@ -30,6 +30,7 @@ export type NoteCategoryKey =
   | 'media_credibility'
   | 'medical_notes'
   | 'classified_documents'
+  | 'religious_content'
   | 'security_scenes'
   | 'saudi_names'
   | 'commercial_entities';

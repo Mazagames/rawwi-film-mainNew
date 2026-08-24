@@ -7,6 +7,7 @@ const NOTE_CATEGORY_LABELS: Record<NoteCategoryKey, string> = {
   medical_notes: "Medical",
   media_credibility: "Media",
   classified_documents: "Classified",
+  religious_content: "Religious",
 };
 
 const NOTE_CATEGORY_ORDER: NoteCategoryKey[] = [
@@ -16,6 +17,7 @@ const NOTE_CATEGORY_ORDER: NoteCategoryKey[] = [
   "medical_notes",
   "media_credibility",
   "classified_documents",
+  "religious_content",
 ];
 
 type NoteCounts = Record<NoteCategoryKey, number>;
@@ -28,6 +30,7 @@ export function countNotesByCategory(notes: Partial<Record<NoteCategoryKey, Repo
     medical_notes: 0,
     media_credibility: 0,
     classified_documents: 0,
+    religious_content: 0,
   };
   if (!notes) return counts;
   for (const category of NOTE_CATEGORY_ORDER) {
