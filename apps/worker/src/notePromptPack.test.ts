@@ -17,15 +17,16 @@ function assert(cond: boolean, msg: string): void {
 function testRepositoryNotePackLoads(): void {
   const noteDirectory = resolveNoteDirectoryForTests(process.cwd());
   const pack = loadNotePackFromDirectoryForTests(noteDirectory);
-  assert(pack.noteDefinitions.length === 6, `expected 6 note reviewers, got ${pack.noteDefinitions.length}`);
+  assert(pack.noteDefinitions.length === 7, `expected 7 note reviewers, got ${pack.noteDefinitions.length}`);
 
   const expectedCategories = [
-    "Media Credibility",
-    "Medical Notes",
-    "Classified Documents",
-    "Saudi Names",
-    "Security Scenes",
-    "Commercial Entities",
+    "media_credibility",
+    "medical_notes",
+    "classified_documents",
+    "saudi_names",
+    "security_scenes",
+    "commercial_entities",
+    "religious_content",
   ];
 
   for (const category of expectedCategories) {
@@ -38,13 +39,15 @@ function testRepositoryNotePackLoads(): void {
   const entityNote = pack.noteDefinitions.find((definition) => definition.id === "note_entities_and_brand");
   assert(entityNote?.filename === "note_entities_and_brands.md", "expected pluralized entity note filename");
   assert(entityNote?.prompt.includes("#"), "expected note prompt to contain markdown content");
+  const securityNote = pack.noteDefinitions.find((definition) => definition.id === "notes_security_scenes");
+  assert(securityNote?.displayLabel === "المشاهد الأمنية", "expected Security Scenes display label");
 
-  console.log("✓ repository note pack loads and preserves all six categories");
+  console.log("✓ repository note pack loads and preserves all seven categories");
 }
 
 function testNoteDefinitionsAccessibleFromRuntime(): void {
   const definitions = getNoteDefinitions();
-  assert(definitions.length === 6, `expected 6 loaded note definitions, got ${definitions.length}`);
+  assert(definitions.length === 7, `expected 7 loaded note definitions, got ${definitions.length}`);
   for (const definition of definitions) {
     assert(definition.prompt.trim().length > 0, `note prompt should not be empty for ${definition.id}`);
     assert(definition.category.trim().length > 0, `note category should not be empty for ${definition.id}`);
