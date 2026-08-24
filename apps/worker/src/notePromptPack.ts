@@ -63,6 +63,12 @@ const NOTE_PACK_ENTRIES: NotePackEntry[] = [
     displayLabel: "الكيانات والعلامات التجارية",
     filename: "note_entities_and_brands.md",
   },
+  {
+    id: "note_religious_content",
+    category: "religious_content",
+    displayLabel: "محتوى ديني / مذهبي حساس",
+    filename: "note_religious_content.md",
+  },
 ];
 
 export const NOTE_REVIEWER_ARTICLE_NUMBERS = new Set([11, 13, 21]);

@@ -122,9 +122,17 @@ globalThis.fetch = async (url: any, options: any) => {
         ]
       });
     }
-    else if (systemPrompt.includes("Classified Documents")) {
+    else if (systemPrompt.includes("Classified Documents") || systemPrompt.includes("الوثائق السرية")) {
       mockResponseText = JSON.stringify({
         notes: [ { category: "classified_documents", title: "ملف مسرب", description: "ملف مسرب من جهة حكومية", paragraph: "ملف مسرّب من الداخلية", quote: "ملف مسرّب", event_id: 25, confidence: 0.9 } ]
+      });
+    }
+    else if (systemPrompt.includes("محتوى ديني")) {
+      mockResponseText = JSON.stringify({
+        notes: [
+          { category: "religious_content", title: "مجلس عزاء", description: "رثاء في مجلس عزاء", paragraph: "البكاء على الحسين في هذا اليوم العظيم", quote: "البكاء على الحسين في هذا اليوم العظيم", event_id: 40, confidence: 0.95 },
+          { category: "religious_content", title: "حوار ديني", description: "رواية قارورة كربلاء", paragraph: "قارورة كربلاء تحولت إلى دم", quote: "قارورة كربلاء تحولت إلى دم", event_id: 41, confidence: 0.9 }
+        ]
       });
     }
 
@@ -167,6 +175,8 @@ async function main() {
     { event_id: 24, event_summary: "المشهد 9 - الغرفة المظلمة", actor: "سعيد", target: "الجمهور", action: "يخطط", quote: "نركّب قصص", start_offset: 450, end_offset: 470, dominant_meaning: "Fabrication" },
     { event_id: 25, event_summary: "المشهد 10 - المكتب", actor: "المدير", target: "الموظف", action: "يكشف", quote: "ملف مسرّب", start_offset: 500, end_offset: 510, dominant_meaning: "Leak" },
     { event_id: 30, event_summary: "المشهد 16 - شقة سعيد", actor: "الشرطة", target: "سعيد", action: "تداهم", quote: "افتح الباب! شرطة!", start_offset: 600, end_offset: 620, dominant_meaning: "Police Raid" },
+    { event_id: 40, event_summary: "المشهد 20 - مجلس عزاء", actor: "الملا", target: "الحاضرين", action: "يرثي", quote: "البكاء على الحسين في هذا اليوم العظيم", start_offset: 700, end_offset: 750, dominant_meaning: "Lamentation/Ashura" },
+    { event_id: 41, event_summary: "المشهد 21 - حوار", actor: "علي", target: "حسن", action: "يقول", quote: "قارورة كربلاء تحولت إلى دم", start_offset: 760, end_offset: 800, dominant_meaning: "Disputed narrative" },
   ];
 
   if (!cachedEvents) {
@@ -299,19 +309,27 @@ async function main() {
   const hasMedia23 = notesResult.notes.some((n: any) => n.category === 'media_credibility' && n.event_id === 23);
   const hasMedia24 = notesResult.notes.some((n: any) => n.category === 'media_credibility' && n.event_id === 24);
   const hasClassified25 = notesResult.notes.some((n: any) => n.category === 'classified_documents' && n.event_id === 25);
-  const totalAccepted = notesResult.notes.length;
 
-  console.log(`Security Event 13 found: ${hasSecurity13}`);
-  console.log(`Security Event 30 found: ${hasSecurity30}`);
-  console.log(`Media Event 23 found: ${hasMedia23}`);
-  console.log(`Media Event 24 found: ${hasMedia24}`);
-  console.log(`Classified Event 25 found: ${hasClassified25}`);
-  console.log(`Total Accepted Notes >= 5: ${totalAccepted >= 5} (${totalAccepted})`);
-  if (!hasSecurity13 || !hasSecurity30 || !hasMedia23 || !hasMedia24 || !hasClassified25 || totalAccepted < 5) {
-    console.error("\n[ERROR] Notes concurrent execution did not produce the expected notes.");
+  const hasReligious40 = notesResult.notes.some((n: any) => n.category === 'religious_content' && n.event_id === 40);
+  const hasReligious41 = notesResult.notes.some((n: any) => n.category === 'religious_content' && n.event_id === 41);
+  const hasReligious17 = notesResult.notes.some((n: any) => n.category === 'religious_content' && n.event_id === 17);
+
+  console.log("Security Note 13:", hasSecurity13);
+  console.log("Security Note 30:", hasSecurity30);
+  console.log("Media Note 23:", hasMedia23);
+  console.log("Media Note 24:", hasMedia24);
+  console.log("Classified Note 25:", hasClassified25);
+
+  console.log("\nReligious Notes Assertions:");
+  console.log("Religious Event 40 detected:", hasReligious40);
+  console.log("Religious Event 41 detected:", hasReligious41);
+  console.log("Unrelated Event 17 ignored:", !hasReligious17);
+
+  if (!hasSecurity13 || !hasSecurity30 || !hasMedia23 || !hasMedia24 || !hasClassified25 || !hasReligious40 || !hasReligious41 || hasReligious17) {
+    console.error("\n[!] NOTES REGRESSION FAILED - Missing expected notes!");
     process.exit(1);
   } else {
-    console.log("\n[SUCCESS] Concurrent Notes execution produced the identical expected notes.");
+    console.log("\n[OK] NOTES REGRESSION PASSED");
   }
 
   // --------------------------------------------------------

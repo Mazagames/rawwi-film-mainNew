@@ -234,6 +234,22 @@ export type SummaryJson = {
       updated_at: string | null;
       created_at?: string | null;
     }>;
+    religious_content: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
     security_scenes: Array<{
       id: string | null;
       reviewer: string | null;
@@ -1364,7 +1380,6 @@ type DbNote = {
   updated_at?: string | null;
   created_at?: string | null;
 };
-
 const SEVERITIES = ["low", "medium", "high", "critical"] as const;
 const SEVERITY_ORDER: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
 const RATIONALE_FALLBACK = "يتطلب تقييم مراجع مختص.";
@@ -1372,6 +1387,7 @@ const NOTE_CATEGORY_ORDER: Array<keyof NonNullable<SummaryJson["notes"]>> = [
   "media_credibility",
   "medical_notes",
   "classified_documents",
+  "religious_content",
   "security_scenes",
   "saudi_names",
   "commercial_entities",
@@ -1380,6 +1396,7 @@ const NOTE_CATEGORY_LABELS: Record<keyof NonNullable<SummaryJson["notes"]>, stri
   media_credibility: "Media Credibility",
   medical_notes: "Medical Notes",
   classified_documents: "Classified Documents",
+  religious_content: "محتوى ديني / مذهبي حساس",
   security_scenes: "Security Scenes",
   saudi_names: "Saudi Names",
   commercial_entities: "Commercial Entities",
@@ -1454,6 +1471,7 @@ function buildNoteSummary(jobId: string, notes: DbNote[]): {
       media_credibility: groups.get("media_credibility") ?? [],
       medical_notes: groups.get("medical_notes") ?? [],
       classified_documents: groups.get("classified_documents") ?? [],
+      religious_content: groups.get("religious_content") ?? [],
       security_scenes: groups.get("security_scenes") ?? [],
       saudi_names: groups.get("saudi_names") ?? [],
       commercial_entities: groups.get("commercial_entities") ?? [],
