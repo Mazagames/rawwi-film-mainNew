@@ -406,6 +406,14 @@ export async function runReviewerPack(
     let rawResponseLength = 0;
     const provider = config.AI_PROVIDER;
     const model = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL;
+    logger.info("NOTE_REVIEWER_START", {
+      jobId: options.jobId,
+      chunkId: options.chunkId,
+      reviewerId: definition.id,
+      category: definition.category,
+      kind: definition.kind,
+      destination: definition.destination,
+    });
     try {
       const { response, parsed } = await runNotesProviderWithFallback({
         primaryProvider: provider,
@@ -468,6 +476,30 @@ export async function runReviewerPack(
           parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
           fallbackProvider,
         });
+        logger.info("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
+          jobId: options.jobId,
+          chunkId: options.chunkId,
+          reviewerId: definition.id,
+          category: definition.category,
+          responseReceived: responseReceivedAt !== null,
+          responseLength: rawResponseLength,
+          parsed: true,
+          generatedCount: parsed.notes?.length ?? 0,
+          acceptedCount: notes.length,
+          error: parsed.parseError,
+          fallbackProvider,
+        });
+        logger.info("NOTE_REVIEWER_END", {
+          jobId: options.jobId,
+          chunkId: options.chunkId,
+          reviewerId: definition.id,
+          category: definition.category,
+          generatedCount: parsed.notes?.length ?? 0,
+          acceptedCount: notes.length,
+          passedToPersistenceCount: notes.length,
+          durationMs: Date.now() - passStartedAt,
+          status: "success",
+        });
         return { definition, notes, findings: [], response, duration: Date.now() - passStartedAt, diagnostics: {
           requestStartedAt,
           responseReceivedAt,
@@ -510,6 +542,30 @@ export async function runReviewerPack(
         rejectedCount: 0,
         parseValidationError: error instanceof Error ? error.message : String(error),
         fallbackProvider,
+      });
+      logger.warn("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
+        jobId: options.jobId,
+        chunkId: options.chunkId,
+        reviewerId: definition.id,
+        category: definition.category,
+        responseReceived: responseReceivedAt !== null,
+        responseLength: rawResponseLength,
+        parsed: false,
+        generatedCount: 0,
+        acceptedCount: 0,
+        error: error instanceof Error ? error.message : String(error),
+        fallbackProvider,
+      });
+      logger.warn("NOTE_REVIEWER_END", {
+        jobId: options.jobId,
+        chunkId: options.chunkId,
+        reviewerId: definition.id,
+        category: definition.category,
+        generatedCount: 0,
+        acceptedCount: 0,
+        passedToPersistenceCount: 0,
+        durationMs: Date.now() - passStartedAt,
+        status: "error",
       });
       return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: String(error), diagnostics: {
         requestStartedAt,
