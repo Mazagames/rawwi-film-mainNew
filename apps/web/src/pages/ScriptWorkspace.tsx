@@ -40,6 +40,14 @@ const policyArticlesForForm = getActionablePolicyArticles();
 const DEFAULT_ACTIONABLE_ARTICLE_ID = policyArticlesForForm[0]?.articleId ?? 4;
 const VIOLATION_TYPES_OPTIONS = violationTypesForChecklist();
 const DEFAULT_VIOLATION_TYPE_ID = VIOLATION_TYPES_OPTIONS[0]?.id ?? 'other';
+type WorkspaceReportTotals = {
+  all: number;
+  violations: number;
+  notes: number;
+  manual: number;
+  glossary: number;
+};
+type WorkspaceReportListItem = ReportListItem & { reportTotals?: WorkspaceReportTotals };
 const NOTE_CATEGORY_OPTIONS: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
   { key: 'article_01', labelAr: 'الإساءة إلى الذات والدين', labelEn: 'Article 01' },
   { key: 'article_02', labelAr: 'القيادة السياسية ورموز الدولة', labelEn: 'Article 02' },
@@ -1888,7 +1896,8 @@ export function ScriptWorkspace() {
           }
           // Fetch the report id so "View Report" navigates correctly (by=id preferred)
           if (isSuccessfulJobStatus(job.status)) {
-            reportsApi.getByJob(job.id).then((report) => {
+              reportsApi.getByJob(job.id).then((report) => {
+              if (!report?.id) throw new Error(`Report lookup returned no report for job ${job.id}`);
               setReportIdWhenJobCompleted(report.id);
             }).catch(() => {});
           }
@@ -2063,7 +2072,7 @@ export function ScriptWorkspace() {
 
   // ── Report history ──
   const [sidebarTab, setSidebarTab] = useState<'findings' | 'reports' | 'cycles'>('findings');
-  const [reportHistory, setReportHistory] = useState<ReportListItem[]>([]);
+  const [reportHistory, setReportHistory] = useState<WorkspaceReportListItem[]>([]);
   const [revisionCycleSummary, setRevisionCycleSummary] = useState<ScriptRevisionCycleSummaryItem[]>([]);
   const [revisionCycleSummaryLoading, setRevisionCycleSummaryLoading] = useState(false);
   const [revisionHistorySnapshot, setRevisionHistorySnapshot] = useState<RevisionHistorySnapshot | null>(null);
@@ -2570,7 +2579,30 @@ export function ScriptWorkspace() {
     // setReportHistoryLoading(true);
     try {
       const list = await reportsApi.listByScript(id);
-      setReportHistory(list);
+      const enriched = await Promise.all(list.map(async (item): Promise<WorkspaceReportListItem> => {
+        try {
+          const fullReport = await reportsApi.getById(item.id);
+          const summary = fullReport.summaryJson as typeof fullReport.summaryJson & {
+            notes?: Record<string, unknown[]>;
+          };
+          const notesCount = Object.values(summary.notes ?? {}).reduce((sum, notes) => sum + notes.length, 0);
+          const findingTotals = summary.totals?.findings_count ?? 0;
+          const typeCounts = summary.totals?.type_counts ?? {};
+          return {
+            ...item,
+            reportTotals: {
+              all: findingTotals + notesCount,
+              violations: findingTotals,
+              notes: notesCount,
+              manual: typeCounts.manual ?? 0,
+              glossary: typeCounts.glossary ?? 0,
+            },
+          };
+        } catch {
+          return item;
+        }
+      }));
+      setReportHistory(enriched);
     } catch (_) {
       setReportHistory([]);
     }
@@ -3021,9 +3053,9 @@ export function ScriptWorkspace() {
       if (jobId) {
         const [job, list, reviewList, fullReport] = await Promise.all([
           tasksApi.getJob(jobId),
-          findingsApi.getByJob(jobId),
-          findingsApi.getReviewByJob(jobId),
-          reportsApi.getByJob(jobId),
+          findingsApi.getByReport(reportId),
+          findingsApi.getReviewByReport(reportId),
+          reportsApi.getById(reportId),
         ]);
         const { data: noteRows, error: notesError } = await supabase
           .from('analysis_notes')
@@ -7101,7 +7133,8 @@ export function ScriptWorkspace() {
                 </div>
               ) : (
                 reportHistory.map((r) => {
-                  const total = r.findingsCount ?? 0;
+                  const totals = r.reportTotals;
+                  const total = totals?.all ?? r.findingsCount ?? 0;
                   const approved = (r as any).approvedCount ?? 0;
                   const reviewColor = r.reviewStatus === 'approved' ? 'success' : r.reviewStatus === 'rejected' ? 'error' : 'warning';
                   const reviewLabel = r.reviewStatus === 'approved' ? (lang === 'ar' ? 'مفسوح' : 'Approved')
@@ -7128,11 +7161,14 @@ export function ScriptWorkspace() {
                       <div className="text-[10px] text-text-muted">
                         {lang === 'ar' ? 'بواسطة: ' : 'By: '}{createdByLabel}
                       </div>
-                      {/* Counts */}
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="font-semibold text-text-main">{total} {lang === 'ar' ? 'ملاحظة' : 'findings'}</span>
+                      {/* Authoritative report totals from the full summary, not analysis_reports.findings_count. */}
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                        <span className="font-semibold text-text-main">{total} {lang === 'ar' ? 'الكل' : 'all'}</span>
+                        <span className="text-error">{totals?.violations ?? '—'} {lang === 'ar' ? 'مخالفات' : 'violations'}</span>
+                        <span className="text-info">{totals?.notes ?? '—'} {lang === 'ar' ? 'ملاحظات' : 'notes'}</span>
+                        <span className="text-text-muted">{totals?.manual ?? '—'} {lang === 'ar' ? 'يدوية' : 'manual'}</span>
+                        <span className="text-primary">{totals?.glossary ?? '—'} {lang === 'ar' ? 'قاموس' : 'glossary'}</span>
                         {approved > 0 && <span className="text-success">{approved}{lang === 'ar' ? ' آمن' : ' safe'}</span>}
-                        {total === 0 && approved === 0 && <span className="text-success">{lang === 'ar' ? 'نظيف' : 'Clean'}</span>}
                       </div>
 
                       {/* Actions */}
