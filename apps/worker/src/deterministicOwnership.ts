@@ -2,6 +2,43 @@ import type { JudgeFinding } from "./schemas.js";
 import type { StructuredEvent } from "./eventUnderstanding.js";
 import { findBestEventMatch, getEventConsistencyIssue } from "./eventConsistency.js";
 
+const STRICT_ARTICLE_RULES: Record<number, { subject: RegExp; conduct: RegExp }> = {
+  18: {
+    subject: /(دولة|حكومة|شعب|أجنبية|سفارة|سفير|منظمة دولية|الأمم المتحدة|مجلس الأمن|دبلوماسي|علاقات دولية|دولية|أجنبية)/i,
+    conduct: /(تحريض|تضليل|إضرار|تسبب|تدمير|قطع|علاقات دولية|علاقات خارجية|ردود فعل دولية|احتجاج|استفزاز|عدائي)/i,
+  },
+  19: {
+    subject: /(بنك|سوق|عملة|استثمار|أزمة مالية|استقرار اقتصادي|اقتصادي|تمويل|مؤسسة مالية|اقتصاد)/i,
+    conduct: /(تضليل مالي|ذعر مالي|سحب أموال|أزمة مالية|أضرار مالية|تأثير مالي|تخريب|إفلاس|تلاعب|انهيار|خسارة مالية|معلومات مالية مضللة)/i,
+  },
+  20: {
+    subject: /(شركة|مؤسسة|تجاري|استثمار|سوق|تجارة|عمل|ثقة|إفلاس|مستثمر|اقتصادي)/i,
+    conduct: /(مضللة|تجارية|استثمارية|ثقة تجارية|سمعة تجارية|إضرار|تسبب|إفلاس|تجاري|استثمار)/i,
+  },
+  21: {
+    subject: /(سرية|مصنف|محمي|مقيد|غير علني|معلومات سرية|معلومات محمية|ملف سري|وثيقة سرية|معلومات مصنفة)/i,
+    conduct: /(تسريب|اكتساب|وصول غير مصرح|إفشاء|نشر|توزيع|نقل|استخدام|استعمال|سرقة|اختراق|حصول بدون تصريح|إساءة استخدام)/i,
+  },
+};
+
+function articleSpecificEvidenceScore(articleId: number, evidence: string, eventText: string): { pass: boolean; reason: string } {
+  const rules = STRICT_ARTICLE_RULES[articleId];
+  if (!rules) return { pass: true, reason: "no strict rule" };
+
+  const localEvidence = `${evidence}\n${eventText}`.trim();
+  const hasSubject = rules.subject.test(localEvidence);
+  const hasConduct = rules.conduct.test(localEvidence);
+
+  if (!hasSubject || !hasConduct) {
+    return {
+      pass: false,
+      reason: `article ${articleId} requires an article-specific subject and conduct pair; evidence was too generic or topic-only`,
+    };
+  }
+
+  return { pass: true, reason: "article-specific evidence present" };
+}
+
 export type OwnershipDiagnostic = {
   article_id?: number | null;
   canonical_atom?: string | null;
@@ -133,6 +170,8 @@ export function enforceDeterministicOwnership(
 
       const item = group[i];
       const issue = item.issue;
+      const matchedEventText = item.matchedEvent?.quote ?? "";
+      const ownershipCheck = articleSpecificEvidenceScore(item.finding.article_id, String(item.finding.evidence_snippet ?? ""), matchedEventText);
       
       if (issue === "event_span_mismatch" || issue === "event_evidence_mismatch") {
         droppedByEventMismatch++;
@@ -146,13 +185,22 @@ export function enforceDeterministicOwnership(
       }
       
       if (issue === "event_ambiguous") {
-        // Log only, do not automatically reject
         diagnostics.push({
           article_id: item.finding.article_id,
           canonical_atom: item.finding.canonical_atom ?? null,
           reason: `Logged event_ambiguous (retained)`,
           evidence_excerpt: String(item.finding.evidence_snippet).substring(0, 100),
         });
+      }
+
+      if (!ownershipCheck.pass) {
+        diagnostics.push({
+          article_id: item.finding.article_id,
+          canonical_atom: item.finding.canonical_atom ?? null,
+          reason: ownershipCheck.reason,
+          evidence_excerpt: String(item.finding.evidence_snippet).substring(0, 100),
+        });
+        continue;
       }
       
       finalFindings.push(item.finding);

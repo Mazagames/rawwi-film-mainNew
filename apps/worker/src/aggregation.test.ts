@@ -246,6 +246,20 @@ function testUnknownNoteCategoryRejected() {
   console.log("✓ Unknown note categories are rejected");
 }
 
+function testNotesRemainSeparateFromViolationTotals() {
+  const findings: DbFinding[] = [
+    { article_id: 15, atom_id: "15-1", severity: "high", confidence: 0.95, title_ar: "مخالفة", description_ar: "", evidence_snippet: "مخالفة", start_offset_global: 0, end_offset_global: 1, start_line_chunk: null, end_line_chunk: null, location: {} },
+  ];
+  const notes: DbNote[] = [
+    { reviewer: "article_05_violence_torture", category: "article_05", title: "ملاحظة", description: "ملاحظة ليست مخالفة", snippet: "ملاحظة", event_id: 5, confidence: 0.8, status: "new", included_in_report: true },
+  ];
+  const summary = buildSummaryJson("job5", "script5", findings, undefined, undefined, undefined, undefined, notes);
+  assert(summary.totals.findings_count === 1, "violations total should count only findings, not notes");
+  assert((summary.notes?.article_05 ?? []).length === 1, "notes should remain grouped under notes");
+  assert((summary.notes_summary ?? []).some((group) => group.category === "article_05"), "notes summary should include note categories");
+  console.log("✓ notes remain separate from violation totals");
+}
+
 function testArticleNoteCanonicalIdsAreBlockedFromReviewLayer() {
   assert(isArticleNoteCanonicalFindingId("article14-note-32ff4f9d-4e45-43c8-9a9a-0c6b5493c8d3"), "Article 14 note IDs must be recognized as note-originated");
   assert(isArticleNoteCanonicalFindingId("article05-note-abc123"), "Article 05 note IDs must be recognized as note-originated");
@@ -263,6 +277,7 @@ async function main() {
   testCrossArticleOverlapKeepsOwnershipSeparate();
   testNotesAreGroupedSeparately();
   testUnknownNoteCategoryRejected();
+  testNotesRemainSeparateFromViolationTotals();
   testArticleNoteCanonicalIdsAreBlockedFromReviewLayer();
   console.log("\nAll aggregation tests passed.");
 }
