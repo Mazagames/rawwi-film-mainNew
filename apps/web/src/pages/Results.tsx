@@ -416,6 +416,7 @@ export function Results() {
   const [groupFindingsByAtom, setGroupFindingsByAtom] = useState(false);
   /** false = deduped list (default); true = every DB row (duplicates visible). */
   const [showAllFindingRows, setShowAllFindingRows] = useState(false);
+  const [reportSection, setReportSection] = useState<'violations' | 'notes' | 'manual' | 'dictionary'>('violations');
   const [findingFilter, setFindingFilter] = useState<FindingKindFilter>('all');
   const [noteCategoryFilter, setNoteCategoryFilter] = useState<NoteCategoryKey>('security_scenes');
   const [notesState, setNotesState] = useState<Record<NoteCategoryKey, ReportNote[]>>(EMPTY_NOTES_BY_CATEGORY);
@@ -1444,60 +1445,20 @@ export function Results() {
     REVIEW_REQUIRED: { label: lang === 'ar' ? 'يتطلب مراجعة' : 'REVIEW REQUIRED', bg: 'bg-warning/5', text: 'text-warning', border: 'border-warning/30', icon: AlertTriangle },
   };
   const DecisionIcon = decisionConfig[decision].icon;
-  const compactReportStats = [
-    {
-      key: 'total',
-      labelAr: 'قيد المراجعة',
-      labelEn: 'Under review',
-      value: displayTotal,
-      tone: 'warning',
-    },
-    {
-      key: 'ai',
-      labelAr: 'آلية',
-      labelEn: 'AI',
-      value: displayTypeCounts.ai,
-      tone: 'primary',
-    },
-    {
-      key: 'glossary',
-      labelAr: 'قاموس',
-      labelEn: 'Glossary',
-      value: displayTypeCounts.glossary,
-      tone: 'info',
-    },
-    {
-      key: 'manual',
-      labelAr: 'يدوية',
-      labelEn: 'Manual',
-      value: displayTypeCounts.manual,
-      tone: 'neutral',
-    },
-    ...(displayApproved > 0
-      ? [{
-          key: 'approved',
-          labelAr: 'آمنة',
-          labelEn: 'Safe',
-          value: displayApproved,
-          tone: 'success',
-        }]
-      : []),
-    ...(displaySpecialNotes > 0
-      ? [{
-          key: 'special',
-          labelAr: 'ملاحظات',
-          labelEn: 'Notes',
-          value: displaySpecialNotes,
-          tone: 'info',
-        }]
-      : []),
-  ] as Array<{
-    key: string;
-    labelAr: string;
-    labelEn: string;
-    value: number;
-    tone: 'primary' | 'warning' | 'info' | 'success' | 'neutral';
-  }>;
+  const primaryReportSections = [
+    { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: displayTotal, tone: 'warning' as const },
+    { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: notesTotalCount, tone: 'info' as const },
+    { key: 'manual' as const, labelAr: 'يدوية', labelEn: 'Manual', value: displayTypeCounts.manual, tone: 'neutral' as const },
+    { key: 'dictionary' as const, labelAr: 'قاموس', labelEn: 'Glossary', value: displayTypeCounts.glossary, tone: 'primary' as const },
+  ];
+  const violationFilterTabs: Array<{ key: FindingKindFilter; labelAr: string; labelEn: string }> = [
+    { key: 'all', labelAr: 'الكل', labelEn: 'All' },
+    { key: 'ai', labelAr: 'آلية', labelEn: 'AI' },
+    { key: 'glossary', labelAr: 'قاموس', labelEn: 'Glossary' },
+    { key: 'manual', labelAr: 'يدوية', labelEn: 'Manual' },
+    { key: 'approved', labelAr: 'آمنة', labelEn: 'Safe' },
+    { key: 'special', labelAr: 'ملاحظات خاصة', labelEn: 'Special notes' },
+  ];
 
   const toggleArticle = (key: string) => setExpandedArticles(prev => ({ ...prev, [key]: !prev[key] }));
 
@@ -3076,29 +3037,25 @@ function displayFindingTitle(params: {
             </button>
           </div>
           <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
-            {compactReportStats.map((stat) => (
+            {primaryReportSections.map((section) => (
               <button
-                key={stat.key}
+                key={section.key}
                 type="button"
+                aria-pressed={reportSection === section.key}
                 onClick={() => {
-                  if (stat.key === 'total') setFindingFilter('all');
-                  else if (stat.key === 'ai') setFindingFilter((v) => (v === 'ai' ? 'all' : 'ai'));
-                  else if (stat.key === 'glossary') setFindingFilter((v) => (v === 'glossary' ? 'all' : 'glossary'));
-                  else if (stat.key === 'manual') setFindingFilter((v) => (v === 'manual' ? 'all' : 'manual'));
-                  else if (stat.key === 'approved') setFindingFilter((v) => (v === 'approved' ? 'all' : 'approved'));
-                  else if (stat.key === 'special') setFindingFilter((v) => (v === 'special' ? 'all' : 'special'));
+                  setReportSection(section.key);
+                  setFindingFilter(section.key === 'manual' ? 'manual' : section.key === 'dictionary' ? 'glossary' : 'all');
                 }}
                 className={cn(
                   "rounded-xl border px-3 py-2 text-start transition-colors bg-background/70 hover:bg-background",
-                  stat.tone === 'warning' && 'border-warning/20',
-                  stat.tone === 'primary' && 'border-primary/20',
-                  stat.tone === 'info' && 'border-info/20',
-                  stat.tone === 'success' && 'border-success/20',
-                  stat.tone === 'neutral' && 'border-border'
+                  section.tone === 'warning' && (reportSection === section.key ? 'border-warning bg-warning/10' : 'border-warning/20'),
+                  section.tone === 'primary' && (reportSection === section.key ? 'border-primary bg-primary/10' : 'border-primary/20'),
+                  section.tone === 'info' && (reportSection === section.key ? 'border-info bg-info/10' : 'border-info/20'),
+                  section.tone === 'neutral' && (reportSection === section.key ? 'border-text-muted bg-background' : 'border-border')
                 )}
               >
-                <div className="text-[11px] text-text-muted mb-1">{lang === 'ar' ? stat.labelAr : stat.labelEn}</div>
-                <div className="text-lg font-bold text-text-main leading-none">{stat.value}</div>
+                <div className="text-[11px] text-text-muted mb-1">{lang === 'ar' ? section.labelAr : section.labelEn}</div>
+                <div className="text-lg font-bold text-text-main leading-none">{section.value}</div>
               </button>
             ))}
           </div>
@@ -3229,7 +3186,7 @@ function displayFindingTitle(params: {
 
       {/* Main findings */}
         <div className="space-y-8">
-          {hasViolationContent && (
+          {reportSection === 'violations' && hasViolationContent && (
             <>
           {/* Violations section */}
           <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
@@ -3266,6 +3223,25 @@ function displayFindingTitle(params: {
               </button>
             )}
           </h3>
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label={lang === 'ar' ? 'تصنيفات المخالفات' : 'Violation categories'}>
+            {violationFilterTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={findingFilter === tab.key}
+                onClick={() => setFindingFilter(tab.key)}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                  findingFilter === tab.key
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-primary/30 bg-primary/5 text-primary hover:bg-primary/10'
+                )}
+              >
+                {lang === 'ar' ? tab.labelAr : tab.labelEn}
+              </button>
+            ))}
+          </div>
 
           {showEmptyFindingsState ? (
             <div className="text-center py-16 bg-surface border-2 border-dashed border-border rounded-2xl">
@@ -3328,6 +3304,7 @@ function displayFindingTitle(params: {
             </>
           )}
 
+          {reportSection === 'notes' && (
           <section className="mt-12" aria-label={lang === 'ar' ? 'قسم الملاحظات' : 'Notes section'}>
               <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                 <Info className="w-5 h-5 text-info" />
@@ -3430,9 +3407,10 @@ function displayFindingTitle(params: {
                 )}
               </div>
           </section>
+          )}
 
           {/* Report hints: not violations but notes for director (e.g. Islamic rules when filming) */}
-          {!showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0))) && (
+          {reportSection === 'violations' && !showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0))) && (
             <>
               <h3 className={cn(
                 "font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2",
@@ -3485,7 +3463,7 @@ function displayFindingTitle(params: {
           )}
 
           {/* Approved section */}
-          {!showOnlySpecialNotes && !showOnlyApproved && useReviewFindingsUi && reviewApproved.length > 0 && (
+          {reportSection === 'violations' && !showOnlySpecialNotes && !showOnlyApproved && useReviewFindingsUi && reviewApproved.length > 0 && (
             <>
               <h3 className="font-bold text-xl text-text-main border-b border-success/30 pb-2 flex items-center gap-2 mt-12">
                 <Shield className="w-5 h-5 text-success" />
@@ -3495,7 +3473,7 @@ function displayFindingTitle(params: {
               {renderFindingsFromReview(reviewApproved)}
             </>
           )}
-          {!showOnlySpecialNotes && !showOnlyApproved && !useReviewFindingsUi && useRealFindingsUi && displayApprovedFindings.length > 0 && (
+          {reportSection === 'violations' && !showOnlySpecialNotes && !showOnlyApproved && !useReviewFindingsUi && useRealFindingsUi && displayApprovedFindings.length > 0 && (
             <>
               <h3 className="font-bold text-xl text-text-main border-b border-success/30 pb-2 flex items-center gap-2 mt-12">
                 <Shield className="w-5 h-5 text-success" />
@@ -3504,6 +3482,32 @@ function displayFindingTitle(params: {
               </h3>
               {renderFindingsFromReal(displayApprovedFindings)}
             </>
+          )}
+
+          {(reportSection === 'manual' || reportSection === 'dictionary') && (
+            <section className="mt-4" aria-label={reportSection === 'manual' ? (lang === 'ar' ? 'قسم الملاحظات اليدوية' : 'Manual findings section') : (lang === 'ar' ? 'قسم القاموس' : 'Dictionary section')}>
+              <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
+                {reportSection === 'manual' ? <FileText className="w-5 h-5 text-text-muted" /> : <Search className="w-5 h-5 text-primary" />}
+                {reportSection === 'manual' ? (lang === 'ar' ? 'يدوية' : 'Manual') : (lang === 'ar' ? 'قاموس' : 'Glossary')}
+                <Badge variant="outline" className="ms-2">{reportSection === 'manual' ? displayTypeCounts.manual : displayTypeCounts.glossary}</Badge>
+              </h3>
+              {showEmptyFindingsState ? (
+                <div className="text-center py-16 bg-surface border-2 border-dashed border-border rounded-2xl">
+                  <CheckCircle className="w-12 h-12 text-success mx-auto mb-4 opacity-50" />
+                  <h4 className="text-lg font-bold text-text-main">
+                    {reportSection === 'manual'
+                      ? (lang === 'ar' ? 'لا توجد ملاحظات يدوية' : 'No manual findings')
+                      : (lang === 'ar' ? 'لا توجد مطابقات قاموس' : 'No glossary findings')}
+                  </h4>
+                </div>
+              ) : useReviewFindingsUi
+                ? renderFindingsFromReview(filteredReviewViolations)
+                : useRealFindingsUi
+                  ? renderFindingsFromReal(filteredDisplayViolations)
+                  : filteredCanonicalSummaryFindings.length > 0
+                    ? renderFindingsFromCanonicalSummary(filteredCanonicalSummaryFindings)
+                    : renderFindingsFromSummary(filteredCanonicalSummaryFindings)}
+            </section>
           )}
         </div>
 
