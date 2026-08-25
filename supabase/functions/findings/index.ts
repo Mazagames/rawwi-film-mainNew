@@ -1541,6 +1541,8 @@ Deno.serve(async (req: Request) => {
         atomId?: string | null;
         severity?: string;
         manualComment?: string;
+        kind?: "violation" | "note";
+        category?: string;
       };
       try {
         body = await req.json();
@@ -1557,6 +1559,12 @@ Deno.serve(async (req: Request) => {
       const severity = body.severity?.trim();
       const manualComment = body.manualComment?.trim() ?? "";
       const excerpt = body.excerpt?.trim() ?? "";
+      const kind = body.kind === "note" ? "note" : "violation";
+      const noteCategories = new Set([
+        ...Array.from({ length: 24 }, (_, index) => `article_${String(index + 1).padStart(2, "0")}`),
+        "saudi_names", "security_scenes", "commercial_entities", "medical_notes",
+        "media_credibility", "classified_documents", "religious_content",
+      ]);
 
       if (!reportId || !scriptId || !versionId) {
         return json({ error: "reportId, scriptId, versionId required" }, 400);
@@ -1564,10 +1572,15 @@ Deno.serve(async (req: Request) => {
       if (typeof startOffsetGlobal !== "number" || typeof endOffsetGlobal !== "number" || startOffsetGlobal < 0 || endOffsetGlobal <= startOffsetGlobal) {
         return json({ error: "startOffsetGlobal and endOffsetGlobal required (0 <= start < end)" }, 400);
       }
-      if (articleId == null || typeof articleId !== "number") {
+      if (kind === "violation" && (articleId == null || typeof articleId !== "number")) {
         return json({ error: "articleId required" }, 400);
       }
-      const atomResolution = await resolveManualAtomId(supabase, articleId, atomId);
+      if (kind === "note" && !noteCategories.has(body.category?.trim() ?? "")) {
+        return json({ error: "A valid note category is required" }, 400);
+      }
+      const atomResolution = kind === "violation"
+        ? await resolveManualAtomId(supabase, articleId!, atomId)
+        : { normalizedAtomId: null, error: null };
       if (atomResolution.error) {
         return json({ error: atomResolution.error }, 400);
       }
@@ -1629,6 +1642,51 @@ Deno.serve(async (req: Request) => {
         excerpt ||
         body.manualComment?.slice(0, 500) ||
         "—";
+
+      if (kind === "note") {
+        const category = body.category!.trim();
+        const { data: insertedNote, error: noteErr } = await supabase
+          .from("analysis_notes")
+          .insert({
+            job_id: jobId,
+            reviewer: "manual",
+            category,
+            title: "ملاحظة يدوية",
+            description: manualComment || evidenceSnippet,
+            snippet: evidenceSnippet,
+            event_id: 0,
+            confidence: 1,
+            status: "new",
+            included_in_report: true,
+            reviewer_comment: manualComment || null,
+            script_id: scriptId,
+            version_id: versionId,
+            start_offset_global: resolvedStartOffsetGlobal,
+            end_offset_global: resolvedEndOffsetGlobal,
+            source: "manual",
+          })
+          .select("id, job_id, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, created_at")
+          .single();
+        if (noteErr) {
+          console.error("[findings] manual note insert error:", noteErr.message);
+          return json({ error: noteErr.message }, 500);
+        }
+        return json({
+          id: insertedNote.id,
+          jobId,
+          scriptId,
+          versionId,
+          source: "manual",
+          category,
+          titleAr: insertedNote.title,
+          descriptionAr: insertedNote.description,
+          evidenceSnippet: insertedNote.snippet,
+          startOffsetGlobal: resolvedStartOffsetGlobal,
+          endOffsetGlobal: resolvedEndOffsetGlobal,
+          reviewStatus: "violation",
+          createdAt: insertedNote.created_at,
+        });
+      }
 
       const evidenceHash = "manual-" + crypto.randomUUID();
       const titleAr = "ملاحظة يدوية";

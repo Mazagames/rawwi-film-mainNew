@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation, useSearchParams } from 'react-rout
 import { supabase } from '@/lib/supabaseClient';
 import { useLangStore } from '@/store/langStore';
 import { useDataStore, Finding, type Script } from '@/store/dataStore';
+import type { NoteCategoryKey } from '@/api/models';
 import { useAuthStore } from '@/store/authStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { formatDate, formatTime, formatDateTimeValue } from '@/utils/dateFormat';
@@ -39,6 +40,39 @@ const policyArticlesForForm = getActionablePolicyArticles();
 const DEFAULT_ACTIONABLE_ARTICLE_ID = policyArticlesForForm[0]?.articleId ?? 4;
 const VIOLATION_TYPES_OPTIONS = violationTypesForChecklist();
 const DEFAULT_VIOLATION_TYPE_ID = VIOLATION_TYPES_OPTIONS[0]?.id ?? 'other';
+const NOTE_CATEGORY_OPTIONS: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
+  { key: 'article_01', labelAr: 'الإساءة إلى الذات والدين', labelEn: 'Article 01' },
+  { key: 'article_02', labelAr: 'القيادة السياسية ورموز الدولة', labelEn: 'Article 02' },
+  { key: 'article_03', labelAr: 'الإرهاب والتطرف', labelEn: 'Article 03' },
+  { key: 'article_04', labelAr: 'المخدرات والكحول', labelEn: 'Article 04' },
+  { key: 'article_05', labelAr: 'العنف والقتل والتعذيب', labelEn: 'Article 05' },
+  { key: 'article_06', labelAr: 'الانتحار وإيذاء النفس', labelEn: 'Article 06' },
+  { key: 'article_07', labelAr: 'المحتوى الجنسي والعري', labelEn: 'Article 07' },
+  { key: 'article_08', labelAr: 'السحر والشعوذة', labelEn: 'Article 08' },
+  { key: 'article_09', labelAr: 'الجرائم وتقنياتها', labelEn: 'Article 09' },
+  { key: 'article_10', labelAr: 'خطاب الكراهية والتمييز', labelEn: 'Article 10' },
+  { key: 'article_11', labelAr: 'المصداقية الإعلامية', labelEn: 'Article 11' },
+  { key: 'article_12', labelAr: 'حماية الأطفال والقُصّر', labelEn: 'Article 12' },
+  { key: 'article_13', labelAr: 'المعلومات الطبية والصحية', labelEn: 'Article 13' },
+  { key: 'article_14', labelAr: 'الألفاظ النابية والإهانات', labelEn: 'Article 14' },
+  { key: 'article_15', labelAr: 'النظام العام', labelEn: 'Article 15' },
+  { key: 'article_16', labelAr: 'الشائعات والمعلومات المضللة', labelEn: 'Article 16' },
+  { key: 'article_17', labelAr: 'الكرامة والسمعة والخصوصية', labelEn: 'Article 17' },
+  { key: 'article_18', labelAr: 'العلاقات الدولية', labelEn: 'Article 18' },
+  { key: 'article_19', labelAr: 'الاقتصاد والاستقرار المالي', labelEn: 'Article 19' },
+  { key: 'article_20', labelAr: 'الإفلاس والقضايا التجارية', labelEn: 'Article 20' },
+  { key: 'article_21', labelAr: 'الوثائق السرية', labelEn: 'Article 21' },
+  { key: 'article_22', labelAr: 'الاتفاقيات والمعاهدات', labelEn: 'Article 22' },
+  { key: 'article_23', labelAr: 'المظهر العام', labelEn: 'Article 23' },
+  { key: 'article_24', labelAr: 'الزي والاحتشام', labelEn: 'Article 24' },
+  { key: 'security_scenes', labelAr: 'مشاهد أمنية', labelEn: 'Security Scenes' },
+  { key: 'saudi_names', labelAr: 'أسماء سعودية', labelEn: 'Saudi Names' },
+  { key: 'commercial_entities', labelAr: 'كيانات تجارية', labelEn: 'Commercial Entities' },
+  { key: 'medical_notes', labelAr: 'ملاحظات طبية', labelEn: 'Medical Notes' },
+  { key: 'media_credibility', labelAr: 'مصداقية الوسائط', labelEn: 'Media Credibility' },
+  { key: 'classified_documents', labelAr: 'وثائق مصنفة', labelEn: 'Classified Documents' },
+  { key: 'religious_content', labelAr: 'محتوى ديني / مذهبي حساس', labelEn: 'Religious Content' },
+];
 
 /**
  * Display atom code for UI: PolicyMap style "X-Y" or legacy "X.Y".
@@ -2041,6 +2075,8 @@ export function ScriptWorkspace() {
 
   const [formData, setFormData] = useState({
     reportId: '',
+    findingType: 'violation' as 'violation' | 'note',
+    noteCategory: 'article_01' as NoteCategoryKey,
     articleId: String(DEFAULT_ACTIONABLE_ARTICLE_ID),
     atomId: '' as string,
     violationTypeId: DEFAULT_VIOLATION_TYPE_ID,
@@ -4221,6 +4257,7 @@ export function ScriptWorkspace() {
       ...prev,
       excerpt: text,
       reportId: defaultReportId || prev.reportId,
+      findingType: 'violation',
       articleId: String(DEFAULT_ACTIONABLE_ARTICLE_ID),
       atomId: '',
       violationTypeId: DEFAULT_VIOLATION_TYPE_ID,
@@ -4245,12 +4282,18 @@ export function ScriptWorkspace() {
         startOffsetGlobal: manualOffsets.startOffsetGlobal,
         endOffsetGlobal: manualOffsets.endOffsetGlobal,
         excerpt: formData.excerpt,
+        kind: formData.findingType,
+        category: formData.findingType === 'note' ? formData.noteCategory : undefined,
         articleId: parseInt(formData.articleId, 10) || DEFAULT_ACTIONABLE_ARTICLE_ID,
         atomId: null,
         severity: formData.severity,
         manualComment: formData.comment?.trim() || undefined,
       });
       toast.success(lang === 'ar' ? 'تمت إضافة الملاحظة اليدوية' : 'Manual finding added');
+      if (formData.findingType === 'note') {
+        setIsViolationModalOpen(false);
+        return;
+      }
       // const report = reportHistory.find((r) => r.id === formData.reportId) ?? selectedReportForHighlights;
       // const jobId = (report as { jobId?: string })?.jobId ?? created.jobId;
       if (selectedReportForHighlights?.jobId === created.jobId) {
@@ -7182,24 +7225,65 @@ export function ScriptWorkspace() {
           {reportHistory.length === 0 && (
             <p className="text-xs text-text-muted">{lang === 'ar' ? 'قم بتشغيل التحليل أولاً لإنشاء تقرير.' : 'Run analysis first to create a report.'}</p>
           )}
-          
-          <Select
-            label={lang === 'ar' ? 'نوع المخالفة' : 'Violation type'}
-            value={formData.violationTypeId}
-            onChange={(e) => {
-              const violationTypeId = e.target.value as ViolationTypeId;
-              setFormData((prev) => ({
-                ...prev,
-                violationTypeId,
-                articleId: String(getLegacyPolicyArticleIdForViolationTypeId(violationTypeId)),
-                atomId: '',
-              }));
-            }}
-            options={VIOLATION_TYPES_OPTIONS.map((item) => ({
-              label: lang === 'ar' ? item.titleAr : item.titleEn,
-              value: item.id,
-            }))}
-          />
+
+          <div>
+            <div className="text-sm font-medium text-text-main mb-2">{lang === 'ar' ? 'النوع' : 'Type'}</div>
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label={lang === 'ar' ? 'نوع الملاحظة اليدوية' : 'Manual item type'}>
+              {(['violation', 'note'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={formData.findingType === type}
+                  onClick={() => setFormData((prev) => ({
+                    ...prev,
+                    findingType: type,
+                    noteCategory: 'article_01',
+                    violationTypeId: DEFAULT_VIOLATION_TYPE_ID,
+                    articleId: String(DEFAULT_ACTIONABLE_ARTICLE_ID),
+                    atomId: '',
+                  }))}
+                  className={cn(
+                    'rounded-md border px-3 py-2 text-sm font-semibold transition-colors',
+                    formData.findingType === type
+                      ? type === 'violation' ? 'border-error bg-error/10 text-error' : 'border-info bg-info/10 text-info'
+                      : 'border-border bg-background text-text-muted hover:bg-surface'
+                  )}
+                >
+                  {type === 'violation' ? (lang === 'ar' ? 'مخالفة' : 'Violation') : (lang === 'ar' ? 'ملاحظة' : 'Note')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {formData.findingType === 'violation' ? (
+            <Select
+              label={lang === 'ar' ? 'نوع المخالفة' : 'Violation type'}
+              value={formData.violationTypeId}
+              onChange={(e) => {
+                const violationTypeId = e.target.value as ViolationTypeId;
+                setFormData((prev) => ({
+                  ...prev,
+                  violationTypeId,
+                  articleId: String(getLegacyPolicyArticleIdForViolationTypeId(violationTypeId)),
+                  atomId: '',
+                }));
+              }}
+              options={VIOLATION_TYPES_OPTIONS.map((item) => ({
+                label: lang === 'ar' ? item.titleAr : item.titleEn,
+                value: item.id,
+              }))}
+            />
+          ) : (
+            <Select
+              label={lang === 'ar' ? 'تصنيف الملاحظة' : 'Note category'}
+              value={formData.noteCategory}
+              onChange={(e) => setFormData((prev) => ({ ...prev, noteCategory: e.target.value as NoteCategoryKey }))}
+              options={NOTE_CATEGORY_OPTIONS.map((item) => ({
+                label: lang === 'ar' ? item.labelAr : item.labelEn,
+                value: item.key,
+              }))}
+            />
+          )}
 
           <Textarea 
             label={lang === 'ar' ? 'التعليق' : 'Comment'}

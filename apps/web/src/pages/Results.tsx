@@ -1113,9 +1113,44 @@ export function Results() {
   };
 
   useEffect(() => {
-    if (!report?.summaryJson) return;
-    setNotesState(report.summaryJson.notes ?? EMPTY_NOTES_BY_CATEGORY);
-  }, [report?.id]);
+    if (!report?.summaryJson || !report.jobId) return;
+    let cancelled = false;
+    const loadReportNotes = async () => {
+      const summaryNotes = report.summaryJson?.notes ?? EMPTY_NOTES_BY_CATEGORY;
+      const { data } = await supabase
+        .from('analysis_notes')
+        .select('id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at')
+        .eq('job_id', report.jobId)
+        .order('created_at', { ascending: true });
+      if (cancelled) return;
+      const merged: Record<NoteCategoryKey, ReportNote[]> = { ...EMPTY_NOTES_BY_CATEGORY };
+      for (const category of NOTE_CATEGORY_ORDER) merged[category.key] = [...(summaryNotes[category.key] ?? [])];
+      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+        const category = typeof row.category === 'string' ? row.category as NoteCategoryKey : null;
+        if (!category || !Object.prototype.hasOwnProperty.call(merged, category)) continue;
+        if (merged[category].some((note) => note.id === row.id)) continue;
+        merged[category].push({
+          id: String(row.id),
+          reviewer: typeof row.reviewer === 'string' ? row.reviewer : null,
+          category,
+          title: String(row.title ?? ''),
+          description: String(row.description ?? ''),
+          snippet: String(row.snippet ?? ''),
+          event_id: Number(row.event_id ?? 0),
+          confidence: Number(row.confidence ?? 0),
+          status: String(row.status ?? 'new'),
+          included_in_report: row.included_in_report !== false,
+          reviewer_comment: typeof row.reviewer_comment === 'string' ? row.reviewer_comment : null,
+          reviewed_at: typeof row.reviewed_at === 'string' ? row.reviewed_at : null,
+          updated_at: typeof row.updated_at === 'string' ? row.updated_at : null,
+          created_at: typeof row.created_at === 'string' ? row.created_at : null,
+        });
+      }
+      setNotesState(merged);
+    };
+    void loadReportNotes();
+    return () => { cancelled = true; };
+  }, [report?.id, report?.jobId]);
 
   useEffect(() => {
     if (!report?.id || !report.summaryJson?.notes) return;
@@ -1432,15 +1467,6 @@ export function Results() {
     ? displayApprovedFindings.filter(() => findingFilter === 'approved' || findingFilter === 'all')
     : [];
   const filteredCanonicalSummaryFindings = canonicalSummaryFindings.filter((f) => matchesFindingFilter(f));
-  const allReviewViolations = reviewViolations.filter((f) => findingKindFromReviewSource(f.sourceKind) === 'ai');
-  const allReviewManual = reviewViolations.filter((f) => findingKindFromReviewSource(f.sourceKind) === 'manual');
-  const allReviewDictionary = reviewViolations.filter((f) => findingKindFromReviewSource(f.sourceKind) === 'glossary');
-  const allRealViolations = displayViolations.filter((f) => findingKindFromSource(f.source) === 'ai');
-  const allRealManual = displayViolations.filter((f) => findingKindFromSource(f.source) === 'manual');
-  const allRealDictionary = displayViolations.filter((f) => findingKindFromSource(f.source) === 'glossary');
-  const allCanonicalViolations = canonicalSummaryFindings.filter((f) => findingKindFromSource(f.source) === 'ai');
-  const allCanonicalManual = canonicalSummaryFindings.filter((f) => findingKindFromSource(f.source) === 'manual');
-  const allCanonicalDictionary = canonicalSummaryFindings.filter((f) => findingKindFromSource(f.source) === 'glossary');
   const selectableReviewRawIds = filteredReviewViolations
     .map((f) => matchRawFindingForReview(f)?.id ?? null)
     .filter((id): id is string => Boolean(id));
@@ -2970,32 +2996,6 @@ function displayFindingTitle(params: {
     });
   }
 
-  function renderCombinedFindingSection(
-    key: string,
-    titleAr: string,
-    titleEn: string,
-    reviewList: AnalysisReviewFinding[],
-    realList: AnalysisFinding[],
-    canonicalList: CanonicalSummaryFinding[],
-  ) {
-    const count = useReviewFindingsUi ? reviewList.length : useRealFindingsUi ? realList.length : canonicalList.length;
-    if (count === 0) return null;
-    return (
-      <section key={key} className="mt-12" aria-label={lang === 'ar' ? `قسم ${titleAr}` : `${titleEn} section`}>
-        <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
-          <ShieldAlert className="w-5 h-5 text-primary" />
-          {lang === 'ar' ? titleAr : titleEn}
-          <Badge variant="outline" className="ms-2">{count}</Badge>
-        </h3>
-        {useReviewFindingsUi
-          ? renderFindingsFromReview(reviewList)
-          : useRealFindingsUi
-            ? renderFindingsFromReal(realList)
-            : renderFindingsFromCanonicalSummary(canonicalList)}
-      </section>
-    );
-  }
-
   return (
     <div className="flex flex-col min-h-full w-full pb-20">
       {/* Header */}
@@ -3263,7 +3263,6 @@ function displayFindingTitle(params: {
                 {lang === 'ar' ? 'الكل' : 'All'}
               </h3>
             </div>
-            {renderCombinedFindingSection('all-violations', 'المخالفات', 'Violations', allReviewViolations, allRealViolations, allCanonicalViolations)}
             </>
           )}
 
@@ -3467,13 +3466,6 @@ function displayFindingTitle(params: {
                   </section>
                 );
               })}
-            </>
-          )}
-
-          {reportSection === 'all' && (
-            <>
-              {renderCombinedFindingSection('all-manual', 'يدوية', 'Manual', allReviewManual, allRealManual, allCanonicalManual)}
-              {renderCombinedFindingSection('all-dictionary', 'قاموس', 'Glossary', allReviewDictionary, allRealDictionary, allCanonicalDictionary)}
             </>
           )}
 

@@ -1181,6 +1181,8 @@ export interface CreateManualFindingBody {
   atomId?: string | null;
   severity: string;
   manualComment?: string;
+  kind?: 'violation' | 'note';
+  category?: string;
 }
 
 export interface ManualFindingResponse extends AnalysisFinding {
