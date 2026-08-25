@@ -26,6 +26,31 @@ export const DEFAULT_DETERMINISTIC_CONFIG = {
   max_router_candidates: 8,
 };
 
+export function resolveProviderSnapshot(): {
+  provider: "gemini" | "openai";
+  provider_mode: "auto" | "gemini-only" | "openai-only";
+  fallback_allowed: boolean;
+  router_model: string;
+  judge_model: string;
+  auditor_model: string;
+  rationale_model: string;
+} {
+  const rawMode = (Deno.env.get("AI_PROVIDER_MODE") ?? "auto").toLowerCase();
+  const providerMode = rawMode === "gemini-only" || rawMode === "openai-only" ? rawMode : "auto";
+  const configuredProvider = (Deno.env.get("AI_PROVIDER") ?? "openai").toLowerCase() === "gemini" ? "gemini" : "openai";
+  const provider = providerMode === "gemini-only" ? "gemini" : providerMode === "openai-only" ? "openai" : configuredProvider;
+  const gemini = provider === "gemini";
+  return {
+    provider,
+    provider_mode: providerMode,
+    fallback_allowed: providerMode === "auto" && gemini,
+    router_model: Deno.env.get(gemini ? "GEMINI_ROUTER_MODEL" : "OPENAI_ROUTER_MODEL") ?? (gemini ? "gemini-2.5-flash" : "gpt-4.1-mini"),
+    judge_model: Deno.env.get(gemini ? "GEMINI_JUDGE_MODEL" : "OPENAI_JUDGE_MODEL") ?? (gemini ? "gemini-2.5-pro" : "gpt-4.1"),
+    auditor_model: Deno.env.get(gemini ? "GEMINI_AUDITOR_MODEL" : "OPENAI_AUDITOR_MODEL") ?? (gemini ? "gemini-2.5-pro" : "gpt-4.1"),
+    rationale_model: Deno.env.get(gemini ? "GEMINI_RATIONALE_MODEL" : "OPENAI_RATIONALE_MODEL") ?? (gemini ? "gemini-2.5-pro" : "gpt-4.1"),
+  };
+}
+
 export const ROUTER_SYSTEM_MSG = `أنت مرشّح فقط: مهمتك اختيار المواد الأكثر صلة بمقطع النص من قائمة المواد المعطاة.
 
 قاعدة إلزامية: إذا احتوى النص على سبّ، شتم، إهانة، إساءة قائمة على الجنس، عدائية لفظية أو تهديد، يجب إضافة المواد [4، 5، 7، 17] إلى المرشحين.

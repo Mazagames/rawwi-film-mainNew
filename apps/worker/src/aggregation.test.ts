@@ -74,6 +74,19 @@ function testDedup() {
   console.log("✓ Dedup: duplicates removed, highest severity kept");
 }
 
+function testDedupPrefersHigherConfidenceOnSameSeverity() {
+  const snippet = "same evidence text with same severity";
+  const findings: DbFinding[] = [
+    { source: "ai", article_id: 5, atom_id: "5-1", severity: "medium", confidence: 0.4, title_ar: "a", description_ar: "", evidence_snippet: snippet, start_offset_global: 0, end_offset_global: 10, start_line_chunk: null, end_line_chunk: null, location: {} },
+    { source: "ai", article_id: 5, atom_id: "5-1", severity: "medium", confidence: 0.95, title_ar: "b", description_ar: "", evidence_snippet: snippet, start_offset_global: 0, end_offset_global: 10, start_line_chunk: null, end_line_chunk: null, location: {} },
+  ];
+  const summary = buildSummaryJson("job1", "script1", findings);
+  const topFinding = summary.findings_by_article[0]?.top_findings[0];
+  assert(summary.totals.findings_count === 1, `Dedup: expected 1 finding, got ${summary.totals.findings_count}`);
+  assert(topFinding?.confidence === 0.95, `Dedup: expected higher confidence to win, got ${topFinding?.confidence}`);
+  console.log("✓ Dedup: higher confidence wins when severity ties");
+}
+
 // Article 26 excluded from report
 function testArticle26Excluded() {
   const findings: DbFinding[] = [
@@ -244,6 +257,7 @@ function testArticleNoteCanonicalIdsAreBlockedFromReviewLayer() {
 async function main() {
   testArticleOrder();
   testDedup();
+  testDedupPrefersHigherConfidenceOnSameSeverity();
   testArticle26Excluded();
   testSummaryHasFindingsByArticle();
   testCrossArticleOverlapKeepsOwnershipSeparate();

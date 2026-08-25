@@ -4,10 +4,12 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { strict as nodeAssert } from "node:assert";
 import {
   getNoteDefinitions,
   loadNotePackFromDirectoryForTests,
   resolveNoteDirectoryForTests,
+  validateArticleNoteReviewerCoverage,
 } from "./notePromptPack.js";
 
 function assert(cond: boolean, msg: string): void {
@@ -80,7 +82,18 @@ function testNoteMarkdownFilesExist(): void {
   console.log("✓ note markdown files exist and are non-empty");
 }
 
+function testArticleCoverageFailsFast(): void {
+  const definitions = getNoteDefinitions();
+  validateArticleNoteReviewerCoverage(definitions);
+  const missing = definitions.filter((definition) => definition.category !== "article_24");
+  nodeAssert.throws(() => validateArticleNoteReviewerCoverage(missing), /missing=24/);
+  const duplicate = [...definitions, definitions.find((definition) => definition.category === "article_01")!];
+  nodeAssert.throws(() => validateArticleNoteReviewerCoverage(duplicate), /duplicates=1/);
+  console.log("✓ Article 01-24 coverage fails fast for missing and duplicate reviewers");
+}
+
 testRepositoryNotePackLoads();
 testNoteDefinitionsAccessibleFromRuntime();
 testPilotArticlesAreOrdinaryNotes();
 testNoteMarkdownFilesExist();
+testArticleCoverageFailsFast();

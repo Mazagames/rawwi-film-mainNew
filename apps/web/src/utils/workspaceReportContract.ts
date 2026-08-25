@@ -14,5 +14,11 @@ export function validateSelectedReport(report: Partial<ReportListItem> | null | 
   if (!report.jobId?.trim()) {
     throw new Error('Selected report is missing jobId');
   }
+  if (!report.scriptId?.trim()) {
+    throw new Error('Selected report is missing scriptId');
+  }
+  if (!report.versionId?.trim()) {
+    throw new Error('Selected report is missing versionId');
+  }
   return report as ReportListItem;
 }

@@ -136,6 +136,28 @@ const NOTE_PACK_ENTRIES: NotePackEntry[] = [
 
 export const NOTE_REVIEWER_ARTICLE_NUMBERS = new Set(Array.from({ length: 24 }, (_, index) => index + 1));
 
+export function validateArticleNoteReviewerCoverage(definitions = getNoteDefinitions()): NoteReviewerDefinition[] {
+  const articleDefinitions = definitions.filter((definition) => /^article_\d{2}_/.test(definition.id));
+  const byArticle = new Map<number, NoteReviewerDefinition[]>();
+  for (const definition of articleDefinitions) {
+    const match = /^article_(\d{2})_/.exec(definition.id);
+    const articleNumber = match ? Number(match[1]) : NaN;
+    const entries = byArticle.get(articleNumber) ?? [];
+    entries.push(definition);
+    byArticle.set(articleNumber, entries);
+  }
+  const expected = Array.from(NOTE_REVIEWER_ARTICLE_NUMBERS).sort((a, b) => a - b);
+  const actual = [...byArticle.keys()].filter(Number.isInteger).sort((a, b) => a - b);
+  const missing = expected.filter((articleNumber) => !byArticle.has(articleNumber));
+  const unexpected = actual.filter((articleNumber) => !NOTE_REVIEWER_ARTICLE_NUMBERS.has(articleNumber));
+  const duplicates = actual.filter((articleNumber) => (byArticle.get(articleNumber)?.length ?? 0) !== 1);
+  const invalid = articleDefinitions.filter((definition) => definition.kind !== "note" || definition.destination !== "analysis_notes" || !definition.prompt.trim());
+  if (missing.length || unexpected.length || duplicates.length || invalid.length || actual.length !== expected.length) {
+    throw new Error(`Article Note reviewer coverage invalid: expected=${expected.length}, actual=${actual.length}, missing=${missing.join(",") || "none"}, unexpected=${unexpected.join(",") || "none"}, duplicates=${duplicates.join(",") || "none"}, invalid=${invalid.map((definition) => definition.id).join(",") || "none"}`);
+  }
+  return articleDefinitions;
+}
+
 let cachedPack: LoadedNotePack | null = null;
 
 function collectAncestorDirectories(startDir: string): string[] {

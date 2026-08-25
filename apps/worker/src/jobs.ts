@@ -257,6 +257,7 @@ export async function claimChunk(chunkId: string): Promise<AnalysisChunk | null>
 
   if (job && (
     String((job as { status?: string | null }).status ?? "").toLowerCase() === "cancelled" ||
+    String((job as { status?: string | null }).status ?? "").toLowerCase() === "failed" ||
     (job as { pause_requested?: boolean | null }).pause_requested === true ||
     (job as { partial_finalize_requested?: boolean | null }).partial_finalize_requested === true
   )) {

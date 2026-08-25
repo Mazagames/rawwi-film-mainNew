@@ -1,10 +1,10 @@
-import { randomUUID } from "crypto";
-import { generateStructuredCompletion } from "./aiClient.js";
-import { config } from "./config.js";
+import { createHash, randomUUID } from "crypto";
+import { classifyProviderFailure, generateStructuredCompletion } from "./aiClient.js";
+import { config, getAIProviderPolicy } from "./config.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { extractJsonFromText, noteOutputSchema, noteSchema, type NoteItem, type NoteOutput } from "./schemas.js";
 import { logger } from "./logger.js";
-import { getNoteDefinitions, type NoteReviewerDefinition } from "./notePromptPack.js";
+import { getNoteDefinitions, validateArticleNoteReviewerCoverage, type NoteReviewerDefinition } from "./notePromptPack.js";
 import type { ReviewerKind } from "./notePromptPack.js";
 import { parseJudgeWithRepair } from "./openai.js";
 import type { JudgeFinding } from "./schemas.js";
@@ -40,6 +40,7 @@ export type NotePassResult = {
   acceptedCount: number;
   rejectedCount: number;
   parseValidationError: string | null;
+  status: "success" | "empty" | "parse_error" | "timeout" | "retry_exhausted" | "provider_error" | "rate_limited" | "no_credits" | "model_not_found" | "auth_error" | "config_error";
   fallbackProvider: "openai" | null;
   skipped?: boolean;
   reason?: string;
@@ -263,6 +264,15 @@ function normalizeEvidenceField(text: string | null | undefined): string {
   return text.replace(/^\s*\d{4}:\s?/gm, "").trim();
 }
 
+function classifyReviewerError(error: unknown): NotePassResult["status"] {
+  const kind = classifyProviderFailure(error);
+  if (kind === "no_credits" || kind === "model_not_found" || kind === "auth_error" || kind === "config_error") return kind;
+  if (kind === "timeout") return "timeout";
+  if (kind === "rate_limited") return "rate_limited";
+  if (kind === "provider_busy") return "retry_exhausted";
+  return "provider_error";
+}
+
 export function isTransientProviderError(error: unknown): boolean {
   const candidate = error as { status?: unknown; code?: unknown; message?: unknown } | null;
   const message = typeof candidate?.message === "string" ? candidate.message : String(error);
@@ -303,6 +313,9 @@ export async function runNotesProviderWithFallback<T>(args: {
     return await retryTransientProviderFailure(args.primary, { budgetMs: args.retryBudgetMs });
   } catch (error) {
     if (args.primaryProvider !== "gemini" || !isTransientProviderError(error)) {
+      throw error;
+    }
+    if (!getAIProviderPolicy().fallbackAllowed) {
       throw error;
     }
     logger.warn("Note reviewer primary provider exhausted transient retries; falling back", {
@@ -390,6 +403,7 @@ export async function runReviewerPack(
   options: {
     jobId: string;
     chunkId: string;
+    chunkIndex?: number;
     signal?: AbortSignal;
     definitions?: NoteReviewerDefinition[];
     reviewerResponse?: (definition: NoteReviewerDefinition) => Promise<string>;
@@ -397,6 +411,7 @@ export async function runReviewerPack(
 ): Promise<ReviewerPackResult> {
   const startedAt = Date.now();
   const definitions = options.definitions ?? getNoteDefinitions();
+  validateArticleNoteReviewerCoverage(definitions);
   const events = eventUnderstanding?.events ?? [];
   const results = await runWithBoundedConcurrency(definitions, config.NOTE_REVIEWER_CONCURRENCY, async (definition) => {
     const passStartedAt = Date.now();
@@ -409,16 +424,20 @@ export async function runReviewerPack(
     logger.info("NOTE_REVIEWER_START", {
       jobId: options.jobId,
       chunkId: options.chunkId,
+      chunkIndex: options.chunkIndex ?? null,
       reviewerId: definition.id,
       category: definition.category,
       kind: definition.kind,
       destination: definition.destination,
+      articleId: reviewerArticleId(definition),
+      promptFile: definition.filename,
+      promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
     });
     try {
       const { response, parsed } = await runNotesProviderWithFallback({
         primaryProvider: provider,
         retryBudgetMs: config.NOTE_REVIEWER_RETRY_BUDGET_MS,
-        onFallback: () => { fallbackProvider = "openai"; },
+        onFallback: () => { fallbackProvider = getAIProviderPolicy().fallbackProviders[0] ?? null; },
         primary: async () => {
           const response = options.reviewerResponse ? null : await callNotesOpenAI({
             definition,
@@ -428,7 +447,7 @@ export async function runReviewerPack(
             seed: jobConfig.seed,
             signal: options.signal,
             provider,
-            timeoutMs: Math.min(config.JUDGE_TIMEOUT_MS, Math.max(1_000, Math.floor(config.NOTE_REVIEWER_RETRY_BUDGET_MS / 3))),
+            timeoutMs: config.NOTE_REVIEWER_REQUEST_TIMEOUT_MS,
           });
           const rawResponse = options.reviewerResponse ? await options.reviewerResponse(definition) : response!.rawResponse;
           responseReceivedAt = new Date().toISOString();
@@ -438,7 +457,9 @@ export async function runReviewerPack(
             : await parseJudgeWithRepair(rawResponse, model, { signal: options.signal, passName: definition.id }) };
         },
         fallback: async () => {
-          const response = await callNotesOpenAI({ definition, events, chunkText, temperature: jobConfig.temperature, seed: jobConfig.seed, signal: options.signal, provider: "openai", timeoutMs: config.JUDGE_TIMEOUT_MS });
+          const fallbackProvider = getAIProviderPolicy().fallbackProviders[0];
+          if (!fallbackProvider) throw new Error("No provider fallback is allowed by the active provider policy");
+          const response = await callNotesOpenAI({ definition, events, chunkText, temperature: jobConfig.temperature, seed: jobConfig.seed, signal: options.signal, provider: fallbackProvider, timeoutMs: config.NOTE_REVIEWER_REQUEST_TIMEOUT_MS });
           responseReceivedAt = new Date().toISOString();
           rawResponseLength = response.rawResponse.length;
           return { response, parsed: definition.kind === "note"
@@ -460,9 +481,11 @@ export async function runReviewerPack(
             rejectionReasons.push(validated.rejectionReason ?? "unknown note category");
           }
         }
+        const reviewerStatus: NotePassResult["status"] = parsed.parseError && notes.length === 0 ? "parse_error" : (notes.length > 0 ? "success" : "empty");
         logger.info("Note reviewer completion diagnostics", {
           jobId: options.jobId,
           chunkId: options.chunkId,
+          chunkIndex: options.chunkIndex ?? null,
           reviewer: definition.id,
           provider,
           model,
@@ -475,10 +498,12 @@ export async function runReviewerPack(
           rejectedCount,
           parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
           fallbackProvider,
+          status: reviewerStatus,
         });
         logger.info("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
           jobId: options.jobId,
           chunkId: options.chunkId,
+          chunkIndex: options.chunkIndex ?? null,
           reviewerId: definition.id,
           category: definition.category,
           responseReceived: responseReceivedAt !== null,
@@ -488,6 +513,7 @@ export async function runReviewerPack(
           acceptedCount: notes.length,
           error: parsed.parseError,
           fallbackProvider,
+          status: reviewerStatus,
         });
         logger.info("NOTE_REVIEWER_END", {
           jobId: options.jobId,
@@ -498,7 +524,10 @@ export async function runReviewerPack(
           acceptedCount: notes.length,
           passedToPersistenceCount: notes.length,
           durationMs: Date.now() - passStartedAt,
-          status: "success",
+          status: reviewerStatus,
+          articleId: reviewerArticleId(definition),
+          promptFile: definition.filename,
+          promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
         });
         return { definition, notes, findings: [], response, duration: Date.now() - passStartedAt, diagnostics: {
           requestStartedAt,
@@ -510,6 +539,7 @@ export async function runReviewerPack(
           rejectedCount,
           parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
           fallbackProvider,
+          status: reviewerStatus,
         } };
       }
       const articleId = reviewerArticleId(definition);
@@ -526,10 +556,12 @@ export async function runReviewerPack(
         duration: Date.now() - passStartedAt,
       };
     } catch (error) {
-      logger.warn("Reviewer pack entry failed", { jobId: options.jobId, chunkId: options.chunkId, reviewer: definition.id, error: error instanceof Error ? error.message : String(error) });
+      const reviewerStatus = classifyReviewerError(error);
+      logger.warn("Reviewer pack entry failed", { jobId: options.jobId, chunkId: options.chunkId, reviewer: definition.id, error: error instanceof Error ? error.message : String(error), status: reviewerStatus });
       logger.warn("Note reviewer completion diagnostics", {
         jobId: options.jobId,
         chunkId: options.chunkId,
+        chunkIndex: options.chunkIndex ?? null,
         reviewer: definition.id,
         provider,
         model,
@@ -542,10 +574,12 @@ export async function runReviewerPack(
         rejectedCount: 0,
         parseValidationError: error instanceof Error ? error.message : String(error),
         fallbackProvider,
+        status: reviewerStatus,
       });
       logger.warn("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
         jobId: options.jobId,
         chunkId: options.chunkId,
+        chunkIndex: options.chunkIndex ?? null,
         reviewerId: definition.id,
         category: definition.category,
         responseReceived: responseReceivedAt !== null,
@@ -555,17 +589,22 @@ export async function runReviewerPack(
         acceptedCount: 0,
         error: error instanceof Error ? error.message : String(error),
         fallbackProvider,
+        status: reviewerStatus,
       });
       logger.warn("NOTE_REVIEWER_END", {
         jobId: options.jobId,
         chunkId: options.chunkId,
+        chunkIndex: options.chunkIndex ?? null,
         reviewerId: definition.id,
         category: definition.category,
         generatedCount: 0,
         acceptedCount: 0,
         passedToPersistenceCount: 0,
         durationMs: Date.now() - passStartedAt,
-        status: "error",
+        status: reviewerStatus,
+        articleId: reviewerArticleId(definition),
+        promptFile: definition.filename,
+        promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
       });
       return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: String(error), diagnostics: {
         requestStartedAt,
@@ -576,6 +615,7 @@ export async function runReviewerPack(
         rejectedCount: 0,
         parseValidationError: error instanceof Error ? error.message : String(error),
         fallbackProvider,
+        status: reviewerStatus,
       } };
     }
   });
@@ -609,6 +649,7 @@ export async function runReviewerPack(
     rejectedCount: result.diagnostics?.rejectedCount ?? 0,
     parseValidationError: result.diagnostics?.parseValidationError ?? result.error ?? null,
     fallbackProvider: result.diagnostics?.fallbackProvider ?? null,
+    status: result.diagnostics?.status ?? (result.notes.length > 0 ? "success" : "empty"),
     ...(result.error ? { reason: "failed", skipped: false } : {}),
   } satisfies NotePassResult));
   const deduplicatedNotes = dedup(notes);
@@ -643,6 +684,15 @@ export async function runNotesDetection(
     ...options,
     definitions: getNoteDefinitions().filter((definition) => definition.kind === "note"),
   });
+  const permanentFailure = sharedResult.passResults.find((pass) =>
+    pass.status === "no_credits" || pass.status === "model_not_found" || pass.status === "auth_error" || pass.status === "config_error",
+  );
+  if (permanentFailure) {
+    const error = Object.assign(new Error(`Permanent provider failure in ${permanentFailure.reviewerId}: ${permanentFailure.status}`), {
+      providerFailure: permanentFailure.status,
+    });
+    throw error;
+  }
   return {
     notes: sharedResult.notes,
     passResults: sharedResult.passResults,

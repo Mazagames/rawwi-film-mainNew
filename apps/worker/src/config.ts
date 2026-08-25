@@ -1,4 +1,36 @@
 export type ViolationSystemVersion = "v2" | "v3" | "v4" | "v5";
+export type AIProvider = "openai" | "gemini";
+export type AIProviderMode = "auto" | "openai-only" | "gemini-only";
+
+export type AIProviderPolicy = {
+  mode: AIProviderMode;
+  primaryProvider: AIProvider;
+  fallbackProviders: AIProvider[];
+  fallbackAllowed: boolean;
+};
+
+export function parseAIProviderMode(value: unknown): AIProviderMode {
+  return value === "gemini-only" || value === "openai-only" || value === "auto" ? value : "auto";
+}
+
+export function resolveAIProvider(requestedProvider: AIProvider = "openai"): AIProvider {
+  const mode = parseAIProviderMode(process.env.AI_PROVIDER_MODE);
+  if (mode === "gemini-only") return "gemini";
+  if (mode === "openai-only") return "openai";
+  return requestedProvider;
+}
+
+export function getAIProviderPolicy(): AIProviderPolicy {
+  const mode = parseAIProviderMode(process.env.AI_PROVIDER_MODE);
+  const configuredProvider = (process.env.AI_PROVIDER ?? "openai").toLowerCase() === "gemini" ? "gemini" : "openai";
+  const primaryProvider = mode === "gemini-only" ? "gemini" : mode === "openai-only" ? "openai" : configuredProvider;
+  return {
+    mode,
+    primaryProvider,
+    fallbackProviders: mode === "auto" ? (primaryProvider === "gemini" ? ["openai"] : []) : [],
+    fallbackAllowed: mode === "auto" && primaryProvider === "gemini",
+  };
+}
 
 export function parseViolationSystemVersion(value: unknown, fallback: ViolationSystemVersion = "v3"): ViolationSystemVersion {
   return value === "v2" || value === "v3" || value === "v4" || value === "v5" ? value : fallback;
@@ -22,6 +54,7 @@ export const config = {
   SUPABASE_URL: process.env.SUPABASE_URL ?? "",
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   AI_PROVIDER: (process.env.AI_PROVIDER ?? "openai").toLowerCase() as "openai" | "gemini",
+  AI_PROVIDER_MODE: parseAIProviderMode(process.env.AI_PROVIDER_MODE),
   GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "",
   GEMINI_ROUTER_MODEL: process.env.GEMINI_ROUTER_MODEL ?? "gemini-2.5-flash",
   GEMINI_JUDGE_MODEL: process.env.GEMINI_JUDGE_MODEL ?? "gemini-2.5-pro",
@@ -70,8 +103,9 @@ export const config = {
     1,
     parseInt(process.env.WORKER_CHUNK_CONCURRENCY ?? process.env.export_WORKER_CHUNK_CONCURRENCY ?? "1", 10) || 1
   ),
-  NOTE_REVIEWER_CONCURRENCY: Math.max(1, parseInt(process.env.NOTE_REVIEWER_CONCURRENCY ?? "2", 10) || 2),
-  NOTE_REVIEWER_RETRY_BUDGET_MS: Math.max(1_000, parseInt(process.env.NOTE_REVIEWER_RETRY_BUDGET_MS ?? "30000", 10) || 30_000),
+  NOTE_REVIEWER_CONCURRENCY: Math.max(1, parseInt(process.env.NOTE_REVIEWER_CONCURRENCY ?? "3", 10) || 3),
+  NOTE_REVIEWER_REQUEST_TIMEOUT_MS: Math.max(1_000, parseInt(process.env.NOTE_REVIEWER_REQUEST_TIMEOUT_MS ?? "90000", 10) || 90_000),
+  NOTE_REVIEWER_RETRY_BUDGET_MS: Math.max(1_000, parseInt(process.env.NOTE_REVIEWER_RETRY_BUDGET_MS ?? "270000", 10) || 270_000),
   V5_EVENT_CANDIDATE_RUNNER_ENABLED: (process.env.V5_EVENT_CANDIDATE_RUNNER_ENABLED ?? "false").toLowerCase() === "true",
   V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED: (process.env.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED ?? "false").toLowerCase() === "true",
   V5_SHARED_REVIEWER_PACK_ENABLED: (process.env.V5_SHARED_REVIEWER_PACK_ENABLED ?? "false").toLowerCase() === "true",

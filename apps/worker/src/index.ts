@@ -21,6 +21,8 @@ import { setContext, logger } from "./logger.js";
 import { initializeLexiconCache, getLexiconCache } from "./lexiconCache.js";
 import { processChunkForJob } from "./pipelineRunner.js";
 import { processPdfExtraction } from "./pdfExtraction.js";
+import { classifyProviderFailure } from "./aiClient.js";
+import { getAIProviderPolicy } from "./config.js";
 
 type ChunkProcessResult = {
   ok: boolean;
@@ -33,15 +35,24 @@ const AI_OVERLOAD_RETRY_MARKER = "__ai_overload_retry:";
 const CHUNK_TIMEOUT_REQUEUED_PUBLIC_MESSAGE = "Analysis chunk timed out and was re-queued";
 const CHUNK_TIMEOUT_FAILED_PUBLIC_MESSAGE = "Analysis chunk timed out repeatedly and the job failed";
 const CHUNK_TIMEOUT_RETRY_MARKER = "__chunk_timeout_retry:";
+const GPU_OVERHEAT_PUBLIC_MESSAGE = "GPU Overheat";
+const AI_BUSY_PUBLIC_MESSAGE = "Server is busy, please try again later.";
+const AI_UNAVAILABLE_PUBLIC_MESSAGE = "AI service temporarily unavailable.";
 
 let lastLexiconRefreshJobId: string | null = null;
 
 function getRuntimeConfigLogPayload() {
+  const providerPolicy = getAIProviderPolicy();
+  const isGemini = providerPolicy.primaryProvider === "gemini";
   return {
-    routerModel: config.OPENAI_ROUTER_MODEL,
-    judgeModel: config.OPENAI_JUDGE_MODEL,
-    auditorModel: config.OPENAI_AUDITOR_MODEL,
-    rationaleModel: config.OPENAI_RATIONALE_MODEL,
+    provider: providerPolicy.primaryProvider,
+    providerMode: providerPolicy.mode,
+    fallbackAllowed: providerPolicy.fallbackAllowed,
+    fallbackProviders: providerPolicy.fallbackProviders,
+    routerModel: isGemini ? config.GEMINI_ROUTER_MODEL : config.OPENAI_ROUTER_MODEL,
+    judgeModel: isGemini ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+    auditorModel: isGemini ? config.GEMINI_AUDITOR_MODEL : config.OPENAI_AUDITOR_MODEL,
+    rationaleModel: isGemini ? config.GEMINI_RATIONALE_MODEL : config.OPENAI_RATIONALE_MODEL,
     judgeTimeoutMs: config.JUDGE_TIMEOUT_MS,
     passHardTimeoutMs: config.PASS_HARD_TIMEOUT_MS,
     chunkSoftTimeoutMs: config.CHUNK_SOFT_TIMEOUT_MS,
@@ -205,6 +216,27 @@ async function processClaimedChunk(
       await setChunkFailed(claimed.id, errMsg);
       await setJobFailed(job.id, errMsg);
       return { ok: false, retryable: false, error: errMsg };
+    }
+    const providerFailure = classifyProviderFailure(e);
+    if (providerFailure === "no_credits" || providerFailure === "model_not_found" || providerFailure === "auth_error" || providerFailure === "config_error") {
+      const publicMessage = providerFailure === "no_credits" ? GPU_OVERHEAT_PUBLIC_MESSAGE : AI_UNAVAILABLE_PUBLIC_MESSAGE;
+      logger.error("Permanent provider failure; stopping job", {
+        jobId: job.id,
+        chunkId: claimed.id,
+        providerFailure,
+        error: errMsg,
+      });
+      await setChunkFailed(claimed.id, publicMessage);
+      await setJobFailed(job.id, publicMessage);
+      return { ok: false, retryable: false, error: publicMessage };
+    }
+    if (providerFailure === "timeout" || providerFailure === "provider_busy" || providerFailure === "rate_limited") {
+      logger.warn("Transient provider failure; re-queueing chunk", {
+        jobId: job.id,
+        chunkId: claimed.id,
+        providerFailure,
+        error: errMsg,
+      });
     }
     if (isAiOverloadIssue(errMsg)) {
       const retryCount = getAiOverloadRetryCount(claimed.last_error) + 1;
@@ -380,8 +412,8 @@ async function runOnce(jobId: string | undefined): Promise<void> {
     logger.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
     process.exit(1);
   }
-  if (!config.OPENAI_API_KEY) {
-    logger.warn("OPENAI_API_KEY not set; Router/Judge will fail");
+  if (!config.GEMINI_API_KEY && getAIProviderPolicy().primaryProvider === "gemini") {
+    logger.warn("GEMINI_API_KEY not set; AI stages will fail");
   }
 
   await initializeLexiconCache(supabase);
@@ -459,8 +491,8 @@ async function runDev(): Promise<never> {
     logger.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
     process.exit(1);
   }
-  if (!config.OPENAI_API_KEY) {
-    logger.warn("OPENAI_API_KEY not set; Router/Judge will fail");
+  if (!config.GEMINI_API_KEY && getAIProviderPolicy().primaryProvider === "gemini") {
+    logger.warn("GEMINI_API_KEY not set; AI stages will fail");
   }
 
   await initializeLexiconCache(supabase);

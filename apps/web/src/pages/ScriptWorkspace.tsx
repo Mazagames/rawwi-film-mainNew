@@ -2126,6 +2126,7 @@ export function ScriptWorkspace() {
   const [reportFindings, setReportFindings] = useState<AnalysisFinding[]>([]);
   const [reportManualNotes, setReportManualNotes] = useState<AnalysisFinding[]>([]);
   const [reportReviewFindings, setReportReviewFindings] = useState<AnalysisReviewFinding[]>([]);
+  const reportLoadRequestRef = useRef(0);
   const [highlightExpectedCount, setHighlightExpectedCount] = useState(0);
   const [highlightLocatableCount, setHighlightLocatableCount] = useState(0);
   const [highlightRenderedCount, setHighlightRenderedCount] = useState(0);
@@ -3044,6 +3045,8 @@ export function ScriptWorkspace() {
   };
 
   const handleSelectReportForHighlights = useCallback(async (report: ReportListItem) => {
+    const requestId = reportLoadRequestRef.current + 1;
+    reportLoadRequestRef.current = requestId;
     let selectedReport: ReportListItem;
     try {
       selectedReport = validateSelectedReport(report);
@@ -3056,6 +3059,8 @@ export function ScriptWorkspace() {
     const jobId = selectedReport.jobId;
     if (IS_DEV) console.log('[ScriptWorkspace] Highlight clicked:', { reportId, jobId });
     setSelectedReportForHighlights(selectedReport);
+    setSelectedReportSummary(null);
+    setSelectedJobCanonicalHash(null);
     setPinnedHighlight(null);
     // setReportFindingsLoading(true);
     setSelectedFindingId(null);
@@ -3064,48 +3069,34 @@ export function ScriptWorkspace() {
     setHighlightLocatableCount(0);
     setHighlightRenderedCount(0);
     try {
-      if (jobId) {
-        const [job, list, reviewList, fullReport] = await Promise.all([
-          tasksApi.getJob(jobId),
-          findingsApi.getByReport(reportId),
-          findingsApi.getReviewByReport(reportId),
-          reportsApi.getById(reportId),
-        ]);
-        const { data: noteRows, error: notesError } = await supabase
-          .from('analysis_notes')
-          .select('id, job_id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at, source, script_id, version_id, start_offset_global, end_offset_global')
-          .eq('job_id', jobId)
-          .order('created_at', { ascending: true });
-        if (notesError) throw new Error(`Notes query failed: ${notesError.message}`);
-        setSelectedJobCanonicalHash((job as { scriptContentHash?: string | null }).scriptContentHash ?? null);
-        setSelectedReportSummary(fullReport);
-        setReportFindings(list);
-        setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceReportNote(row as ReportNote & { job_id: string; source?: string | null; script_id?: string | null; version_id?: string | null; start_offset_global?: number | null; end_offset_global?: number | null }, script.id, script.currentVersionId ?? '')));
-        setReportReviewFindings(reviewList);
-        if (IS_DEV) console.log('[ScriptWorkspace] Findings loaded for highlights:', list.length);
-        if (id) {
-          scriptsApi.setHighlightPreference(id, jobId).catch(() => { });
-        }
-      } else {
-        setSelectedJobCanonicalHash(null);
-        const [list, reviewList, fullReport] = await Promise.all([
-          findingsApi.getByReport(reportId!),
-          findingsApi.getReviewByReport(reportId!),
-          reportsApi.getById(reportId!),
-        ]);
-        const { data: noteRows, error: notesError } = await supabase
-          .from('analysis_notes')
-          .select('id, job_id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at, source, script_id, version_id, start_offset_global, end_offset_global')
-          .eq('job_id', fullReport.jobId)
-          .order('created_at', { ascending: true });
-        if (notesError) throw new Error(`Notes query failed: ${notesError.message}`);
-        setSelectedReportSummary(fullReport);
-        setReportFindings(list);
-        setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceReportNote(row as ReportNote & { job_id: string; source?: string | null; script_id?: string | null; version_id?: string | null; start_offset_global?: number | null; end_offset_global?: number | null }, script.id, script.currentVersionId ?? '')));
-        setReportReviewFindings(reviewList);
-        if (IS_DEV) console.log('[ScriptWorkspace] Findings loaded for highlights:', list.length);
+      const [job, list, reviewList, fullReport] = await Promise.all([
+        tasksApi.getJob(jobId),
+        findingsApi.getByReport(reportId),
+        findingsApi.getReviewByReport(reportId),
+        reportsApi.getById(reportId),
+      ]);
+      if (reportLoadRequestRef.current !== requestId) return;
+      if (fullReport.id !== reportId || fullReport.jobId !== jobId || fullReport.scriptId !== selectedReport.scriptId || fullReport.versionId !== selectedReport.versionId) {
+        throw new Error('Selected report identity does not match the loaded report');
+      }
+      const { data: noteRows, error: notesError } = await supabase
+        .from('analysis_notes')
+        .select('id, job_id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at, source, script_id, version_id, start_offset_global, end_offset_global')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: true });
+      if (notesError) throw new Error(`Notes query failed: ${notesError.message}`);
+      if (reportLoadRequestRef.current !== requestId) return;
+      setSelectedJobCanonicalHash((job as { scriptContentHash?: string | null }).scriptContentHash ?? null);
+      setSelectedReportSummary(fullReport);
+      setReportFindings(list);
+      setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceReportNote(row as ReportNote & { job_id: string; source?: string | null; script_id?: string | null; version_id?: string | null; start_offset_global?: number | null; end_offset_global?: number | null }, selectedReport.scriptId, selectedReport.versionId)));
+      setReportReviewFindings(reviewList);
+      if (IS_DEV) console.log('[ScriptWorkspace] Findings loaded for highlights:', list.length);
+      if (id) {
+        scriptsApi.setHighlightPreference(id, jobId).catch(() => { });
       }
     } catch (error) {
+      if (reportLoadRequestRef.current !== requestId) return;
       setReportFindings([]);
       setReportManualNotes([]);
       setReportReviewFindings([]);
@@ -3373,10 +3364,11 @@ export function ScriptWorkspace() {
   useEffect(() => {
     if (!id || reportHistory.length === 0 || restoredHighlightRef.current) return;
     let cancelled = false;
+    const requestId = reportLoadRequestRef.current;
     (async () => {
       try {
         const pref = await scriptsApi.getHighlightPreference(id);
-        if (cancelled) return;
+        if (cancelled || reportLoadRequestRef.current !== requestId) return;
         if (!pref.jobId) {
           restoredHighlightRef.current = true;
           return;
@@ -3690,6 +3682,17 @@ export function ScriptWorkspace() {
       : (analysisJob?.progressDone ?? 0);
   const progressDisplayTotal = totalChunksTracked > 0 ? totalChunksTracked : (analysisJob?.progressTotal ?? 0);
   const progressDisplayPair = `${progressDisplayDone} / ${progressDisplayTotal}`;
+  const articleReviewCoverage = useMemo(() => {
+    const covered = chunkStatuses
+      .map((chunk) => chunk.articleCoverage)
+      .filter((coverage): coverage is NonNullable<ChunkStatus['articleCoverage']> => coverage != null);
+    if (covered.length === 0) return null;
+    return {
+      terminal: covered.reduce((total, coverage) => total + coverage.terminal, 0),
+      expected: covered.reduce((total, coverage) => total + coverage.expected, 0),
+      missing: covered.reduce((total, coverage) => total + coverage.missing, 0),
+    };
+  }, [chunkStatuses]);
   const activeChunk = chunkStatuses.find((c) => c.status === 'judging') ?? null;
   const activeChunkNumber = activeChunk ? activeChunk.chunkIndex + 1 : null;
   const activeChunkLabel = activeChunkNumber != null
@@ -3883,6 +3886,8 @@ export function ScriptWorkspace() {
         : 'Your progress is preserved. You can resume analysis later from roughly the same point.';
     }
     if ((analysisJob?.status ?? '').toLowerCase() === 'failed') {
+      const safeError = getPublicAnalysisErrorMessage(analysisJob?.errorMessage);
+      if (safeError) return safeError;
       return lang === 'ar'
         ? 'توقف التحليل بسبب خطأ. يمكنك الإغلاق أو إعادة المحاولة بعد مراجعة الرسالة.'
         : 'The analysis stopped because of an error. You can close this dialog or retry after reviewing the message.';
@@ -8068,6 +8073,12 @@ export function ScriptWorkspace() {
                     <span className="text-text-main">{analysisJob.status}</span>
                     <span className="text-text-muted">{lang === 'ar' ? 'التقدم:' : 'progress:'}</span>
                     <span className="text-text-main"><span dir="ltr">{progressDisplayDone}/{progressDisplayTotal}</span> ({analysisJob.progressPercent}%)</span>
+                    {articleReviewCoverage && (
+                      <>
+                        <span className="text-text-muted">{lang === 'ar' ? 'مراجعات المواد:' : 'Article reviews:'}</span>
+                        <span className="text-text-main" dir="ltr">{articleReviewCoverage.terminal}/{articleReviewCoverage.expected} (missing {articleReviewCoverage.missing})</span>
+                      </>
+                    )}
                     <span className="text-text-muted">{lang === 'ar' ? 'أُنشئت:' : 'created:'}</span>
                     <span className="text-text-main">{formatOptionalTimeValue(analysisJob.createdAt)}</span>
                     <span className="text-text-muted">{lang === 'ar' ? 'بدأت:' : 'started:'}</span>

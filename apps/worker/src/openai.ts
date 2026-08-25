@@ -1,5 +1,5 @@
 import { generateStructuredCompletion, isActiveAIProviderConfigured } from "./aiClient.js";
-import { config } from "./config.js";
+import { config, getAIProviderPolicy, resolveAIProvider } from "./config.js";
 import type { GCAMArticle } from "./gcam.js";
 import {
   auditorAssessmentSchema,
@@ -203,10 +203,13 @@ export async function callJudgeRaw(
     );
   }
 
-  const provider = options.providerOverride ?? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_PROVIDER : config.AI_PROVIDER);
+  const configuredProvider = options.providerOverride ?? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_PROVIDER : config.AI_PROVIDER);
+  const provider = isV5EventFirst
+    ? getAIProviderPolicy().primaryProvider
+    : resolveAIProvider(configuredProvider);
   const configuredModel = options.modelOverride ?? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : jobConfig.judge_model);
   const resolvedModel = provider === "gemini"
-    ? (options.modelOverride ?? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : config.GEMINI_JUDGE_MODEL))
+    ? (options.modelOverride ?? (isV5EventFirst ? config.GEMINI_JUDGE_MODEL : config.GEMINI_JUDGE_MODEL))
     : configuredModel;
 
   logger.info("[DEBUG] Judge request prepared", {

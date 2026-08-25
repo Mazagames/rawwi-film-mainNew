@@ -3,10 +3,11 @@
  * Article 25 = admin only (never from AI); Article 26 = out of scope.
  */
 import { getPolicyArticle, getScannableArticleIds } from "./policyMap.js";
+import { NOTE_REVIEWER_ARTICLE_NUMBERS } from "./notePromptPack.js";
 
 // Use all scannable articles (4-24, excluding admin/out-of-scope)
 // This ensures multi-pass system has access to all articles it needs
-export const ALWAYS_CHECK_ARTICLES = getScannableArticleIds();
+export const ALWAYS_CHECK_ARTICLES = [...NOTE_REVIEWER_ARTICLE_NUMBERS].sort((a, b) => a - b);
 
 export type GCAMArticle = {
   id: number;

@@ -1,16 +1,16 @@
 import test from "node:test";
 import assert from "node:assert";
 import nock from "nock";
-import { config } from "./config.js";
+import { config, getAIProviderPolicy } from "./config.js";
+import { classifyProviderFailure, generateStructuredCompletion } from "./aiClient.js";
 
 // Ensure keys are set before aiClient initialization
 (config as any).OPENAI_API_KEY = "mock-openai";
 (config as any).GEMINI_API_KEY = "mock-gemini";
 
-import { generateStructuredCompletion } from "./aiClient.js";
-
 test("aiClient - abstraction tests", async (t) => {
   const originalProvider = config.AI_PROVIDER;
+  const originalProviderMode = process.env.AI_PROVIDER_MODE;
 
   t.beforeEach(() => {
     nock.disableNetConnect();
@@ -20,6 +20,8 @@ test("aiClient - abstraction tests", async (t) => {
     nock.cleanAll();
     nock.enableNetConnect();
     (config as any).AI_PROVIDER = originalProvider;
+    if (originalProviderMode === undefined) delete process.env.AI_PROVIDER_MODE;
+    else process.env.AI_PROVIDER_MODE = originalProviderMode;
   });
 
   await t.test("AI_PROVIDER=openai selects OpenAI adapter and normalizes response", async () => {
@@ -179,5 +181,42 @@ test("aiClient - abstraction tests", async (t) => {
 
     assert.ok(scope.isDone());
     assert.strictEqual(resp.content, '{"test":"ok"}');
+  });
+
+  await t.test("Gemini request timeout rejects a slow provider operation", async () => {
+    (config as any).AI_PROVIDER = "gemini";
+    (config as any).GEMINI_API_KEY = "mock-gemini";
+    nock("https://generativelanguage.googleapis.com")
+      .post("/v1beta/models/gemini-mock:generateContent")
+      .delay(100)
+      .reply(200, { candidates: [{ content: { parts: [{ text: '{"test":"late"}' }] }, finishReason: "STOP" }] });
+
+    await assert.rejects(
+      generateStructuredCompletion({ model: "gemini-mock", systemPrompt: "sys", userPrompt: "usr", timeoutMs: 10 }),
+      (error: any) => error?.name === "ProviderTimeoutError",
+    );
+    nock.cleanAll();
+  });
+
+  await t.test("Gemini-only mode blocks explicit OpenAI fallback requests", async () => {
+    process.env.AI_PROVIDER_MODE = "gemini-only";
+    (config as any).AI_PROVIDER = "gemini";
+    await assert.rejects(
+      generateStructuredCompletion({ model: "gpt-mock", systemPrompt: "sys", userPrompt: "usr", providerOverride: "openai" }),
+      (error: any) => error?.name === "ProviderPolicyError",
+    );
+  });
+
+  await t.test("Provider failures preserve billing and model-not-found classifications", async () => {
+    assert.equal(classifyProviderFailure(new Error("429 You have no credits remaining")), "no_credits");
+    assert.equal(classifyProviderFailure(Object.assign(new Error("model not found"), { status: 404 })), "model_not_found");
+    assert.equal(classifyProviderFailure(Object.assign(new Error("unauthorized"), { status: 401 })), "auth_error");
+  });
+
+  await t.test("Provider modes expose explicit primary and fallback policy", async () => {
+    process.env.AI_PROVIDER_MODE = "gemini-only";
+    assert.deepStrictEqual(getAIProviderPolicy(), { mode: "gemini-only", primaryProvider: "gemini", fallbackProviders: [], fallbackAllowed: false });
+    process.env.AI_PROVIDER_MODE = "openai-only";
+    assert.deepStrictEqual(getAIProviderPolicy(), { mode: "openai-only", primaryProvider: "openai", fallbackProviders: [], fallbackAllowed: false });
   });
 });

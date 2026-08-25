@@ -1592,6 +1592,31 @@ function compareDbFindingStable(a: DbFinding, b: DbFinding): number {
   );
 }
 
+function dedupeDbFindings(findings: DbFinding[]): DbFinding[] {
+  const byIdentity = new Map<string, DbFinding>();
+  for (const finding of findings) {
+    const identity = [
+      finding.source ?? "ai",
+      finding.article_id,
+      finding.atom_id ?? "",
+      finding.start_offset_global ?? "",
+      finding.end_offset_global ?? "",
+      finding.evidence_snippet,
+    ].join("|");
+    const existing = byIdentity.get(identity);
+    if (!existing) {
+      byIdentity.set(identity, finding);
+      continue;
+    }
+    const currentSeverity = SEVERITY_ORDER[existing.severity] ?? 0;
+    const nextSeverity = SEVERITY_ORDER[finding.severity] ?? 0;
+    if (nextSeverity > currentSeverity || (nextSeverity === currentSeverity && (finding.confidence ?? 0) > (existing.confidence ?? 0))) {
+      byIdentity.set(identity, finding);
+    }
+  }
+  return [...byIdentity.values()];
+}
+
 function getFindingV3(f: DbFinding): Record<string, unknown> {
   const locationObj = ((f.location as Record<string, unknown>) ?? {}) as Record<string, unknown>;
   return ((locationObj.v3 as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
@@ -1631,7 +1656,7 @@ export function buildSummaryJson(
 ): SummaryJson {
   const generated_at = new Date().toISOString();
   const filtered = findings.filter((f) => f.article_id !== OUT_OF_SCOPE_ARTICLE_ID);
-  const sortedFindings = [...filtered].sort(compareDbFindingStable);
+  const sortedFindings = dedupeDbFindings([...filtered].sort(compareDbFindingStable)).sort(compareDbFindingStable);
   logger.info("[DEBUG] Aggregation input summary", {
     jobId,
     rawFindings: findings.length,

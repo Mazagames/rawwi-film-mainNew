@@ -243,6 +243,16 @@ export interface ChunkStatus {
   currentFindingsCount?: number | null;
   /** Short excerpt; prefer when status is judging */
   textPreview?: string | null;
+  articleCoverage?: {
+    expected: number;
+    scheduled: number;
+    terminal: number;
+    success: number;
+    empty: number;
+    timeout: number;
+    failed: number;
+    missing: number;
+  } | null;
 }
 
 export interface Finding {

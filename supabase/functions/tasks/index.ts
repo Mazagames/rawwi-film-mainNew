@@ -31,6 +31,7 @@ import { offsetRangeToPageMinMax, type ScriptPageRow } from "../_shared/offsetTo
 
 import {
   DEFAULT_DETERMINISTIC_CONFIG,
+  resolveProviderSnapshot,
   PROMPT_VERSIONS,
   ROUTER_SYSTEM_MSG,
   JUDGE_SYSTEM_MSG
@@ -417,6 +418,17 @@ Deno.serve(async (req: Request) => {
         console.error(`[tasks] GET chunks correlationId=${correlationId} error=`, chunkErr.message);
         return json({ error: chunkErr.message }, 500);
       }
+      const { data: coverageRows } = await supabase
+        .from("analysis_chunk_runs")
+        .select("truth_layer_meta")
+        .eq("job_id", jobId);
+      const coverageByIndex = new Map<number, Record<string, unknown>>();
+      for (const row of coverageRows ?? []) {
+        const meta = (row as { truth_layer_meta?: { article_coverage?: Record<string, unknown> } | null }).truth_layer_meta;
+        const coverage = meta?.article_coverage;
+        const index = typeof coverage?.chunk_index === "number" ? coverage.chunk_index : null;
+        if (index != null) coverageByIndex.set(index, coverage);
+      }
       return json(
         (chunkRows ?? []).map((c: any) => ({
           chunkIndex: c.chunk_index,
@@ -435,6 +447,7 @@ Deno.serve(async (req: Request) => {
             c.status === "judging" && c.text_preview != null && String(c.text_preview).trim() !== ""
               ? String(c.text_preview)
               : null,
+          articleCoverage: coverageByIndex.get(c.chunk_index) ?? null,
         }))
       );
     }
@@ -795,6 +808,7 @@ Deno.serve(async (req: Request) => {
   const chunkSize = 2_500;
   const overlapSize = 0;
   const totalDetectionPasses = requestedViolationSystemVersion === "v5" ? 21 : 11;
+  const providerSnapshot = resolveProviderSnapshot();
 
   const { data: job, error: jobErr } = await supabase
     .from("analysis_jobs")
@@ -811,6 +825,7 @@ Deno.serve(async (req: Request) => {
       canonical_length,
       config_snapshot: {
         ...DEFAULT_DETERMINISTIC_CONFIG,
+        ...providerSnapshot,
         analysis_memory_mode: analysisMemoryMode,
         pipeline_version: requestedPipelineVersion,
         violation_system_version: requestedViolationSystemVersion,

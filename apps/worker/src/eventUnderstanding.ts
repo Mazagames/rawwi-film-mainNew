@@ -2,9 +2,10 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import {
   generateStructuredCompletion,
+  type AICompletionRequest,
   type AICompletionResponse,
 } from "./aiClient.js";
-import { config } from "./config.js";
+import { config, getAIProviderPolicy } from "./config.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { extractJsonFromText } from "./schemas.js";
 import { logger } from "./logger.js";
@@ -752,15 +753,16 @@ async function executeEventUnderstandingWithRetry(req: AICompletionRequest): Pro
         continue;
       }
       
-      if (provider === "gemini") {
-        provider = "openai";
-        model = config.OPENAI_JUDGE_MODEL || "gpt-4.1";
+      const fallbackProvider = getAIProviderPolicy().fallbackProviders[0];
+      if (provider === "gemini" && fallbackProvider) {
+        provider = fallbackProvider;
+        model = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL;
         
         logger.warn("EVENT_UNDERSTANDING_PROVIDER_ATTEMPT", {
           provider,
           model,
           attempt: attempts,
-          error: "Fallback to OpenAI after Gemini failures",
+            error: `Fallback to ${provider} after Gemini failures`,
           fallback: true
         });
         
@@ -768,7 +770,7 @@ async function executeEventUnderstandingWithRetry(req: AICompletionRequest): Pro
           const fallbackResponse = await generateStructuredCompletion({
             ...req,
             model,
-            providerOverride: "openai",
+            providerOverride: provider,
           });
           return { ...fallbackResponse, resolvedModel: model };
         } catch (fallbackError: any) {

@@ -1,4 +1,4 @@
-import { config } from "./config.js";
+import { config, getAIProviderPolicy } from "./config.js";
 import { enforceDeterministicOwnership } from "./deterministicOwnership.js";
 import { groundFindingEvidenceToChunk } from "./evidenceGrounding.js";
 import { runFinalAdjudicator } from "./finalAdjudicator.js";
@@ -55,7 +55,7 @@ async function runReviewer(args: {
   const passName = `v5_article_${String(args.reviewer.articleNumber).padStart(2, "0")}`;
   const systemPrompt = args.reviewer.prompt;
   const userPrompt = renderBoundedStructuredEventContext(args.eventUnderstanding);
-  const primaryProvider = args.notesStyleProviderResolution ? config.AI_PROVIDER : config.V5_VIOLATION_JUDGE_PROVIDER;
+  const primaryProvider = getAIProviderPolicy().primaryProvider;
   const model = args.notesStyleProviderResolution
     ? (primaryProvider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL)
     : config.V5_VIOLATION_JUDGE_MODEL;
@@ -116,7 +116,11 @@ async function runReviewer(args: {
     const result = await runNotesProviderWithFallback({
       primaryProvider,
       primary: () => invoke(primaryProvider),
-      fallback: () => invoke("openai"),
+      fallback: () => {
+        const fallbackProvider = getAIProviderPolicy().fallbackProviders[0];
+        if (!fallbackProvider) throw new Error("No provider fallback is allowed by the active provider policy");
+        return invoke(fallbackProvider);
+      },
       retryBudgetMs: config.NOTE_REVIEWER_RETRY_BUDGET_MS,
     });
     return {

@@ -18,6 +18,7 @@ import { config, resolveV5CandidateEngine, resolveViolationSystemVersion } from 
 import { isValidAtomForArticle, normalizeAtomId } from "./policyMap.js";
 import type { JudgeFinding } from "./schemas.js";
 import { runNotesDetection, runReviewerPack, toNoteInsertRows } from "./noteDetection.js";
+import { validateArticleNoteReviewerCoverage } from "./notePromptPack.js";
 import { getScriptStandardRouterList } from "./gcam.js";
 import { ROUTER_SYSTEM_MSG, JUDGE_SYSTEM_MSG, injectLexiconIntoPrompts, PROMPT_VERSIONS } from "./aiConstants.js";
 import { runMultiPassDetection, getDetectionPassesForViolationSystem, planDetectionPassExecution, type LexiconTerm } from "./multiPassJudge.js";
@@ -1790,6 +1791,7 @@ export async function processChunkJudge(
   const { id: jobId, script_id: scriptId, version_id: versionId } = job;
   const jobConfig = (job.config_snapshot as any) || {};
   const violationSystemVersion = resolveViolationSystemVersion(jobConfig, config.VIOLATION_SYSTEM_VERSION);
+  if (violationSystemVersion === "v5") validateArticleNoteReviewerCoverage();
   const detectionPasses = getDetectionPassesForViolationSystem(violationSystemVersion);
   const analysisProfile =
     jobConfig.analysis_profile === "quality" || jobConfig.analysis_profile === "turbo" || jobConfig.analysis_profile === "balanced"
@@ -3235,9 +3237,36 @@ export async function processChunkJudge(
         {
           jobId,
           chunkId: chunk.id,
+          chunkIndex: chunk.chunk_index,
           signal,
         },
       );
+
+      const articlePasses = noteDetectionResult.passResults.filter((pass) => /^article_\d{2}_/.test(pass.reviewerId));
+      const articleCoverage = {
+        expected: 24,
+        scheduled: articlePasses.length,
+        terminal: articlePasses.filter((pass) => Boolean(pass.status)).length,
+        success: articlePasses.filter((pass) => pass.status === "success").length,
+        empty: articlePasses.filter((pass) => pass.status === "empty").length,
+        timeout: articlePasses.filter((pass) => pass.status === "timeout").length,
+        failed: articlePasses.filter((pass) => !["success", "empty"].includes(pass.status)).length,
+        missing: Math.max(0, 24 - articlePasses.length),
+        chunk_index: chunk.chunk_index,
+      };
+      logger.info("Article reviewer coverage", { jobId, chunkId: chunk.id, chunkIndex: chunk.chunk_index, ...articleCoverage });
+      await supabase
+        .from("analysis_chunk_runs")
+        .update({ truth_layer_meta: {
+          architecture: "advisory_model_plus_validator",
+          stage: "advisory",
+          advisory_count: allFindings.length,
+          validated_count: null,
+          auditor_layer_version: config.AUDITOR_LAYER_VERSION,
+          article_coverage: articleCoverage,
+        } })
+        .eq("job_id", jobId)
+        .eq("run_key", runKey);
 
       const noteRows = toNoteInsertRows(jobId, noteDetectionResult.notes);
       const noteRowCounts = countNoteCategoriesFromArray(noteRows);

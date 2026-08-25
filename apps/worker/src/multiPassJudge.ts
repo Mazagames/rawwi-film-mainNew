@@ -30,7 +30,7 @@ import {
   setChunkCurrentPass,
 } from "./jobs.js";
 import { evaluatePassGating } from "./passGating.js";
-import { config, parseViolationSystemVersion, type ViolationSystemVersion } from "./config.js";
+import { config, getAIProviderPolicy, parseViolationSystemVersion, type ViolationSystemVersion } from "./config.js";
 import {
   buildV3PromptOverlay,
   buildV3SubjectPromptSection,
@@ -1988,11 +1988,11 @@ async function runSinglePass(
       ? { jobId: diagnosticContext.jobId, chunkId: diagnosticContext.chunkId, passName: pass.name }
       : null;
     if (ledgerKey) {
-      const provider = config.V5_VIOLATION_JUDGE_PROVIDER;
+      const provider = getAIProviderPolicy().primaryProvider;
       await persistV5PassStart({
         ...ledgerKey,
         provider,
-        model: provider === "gemini" ? config.V5_VIOLATION_JUDGE_MODEL : config.V5_VIOLATION_JUDGE_MODEL,
+        model: provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.V5_VIOLATION_JUDGE_MODEL,
       });
     }
     try {
