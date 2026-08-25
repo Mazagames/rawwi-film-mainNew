@@ -42,7 +42,7 @@ export type NotePassResult = {
   acceptedCount: number;
   rejectedCount: number;
   parseValidationError: string | null;
-  status: "success" | "empty" | "parse_error" | "timeout" | "retry_exhausted" | "provider_error" | "rate_limited" | "no_credits" | "model_not_found" | "auth_error" | "config_error";
+  status: "success" | "empty" | "parse_error" | "timeout" | "retry_exhausted" | "provider_error" | "rate_limited" | "no_credits" | "model_not_found" | "auth_error" | "config_error" | "chunk_soft_deadline" | "chunk_hard_deadline";
   fallbackProvider: "openai" | null;
   skipped?: boolean;
   reason?: string;
@@ -267,6 +267,11 @@ function normalizeEvidenceField(text: string | null | undefined): string {
 }
 
 function classifyReviewerError(error: unknown): NotePassResult["status"] {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/chunk hard deadline/i.test(message)) return "chunk_hard_deadline";
+  if (/chunk soft deadline/i.test(message)) return "chunk_soft_deadline";
+  if (/analysis stopped/i.test(message)) return "chunk_hard_deadline";
+
   const kind = classifyProviderFailure(error);
   if (kind === "no_credits" || kind === "model_not_found" || kind === "auth_error" || kind === "config_error") return kind;
   if (kind === "timeout") return "timeout";
@@ -284,7 +289,13 @@ export function isTransientProviderError(error: unknown): boolean {
 
 export async function retryTransientProviderFailure<T>(
   operation: () => Promise<T>,
-  options: { maxAttempts?: number; budgetMs?: number; delay?: (milliseconds: number) => Promise<void>; scheduler?: AdaptiveReviewerScheduler } = {},
+  options: {
+    maxAttempts?: number;
+    budgetMs?: number;
+    delay?: (milliseconds: number) => Promise<void>;
+    scheduler?: AdaptiveReviewerScheduler;
+    onRetry?: (context: { attempt: number; retryDelayMs: number; retryCount: number }) => void;
+  } = {},
 ): Promise<T> {
   const maxAttempts = options.maxAttempts ?? 3;
   const delay = options.delay ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
@@ -300,6 +311,7 @@ export async function retryTransientProviderFailure<T>(
       const remainingMs = options.budgetMs === undefined ? computedBackoffMs : options.budgetMs - (Date.now() - startedAt);
       if (remainingMs <= 0) throw error;
       const jitteredBackoffMs = Math.max(1_000, Math.min(computedBackoffMs, remainingMs) + Math.floor(Math.random() * 1_000));
+      options.onRetry?.({ attempt, retryDelayMs: jitteredBackoffMs, retryCount: attempt - 1 });
       await delay(jitteredBackoffMs);
     }
   }
@@ -312,9 +324,10 @@ export async function runNotesProviderWithFallback<T>(args: {
   retryBudgetMs?: number;
   onFallback?: () => void;
   scheduler?: AdaptiveReviewerScheduler;
+  onRetry?: (context: { attempt: number; retryDelayMs: number; retryCount: number }) => void;
 }): Promise<T> {
   try {
-    return await retryTransientProviderFailure(args.primary, { budgetMs: args.retryBudgetMs, scheduler: args.scheduler });
+    return await retryTransientProviderFailure(args.primary, { budgetMs: args.retryBudgetMs, scheduler: args.scheduler, onRetry: args.onRetry });
   } catch (error) {
     if (args.primaryProvider !== "gemini" || !isTransientProviderError(error)) {
       throw error;
@@ -484,16 +497,17 @@ export async function runReviewerPack(
       if (chunkController) {
         chunkController.tick();
         if (!chunkController.shouldLaunchNewReviewers()) {
-          return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: "chunk_degraded", diagnostics: {
+          const launchBlockedStatus = chunkController.getState().hardDeadlineReached ? "chunk_hard_deadline" : "chunk_soft_deadline";
+          return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: launchBlockedStatus, diagnostics: {
             requestStartedAt,
             responseReceivedAt: null,
             generatedNoteCount: 0,
             parsedNoteCount: 0,
             acceptedCount: 0,
             rejectedCount: 0,
-            parseValidationError: "chunk soft deadline reached",
+            parseValidationError: launchBlockedStatus === "chunk_hard_deadline" ? "chunk hard deadline reached" : "chunk soft deadline reached",
             fallbackProvider: null,
-            status: "timeout" as NotePassResult["status"],
+            status: launchBlockedStatus as NotePassResult["status"],
           } };
         }
         chunkController.markReviewerStarted();
@@ -501,6 +515,10 @@ export async function runReviewerPack(
       let responseReceivedAt: string | null = null;
       let fallbackProvider: "openai" | null = null;
       let rawResponseLength = 0;
+      let attempt = 0;
+      let retryCount = 0;
+      let retryDelayMs: number | null = null;
+      let providerHealth = chunkController?.getState().providerHealth ?? "healthy";
       const provider = config.AI_PROVIDER;
       const model = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL;
       logger.info("NOTE_REVIEWER_START", {
@@ -520,6 +538,11 @@ export async function runReviewerPack(
           primaryProvider: provider,
           retryBudgetMs: config.NOTE_REVIEWER_RETRY_BUDGET_MS,
           onFallback: () => { fallbackProvider = getAIProviderPolicy().fallbackProviders[0] ?? null; },
+          onRetry: ({ attempt: currentAttempt, retryDelayMs: delayMs, retryCount: currentRetryCount }) => {
+            attempt = currentAttempt;
+            retryCount = currentRetryCount;
+            retryDelayMs = delayMs;
+          },
           scheduler,
           primary: async () => {
             const response = options.reviewerResponse ? null : await callNotesOpenAI({
@@ -582,6 +605,10 @@ export async function runReviewerPack(
             parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
             fallbackProvider,
             status: reviewerStatus,
+            attempt,
+            retryCount,
+            retryDelayMs,
+            providerHealth,
           });
           logger.info("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
             jobId: options.jobId,
@@ -597,6 +624,10 @@ export async function runReviewerPack(
             error: parsed.parseError,
             fallbackProvider,
             status: reviewerStatus,
+            attempt,
+            retryCount,
+            retryDelayMs,
+            providerHealth,
           });
           logger.info("NOTE_REVIEWER_END", {
             jobId: options.jobId,
@@ -608,12 +639,17 @@ export async function runReviewerPack(
             passedToPersistenceCount: notes.length,
             durationMs: Date.now() - passStartedAt,
             status: reviewerStatus,
+            attempt,
+            retryCount,
+            retryDelayMs,
+            providerHealth,
             articleId: reviewerArticleId(definition),
             promptFile: definition.filename,
             promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
           });
           if (chunkController) {
             chunkController.noteProviderSuccess();
+            providerHealth = chunkController.getState().providerHealth;
             chunkController.markReviewerCompleted();
           }
           scheduler.onSuccess();
@@ -634,6 +670,7 @@ export async function runReviewerPack(
         const findings = (parsed as { findings?: JudgeFinding[] }).findings ?? [];
         if (chunkController) {
           chunkController.noteProviderSuccess();
+          providerHealth = chunkController.getState().providerHealth;
           chunkController.markReviewerCompleted();
         }
         scheduler.onSuccess();
@@ -649,16 +686,21 @@ export async function runReviewerPack(
           duration: Date.now() - passStartedAt,
         };
       } catch (error) {
+        const reviewerStatus = classifyReviewerError(error);
         if (chunkController) {
-          chunkController.markReviewerFailed();
+          if (reviewerStatus === "chunk_hard_deadline") {
+            chunkController.markReviewerAborted();
+          } else {
+            chunkController.markReviewerFailed();
+          }
         }
-        if (isTransientProviderError(error)) {
+        if (isTransientProviderError(error) && reviewerStatus !== "chunk_hard_deadline" && reviewerStatus !== "chunk_soft_deadline") {
           if (chunkController) {
             chunkController.noteProviderFailure(error);
+            providerHealth = chunkController.getState().providerHealth;
           }
           scheduler.onTransientFailure({ status: 503, message: error instanceof Error ? error.message : String(error) });
         }
-        const reviewerStatus = classifyReviewerError(error);
         logger.warn("Reviewer pack entry failed", { jobId: options.jobId, chunkId: options.chunkId, reviewer: definition.id, error: error instanceof Error ? error.message : String(error), status: reviewerStatus });
         logger.warn("Note reviewer completion diagnostics", {
           jobId: options.jobId,
@@ -677,6 +719,10 @@ export async function runReviewerPack(
           parseValidationError: error instanceof Error ? error.message : String(error),
           fallbackProvider,
           status: reviewerStatus,
+          attempt,
+          retryCount,
+          retryDelayMs,
+          providerHealth,
         });
         logger.warn("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
           jobId: options.jobId,
@@ -692,6 +738,10 @@ export async function runReviewerPack(
           error: error instanceof Error ? error.message : String(error),
           fallbackProvider,
           status: reviewerStatus,
+          attempt,
+          retryCount,
+          retryDelayMs,
+          providerHealth,
         });
         logger.warn("NOTE_REVIEWER_END", {
           jobId: options.jobId,
@@ -704,6 +754,10 @@ export async function runReviewerPack(
           passedToPersistenceCount: 0,
           durationMs: Date.now() - passStartedAt,
           status: reviewerStatus,
+          attempt,
+          retryCount,
+          retryDelayMs,
+          providerHealth,
           articleId: reviewerArticleId(definition),
           promptFile: definition.filename,
           promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
@@ -718,11 +772,15 @@ export async function runReviewerPack(
           parseValidationError: error instanceof Error ? error.message : String(error),
           fallbackProvider,
           status: reviewerStatus,
+          attempt,
+          retryCount,
+          retryDelayMs,
+          providerHealth,
         } };
       }
   }, { chunkController });
-  const notes = results.flatMap((result) => result.notes);
-  const violationCandidates = results.flatMap((result) => result.findings);
+  const notes = results.flatMap((result) => result?.notes ?? []);
+  const violationCandidates = results.flatMap((result) => result?.findings ?? []);
   const dedup = <T extends { event_id?: number | null; category?: string; article_id?: number | null; evidence_snippet?: string }>(items: T[]) => {
     const seen = new Map<string, T>();
     for (const item of items) {
@@ -731,29 +789,58 @@ export async function runReviewerPack(
     }
     return [...seen.values()];
   };
-  const passResults = results.map((result) => ({
-    passName: result.definition.id,
-    reviewerId: result.definition.id,
-    category: result.definition.category,
-    notes: result.notes,
-    duration: result.duration,
-    provider: config.AI_PROVIDER,
-    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
-    promptTokens: result.response?.usage?.prompt_tokens ?? null,
-    completionTokens: result.response?.usage?.completion_tokens ?? null,
-    totalTokens: result.response?.usage?.total_tokens ?? null,
-    requestStartedAt: result.diagnostics?.requestStartedAt ?? null,
-    responseReceivedAt: result.diagnostics?.responseReceivedAt ?? null,
-    rawResponseLength: result.diagnostics?.rawResponseLength ?? result.response?.rawResponse.length ?? 0,
-    generatedNoteCount: result.diagnostics?.generatedNoteCount ?? 0,
-    parsedNoteCount: result.diagnostics?.parsedNoteCount ?? 0,
-    acceptedCount: result.diagnostics?.acceptedCount ?? result.notes.length,
-    rejectedCount: result.diagnostics?.rejectedCount ?? 0,
-    parseValidationError: result.diagnostics?.parseValidationError ?? result.error ?? null,
-    fallbackProvider: result.diagnostics?.fallbackProvider ?? null,
-    status: result.diagnostics?.status ?? (result.notes.length > 0 ? "success" : "empty"),
-    ...(result.error ? { reason: "failed", skipped: false } : {}),
-  } satisfies NotePassResult));
+  const passResults = definitions.map((definition, index) => {
+    const result = results[index];
+    if (result) {
+      return {
+        passName: result.definition.id,
+        reviewerId: result.definition.id,
+        category: result.definition.category,
+        notes: result.notes,
+        duration: result.duration,
+        provider: config.AI_PROVIDER,
+        model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+        promptTokens: result.response?.usage?.prompt_tokens ?? null,
+        completionTokens: result.response?.usage?.completion_tokens ?? null,
+        totalTokens: result.response?.usage?.total_tokens ?? null,
+        requestStartedAt: result.diagnostics?.requestStartedAt ?? null,
+        responseReceivedAt: result.diagnostics?.responseReceivedAt ?? null,
+        rawResponseLength: result.diagnostics?.rawResponseLength ?? result.response?.rawResponse.length ?? 0,
+        generatedNoteCount: result.diagnostics?.generatedNoteCount ?? 0,
+        parsedNoteCount: result.diagnostics?.parsedNoteCount ?? 0,
+        acceptedCount: result.diagnostics?.acceptedCount ?? result.notes.length,
+        rejectedCount: result.diagnostics?.rejectedCount ?? 0,
+        parseValidationError: result.diagnostics?.parseValidationError ?? result.error ?? null,
+        fallbackProvider: result.diagnostics?.fallbackProvider ?? null,
+        status: result.diagnostics?.status ?? (result.notes.length > 0 ? "success" : "empty"),
+        ...(result.error ? { reason: "failed", skipped: false } : {}),
+      } satisfies NotePassResult;
+    }
+
+    const blockedStatus = chunkController?.getState().hardDeadlineReached ? "chunk_hard_deadline" : chunkController?.getState().softDeadlineReached ? "chunk_soft_deadline" : "empty";
+    return {
+      passName: definition.id,
+      reviewerId: definition.id,
+      category: definition.category,
+      notes: [],
+      duration: 0,
+      provider: config.AI_PROVIDER,
+      model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      requestStartedAt: null,
+      responseReceivedAt: null,
+      rawResponseLength: 0,
+      generatedNoteCount: 0,
+      parsedNoteCount: 0,
+      acceptedCount: 0,
+      rejectedCount: 0,
+      parseValidationError: blockedStatus === "chunk_hard_deadline" ? "chunk hard deadline reached" : blockedStatus === "chunk_soft_deadline" ? "chunk soft deadline reached" : null,
+      fallbackProvider: null,
+      status: blockedStatus as NotePassResult["status"],
+    } satisfies NotePassResult;
+  });
   const deduplicatedNotes = dedup(notes);
   logger.info("Notes deduplication diagnostics", {
     jobId: options.jobId,

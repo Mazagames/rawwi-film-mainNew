@@ -132,12 +132,11 @@ export class ChunkExecutionController {
       this.signalController.abort(new Error("chunk hard deadline"));
       return;
     }
-    if (age >= this.softDeadlineMs) {
+    if (age >= this.softDeadlineMs && !this.softDeadlineReached) {
       this.softDeadlineReached = true;
       this.chunkState = "degraded";
       this.providerHealth = "degraded";
       this.currentConcurrency = Math.max(1, this.currentConcurrency - 1);
-      this.signalController.abort(new Error("chunk soft deadline"));
     }
   }
 

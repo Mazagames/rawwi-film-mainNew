@@ -49,7 +49,7 @@ test("chunk soft deadline stops launching new reviewers while preserving in-flig
 
 test("chunk hard deadline aborts remaining reviewers and marks the chunk incomplete", async () => {
   const definitions = getTestDefinitions();
-  const controller = new ChunkExecutionController({ softDeadlineMs: 20, hardDeadlineMs: 40, heartbeatMs: 1_000 });
+  const controller = new ChunkExecutionController({ softDeadlineMs: 20, hardDeadlineMs: 40, heartbeatMs: 1 });
   let started = 0;
 
   try {
@@ -63,21 +63,59 @@ test("chunk hard deadline aborts remaining reviewers and marks the chunk incompl
         signal: controller.signal,
         definitions,
         chunkController: controller,
-        reviewerResponse: async (_definition, signal) => {
+        reviewerResponse: async () => {
           started += 1;
           await new Promise((resolve) => setTimeout(resolve, 120));
-          if (signal?.aborted) {
-            throw new Error("aborted");
-          }
           return '{"notes":[]}';
         },
       },
     );
 
     assert.equal(started > 0, true);
+    assert.equal(started < definitions.length, true);
     assert.equal(controller.getState().hardDeadlineReached, true);
     assert.equal(controller.getState().chunkState, "hard_deadline");
     assert.equal(result.notes.length, 0);
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("soft deadline stops queued reviewers while allowing in-flight reviewers to finish", async () => {
+  const definitions = getTestDefinitions();
+  const controller = new ChunkExecutionController({ softDeadlineMs: 20, hardDeadlineMs: 200, heartbeatMs: 1 });
+  let started = 0;
+  let sawAbortDuringInFlight = false;
+
+  try {
+    const result = await runReviewerPack(
+      "chunk text",
+      { events: [] } as any,
+      { temperature: 0, seed: 1 },
+      {
+        jobId: "chunk-lifecycle-test",
+        chunkId: "chunk-lifecycle-soft-preserve",
+        signal: controller.signal,
+        definitions,
+        chunkController: controller,
+        reviewerResponse: async (definition, signal) => {
+          started += 1;
+          if (started === 1) {
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            sawAbortDuringInFlight = Boolean(signal?.aborted);
+            return '{"notes":[{"reviewer":"' + definition.id + '","category":"' + definition.category + '","title":"ok","description":"ok","paragraph":"ok","quote":"ok","event_id":1,"confidence":0.8,"status":"new","included_in_report":true}]}';
+          }
+          return '{"notes":[]}';
+        },
+      },
+    );
+
+    assert.ok(started >= 1, "an in-flight reviewer should start before the soft deadline");
+    assert.ok(started < definitions.length, "queued reviewers should stop launching after the soft deadline");
+    assert.equal(controller.getState().softDeadlineReached, true);
+    assert.equal(sawAbortDuringInFlight, false, "soft deadline should not abort in-flight reviewers");
+    assert.equal(result.passResults.some((pass) => pass.status === "success"), true);
+    assert.equal(result.passResults.some((pass) => pass.status === "chunk_soft_deadline"), true);
   } finally {
     controller.dispose();
   }
