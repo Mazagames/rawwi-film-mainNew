@@ -1333,6 +1333,8 @@ export function Results() {
   const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
   const informationalNoteCategories = noteCategoryCounts.filter((category) => !category.key.startsWith('article_'));
   const articleNoteCategories = noteCategoryCounts.filter((category) => category.key.startsWith('article_'));
+  const articleNotesTotal = articleNoteCategories.reduce((sum, category) => sum + category.count, 0);
+  const informationalNotesTotal = informationalNoteCategories.reduce((sum, category) => sum + category.count, 0);
   const activeNoteCategories = noteSubSection === 'article' ? articleNoteCategories : informationalNoteCategories;
   const activeNoteFilterTabs = [
     {
@@ -1463,9 +1465,9 @@ export function Results() {
   };
   const DecisionIcon = decisionConfig[decision].icon;
   const primaryReportSections = [
-    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: displayTotal + notesTotalCount, tone: 'neutral' as const },
-    { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: displayTotal, tone: 'warning' as const },
-    { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: notesTotalCount, tone: 'info' as const },
+    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: notesTotalCount, tone: 'neutral' as const },
+    { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: articleNotesTotal, tone: 'warning' as const },
+    { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: informationalNotesTotal, tone: 'info' as const },
     { key: 'manual' as const, labelAr: 'يدوية', labelEn: 'Manual', value: displayTypeCounts.manual, tone: 'neutral' as const },
     { key: 'dictionary' as const, labelAr: 'قاموس', labelEn: 'Glossary', value: displayTypeCounts.glossary, tone: 'primary' as const },
   ];
@@ -3063,10 +3065,11 @@ function displayFindingTitle(params: {
                 onClick={() => {
                   setReportSection(section.key);
                   if (section.key === 'notes') {
-                    setNoteSubSection('article');
+                    setNoteSubSection('informational');
                     setFindingFilter('all');
                     setNoteCategoryFilter('all');
                   } else if (section.key === 'violations') {
+                    setNoteSubSection('article');
                     setFindingFilter('all');
                     setNoteCategoryFilter('all');
                   } else if (section.key === 'all') {
@@ -3226,7 +3229,7 @@ function displayFindingTitle(params: {
             </div>
           )}
 
-          {((reportSection === 'violations' || reportSection === 'all') && hasViolationContent) && (
+          {false && ((reportSection === 'violations' || reportSection === 'all') && hasViolationContent) && (
             <>
           {/* Violations section */}
           <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
@@ -3344,7 +3347,89 @@ function displayFindingTitle(params: {
             </>
           )}
 
-          {(reportSection === 'notes' || reportSection === 'all') && (
+          {(reportSection === 'violations' || reportSection === 'notes' || reportSection === 'all') && (
+            <>
+              {(reportSection === 'all'
+                ? (['article', 'informational'] as const)
+                : [reportSection === 'violations' ? 'article' : 'informational'] as const
+              ).map((section) => {
+                const categories = section === 'article' ? articleNoteCategories : informationalNoteCategories;
+                const filterTabs = [
+                  {
+                    key: 'all' as const,
+                    labelAr: 'الكل',
+                    labelEn: 'All',
+                    count: categories.reduce((sum, category) => sum + category.count, 0),
+                  },
+                  ...categories,
+                ];
+                const selectedCategory = noteCategoryFilter === 'all' || !categories.some((category) => category.key === noteCategoryFilter)
+                  ? 'all'
+                  : noteCategoryFilter;
+                const cards = selectedCategory === 'all'
+                  ? categories.flatMap((category) => notesByCategory[category.key] ?? [])
+                  : notesByCategory[selectedCategory] ?? [];
+
+                return (
+                  <section key={section} className="mt-12" aria-label={section === 'article' ? (lang === 'ar' ? 'قسم المخالفات' : 'Violations section') : (lang === 'ar' ? 'قسم الملاحظات' : 'Notes section')}>
+                    <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
+                      <Info className="w-5 h-5 text-info" />
+                      {section === 'article' ? (lang === 'ar' ? 'المخالفات' : 'Violations') : (lang === 'ar' ? 'الملاحظات' : 'Notes')}
+                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{filterTabs[0].count}</Badge>
+                    </h3>
+                    <div className="mt-4 space-y-4">
+                      <div className={cn('mb-2 text-xs font-semibold uppercase tracking-wider', section === 'article' ? 'text-error' : 'text-info')}>
+                        {section === 'article'
+                          ? (lang === 'ar' ? 'ملاحظات المواد' : 'Article-derived note categories')
+                          : (lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational note categories')}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {filterTabs.map((cat) => {
+                          const isActive = selectedCategory === cat.key;
+                          return (
+                            <button
+                              key={cat.key}
+                              type="button"
+                              onClick={() => setNoteCategoryFilter(cat.key)}
+                              className={cn(
+                                'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                                section === 'article'
+                                  ? (isActive ? 'border-error bg-error text-white' : 'border-error/30 bg-error/10 text-error hover:bg-error/20')
+                                  : (isActive ? 'border-info bg-info text-white' : 'border-info/30 bg-info/10 text-info hover:bg-info/20')
+                              )}
+                            >
+                              <span>{lang === 'ar' ? cat.labelAr : cat.labelEn}</span>
+                              <Badge variant="outline" className={cn('text-[10px]', isActive ? 'bg-white/20 text-white border-white/30' : section === 'article' ? 'text-error border-error/30' : 'text-info border-info/30')}>
+                                {cat.count}
+                              </Badge>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="mt-4 space-y-4">
+                      {cards.length > 0 ? cards.map((note) => (
+                        <FindingCard
+                          key={note.id}
+                          mode="note"
+                          note={noteCardFromReportNote(note)}
+                          onToggleNoteReportVisibility={handleToggleNoteReportVisibility}
+                          onMarkNoteReviewed={handleMarkNoteReviewed}
+                          onEditNote={openNoteEditModal}
+                        />
+                      )) : (
+                        <div className={cn('rounded-xl border border-dashed p-6 text-sm text-text-muted', section === 'article' ? 'border-error/30 bg-error/5' : 'border-info/30 bg-info/5')}>
+                          {lang === 'ar' ? 'لا توجد ملاحظات في هذا التصنيف.' : 'No notes are available in this category.'}
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </>
+          )}
+
+          {false && (reportSection === 'notes' || reportSection === 'all') && (
             <section className="mt-12" aria-label={lang === 'ar' ? 'قسم الملاحظات' : 'Notes section'}>
               <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                 <Info className="w-5 h-5 text-info" />
@@ -3432,7 +3517,7 @@ function displayFindingTitle(params: {
           )}
 
           {/* Report hints: not violations but notes for director (e.g. Islamic rules when filming) */}
-          {((reportSection === 'violations' || reportSection === 'all') && !showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0)))) && (
+          {false && ((reportSection === 'violations' || reportSection === 'all') && !showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0)))) && (
             <>
               <h3 className={cn(
                 "font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2",
@@ -3485,7 +3570,7 @@ function displayFindingTitle(params: {
           )}
 
           {/* Approved section */}
-          {((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && useReviewFindingsUi && reviewApproved.length > 0) && (
+          {false && ((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && useReviewFindingsUi && reviewApproved.length > 0) && (
             <>
               <h3 className="font-bold text-xl text-text-main border-b border-success/30 pb-2 flex items-center gap-2 mt-12">
                 <Shield className="w-5 h-5 text-success" />
@@ -3495,7 +3580,7 @@ function displayFindingTitle(params: {
               {renderFindingsFromReview(reviewApproved)}
             </>
           )}
-          {((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && !useReviewFindingsUi && useRealFindingsUi && displayApprovedFindings.length > 0) && (
+          {false && ((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && !useReviewFindingsUi && useRealFindingsUi && displayApprovedFindings.length > 0) && (
             <>
               <h3 className="font-bold text-xl text-text-main border-b border-success/30 pb-2 flex items-center gap-2 mt-12">
                 <Shield className="w-5 h-5 text-success" />
