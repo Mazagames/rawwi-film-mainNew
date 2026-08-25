@@ -3197,11 +3197,22 @@ export async function processChunkJudge(
     violationSystemVersion,
   });
 
-  if (violationSystemVersion === "v5" && multiPassEventUnderstanding) {
+  if (violationSystemVersion === "v5") {
     try {
+      const notesEventUnderstanding = multiPassEventUnderstanding ?? await buildEventUnderstandingPass(
+        chunk.text,
+        chunkStart,
+        chunkEnd,
+        chunk.chunk_index,
+      );
+      logger.info("Notes pipeline invocation hook reached", {
+        jobId,
+        chunkId: chunk.id,
+        eventUnderstandingAvailable: Boolean(notesEventUnderstanding),
+      });
       const noteDetectionResult = await runNotesDetection(
         chunk.text,
-        multiPassEventUnderstanding,
+        notesEventUnderstanding,
         { temperature, seed: seed ?? 0 },
         {
           jobId,
