@@ -6,6 +6,8 @@ import {
   type AICompletionResponse,
 } from "./aiClient.js";
 import { config, getAIProviderPolicy, resolveModelForRole } from "./config.js";
+import { ChunkExecutionController } from "./chunkExecutionController.js";
+import { AdaptiveReviewerScheduler } from "./reviewerLifecycle.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { extractJsonFromText } from "./schemas.js";
 import { logger } from "./logger.js";
@@ -713,74 +715,133 @@ export function parseEventUnderstandingVerificationOutput(
   return { status: "ok", events: [] };
 }
 
-async function executeEventUnderstandingWithRetry(req: AICompletionRequest): Promise<AICompletionResponse & { resolvedModel: string }> {
-  let provider = config.AI_PROVIDER;
-  let model = req.model;
-  let attempts = 0;
-  const maxAttempts = 3;
+function isEventUnderstandingTransientError(error: unknown): boolean {
+  const candidate = error as { status?: unknown; code?: unknown; message?: unknown } | null;
+  const message = typeof candidate?.message === "string" ? candidate.message : String(error);
+  return candidate?.status === 429 || candidate?.status === 503 || candidate?.status === 504 || candidate?.code === 429 || candidate?.code === 503 || candidate?.code === 504
+    || /(?:\b429\b|\b503\b|\b504\b|rate.?limit|too many requests|service unavailable|temporarily unavailable|overloaded|timed out|timeout|unavailable)/i.test(message);
+}
 
-  while (attempts < maxAttempts) {
-    attempts++;
+function delayForMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function runEventUnderstandingRequestWithLifecycle(options: {
+  prompt: string;
+  systemPrompt: string;
+  model: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  chunkController?: ChunkExecutionController;
+  providerOverride?: "openai" | "gemini";
+  fallbackModel?: string | null;
+  request: (context: { model: string; provider: "openai" | "gemini"; timeoutMs: number; signal?: AbortSignal }) => Promise<AICompletionResponse>;
+  maxAttempts?: number;
+}): Promise<AICompletionResponse & { resolvedModel: string }> {
+  const policy = getAIProviderPolicy();
+  const maxAttempts = Math.max(1, options.maxAttempts ?? config.AI_OVERLOAD_MAX_RETRIES);
+  const totalAttempts = maxAttempts + (policy.fallbackAllowed && options.fallbackModel ? 1 : 0);
+  const timeoutMs = options.timeoutMs ?? config.JUDGE_TIMEOUT_MS;
+  let provider = options.providerOverride ?? policy.primaryProvider;
+  let model = options.model;
+  let attempt = 0;
+  let fallbackAttempted = false;
+  let schedulerAttached = false;
+
+  if (options.chunkController) {
+    const scheduler = new AdaptiveReviewerScheduler({
+      baseConcurrency: 1,
+      minConcurrency: 1,
+      recoveryDelayMs: 5_000,
+      baseDelayMs: 2_000,
+    });
+    options.chunkController.attachScheduler(scheduler);
+    schedulerAttached = true;
+  }
+
+  while (attempt < totalAttempts) {
+    attempt += 1;
+    if (options.chunkController) {
+      options.chunkController.tick();
+      if (!options.chunkController.shouldLaunchNewReviewers()) {
+        const blockedReason = options.chunkController.getState().hardDeadlineReached ? "chunk hard deadline reached" : "chunk soft deadline reached";
+        throw new Error(blockedReason);
+      }
+      options.chunkController.markReviewerStarted();
+    }
+
     try {
       logger.info("EVENT_UNDERSTANDING_PROVIDER_ATTEMPT", {
         provider,
         model,
-        attempt: attempts,
+        attempt,
         error: null,
-        fallback: false
+        fallback: provider !== (options.providerOverride ?? policy.primaryProvider),
       });
 
-      const response = await generateStructuredCompletion({
-        ...req,
+      const response = await options.request({
         model,
-        providerOverride: provider as "openai" | "gemini",
+        provider,
+        timeoutMs,
+        signal: options.signal,
       });
 
+      if (options.chunkController) {
+        options.chunkController.noteProviderSuccess();
+        options.chunkController.markReviewerCompleted();
+      }
       return { ...response, resolvedModel: model };
-    } catch (error: any) {
-      const is503 = error?.status === 503 || error?.message?.includes('503') || error?.message?.includes('UNAVAILABLE') || error?.code === 503;
-      
+    } catch (error) {
+      const isTransient = isEventUnderstandingTransientError(error);
+      const isBlockedByDeadline = options.chunkController?.getState().hardDeadlineReached || options.signal?.aborted;
+
+      if (options.chunkController) {
+        if (isBlockedByDeadline) {
+          options.chunkController.markReviewerAborted();
+          throw error;
+        }
+        options.chunkController.markReviewerFailed();
+        if (isTransient) {
+          options.chunkController.noteProviderFailure(error);
+        }
+      }
+
       logger.warn("EVENT_UNDERSTANDING_PROVIDER_ATTEMPT", {
         provider,
         model,
-        attempt: attempts,
-        error: error?.message || String(error),
-        fallback: false
+        attempt,
+        error: error instanceof Error ? error.message : String(error),
+        fallback: provider !== (options.providerOverride ?? policy.primaryProvider),
       });
 
-      if (is503 && provider === "gemini" && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
-        continue;
-      }
-      
-      const fallbackProvider = getAIProviderPolicy().fallbackProviders[0];
-      if (provider === "gemini" && fallbackProvider) {
-        provider = fallbackProvider;
-        model = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL;
-        
-        logger.warn("EVENT_UNDERSTANDING_PROVIDER_ATTEMPT", {
-          provider,
-          model,
-          attempt: attempts,
-            error: `Fallback to ${provider} after Gemini failures`,
-          fallback: true
-        });
-        
-        try {
-          const fallbackResponse = await generateStructuredCompletion({
-            ...req,
+      if (isTransient && attempt < totalAttempts && !options.signal?.aborted) {
+        if (!fallbackAttempted && provider === "gemini" && policy.fallbackAllowed && options.fallbackModel) {
+          provider = "openai";
+          model = options.fallbackModel;
+          fallbackAttempted = true;
+          logger.warn("EVENT_UNDERSTANDING_PROVIDER_FALLBACK", {
+            provider,
             model,
-            providerOverride: provider,
+            attempt,
+            reason: "primary provider exhausted transient retries",
           });
-          return { ...fallbackResponse, resolvedModel: model };
-        } catch (fallbackError: any) {
-          throw fallbackError;
+          await delayForMs(1_000 + Math.floor(Math.random() * 500));
+          continue;
+        }
+        if (attempt < totalAttempts) {
+          const remainingMs = options.chunkController?.getRemainingTimeMs() ?? Number.POSITIVE_INFINITY;
+          const backoffMs = Math.min(2_000 * attempt, 8_000) + Math.floor(Math.random() * 1_000);
+          if (remainingMs <= 100) {
+            throw new Error("chunk hard deadline reached");
+          }
+          await delayForMs(Math.min(backoffMs, Math.max(1, remainingMs - 100)));
+          continue;
         }
       }
-      
       throw error;
     }
   }
+
   throw new Error("Max attempts reached");
 }
 
@@ -788,6 +849,10 @@ async function callEventUnderstandingOpenAI(
   chunkText: string,
   chunkStart: number,
   chunkEnd: number,
+  options?: {
+    signal?: AbortSignal;
+    chunkController?: ChunkExecutionController;
+  },
 ): Promise<{
   rawResponse: string;
   finishReason: string | null;
@@ -808,15 +873,27 @@ async function callEventUnderstandingOpenAI(
     chunkLength: chunkText.length,
   });
 
-  const response = await executeEventUnderstandingWithRetry({
-    model: resolvedModel,
+  const response = await runEventUnderstandingRequestWithLifecycle({
+    prompt: userPrompt,
     systemPrompt: EVENT_UNDERSTANDING_SYSTEM_PROMPT,
-    userPrompt: userPrompt,
-    temperature: 0,
-    seed: 12345,
-    maxTokens: 8192,
+    model: resolvedModel,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
-    thinkingBudget: 0,
+    signal: options?.signal,
+    chunkController: options?.chunkController,
+    providerOverride: getAIProviderPolicy().primaryProvider,
+    fallbackModel: config.OPENAI_JUDGE_MODEL,
+    request: async ({ model, provider, timeoutMs, signal }) => generateStructuredCompletion({
+      model,
+      systemPrompt: EVENT_UNDERSTANDING_SYSTEM_PROMPT,
+      userPrompt,
+      temperature: 0,
+      seed: 12345,
+      maxTokens: 8192,
+      timeoutMs,
+      thinkingBudget: 0,
+      signal,
+      providerOverride: provider,
+    }),
   });
 
   const content = response.content;
@@ -836,6 +913,10 @@ async function callEventUnderstandingOpenAI(
 
 async function callEventUnderstandingVerificationOpenAI(
   result: EventUnderstandingPassResult,
+  options?: {
+    signal?: AbortSignal;
+    chunkController?: ChunkExecutionController;
+  },
 ): Promise<{
   rawResponse: string;
   responseId: string | null;
@@ -858,15 +939,27 @@ async function callEventUnderstandingVerificationOpenAI(
     eventCount: result.event_count,
   });
 
-  const response = await executeEventUnderstandingWithRetry({
-    model: resolvedModel,
+  const response = await runEventUnderstandingRequestWithLifecycle({
+    prompt: userPrompt,
     systemPrompt: EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT,
-    userPrompt: userPrompt,
-    temperature: 0,
-    seed: 12345,
-    maxTokens: 8192,
+    model: resolvedModel,
     timeoutMs: config.JUDGE_TIMEOUT_MS,
-    thinkingBudget: 0,
+    signal: options?.signal,
+    chunkController: options?.chunkController,
+    providerOverride: getAIProviderPolicy().primaryProvider,
+    fallbackModel: config.OPENAI_JUDGE_MODEL,
+    request: async ({ model, provider, timeoutMs, signal }) => generateStructuredCompletion({
+      model,
+      systemPrompt: EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT,
+      userPrompt,
+      temperature: 0,
+      seed: 12345,
+      maxTokens: 8192,
+      timeoutMs,
+      thinkingBudget: 0,
+      signal,
+      providerOverride: provider,
+    }),
   });
 
   const content = response.content;
@@ -890,6 +983,10 @@ export async function buildEventUnderstandingPass(
   chunkStart = 0,
   chunkEnd = chunkText.length,
   chunkIndex?: number,
+  options?: {
+    signal?: AbortSignal;
+    chunkController?: ChunkExecutionController;
+  },
 ): Promise<EventUnderstandingPassResult> {
   const startTime = Date.now();
 
@@ -907,10 +1004,11 @@ export async function buildEventUnderstandingPass(
       chunkText,
       chunkStart,
       chunkEnd,
+      options,
     );
     const raw = aiResult.rawResponse;
     const parsed = parseEventUnderstandingOutput(raw, chunkStart, chunkEnd, chunkText);
-    const verification = await callEventUnderstandingVerificationOpenAI(parsed);
+    const verification = await callEventUnderstandingVerificationOpenAI(parsed, options);
     const parsedVerification = parseEventUnderstandingVerificationOutput(
       verification.rawResponse,
       chunkText,

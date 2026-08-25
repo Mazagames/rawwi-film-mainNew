@@ -2455,13 +2455,13 @@ export async function runMultiPassDetection(
   const plan = executionPlan ?? planDetectionPassExecution(chunkText, allArticles, lexiconTerms, violationSystemVersion);
   const totalPasses = plan.activePasses.length;
   let eventUnderstanding = violationSystemVersion === "v5"
-      ? await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined)
+      ? await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined, { signal: options.signal })
       : null;
 
   if (violationSystemVersion === "v5" && chunkText.trim().length > 0 && eventUnderstanding) {
     if (eventUnderstanding.events.length === 0) {
       logger.warn("Event Understanding returned 0 events for non-empty chunk. Retrying once...");
-      eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined);
+      eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, diagnosticContext?.chunkId ? parseInt(diagnosticContext.chunkId, 10) : undefined, { signal: options.signal });
 
       if (eventUnderstanding.events.length === 0) {
         throw new Error("event_understanding_empty: Event Understanding returned 0 events for non-empty chunk after retry.");

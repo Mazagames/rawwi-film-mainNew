@@ -59,6 +59,11 @@ export class ChunkExecutionController {
     };
   }
 
+  getRemainingTimeMs(): number {
+    if (this.hardDeadlineReached) return 0;
+    return Math.max(0, this.hardDeadlineMs - (Date.now() - this.startedAt));
+  }
+
   markReviewerStarted(): void {
     this.activeReviewerCount += 1;
     this.totalReviewerCount += 1;

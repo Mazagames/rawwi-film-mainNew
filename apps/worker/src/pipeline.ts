@@ -2403,7 +2403,7 @@ export async function processChunkJudge(
       const multiPassStartedAt = Date.now();
       throwIfAborted(signal);
       if (config.V5_SHARED_REVIEWER_PACK_ENABLED && violationSystemVersion === "v5") {
-        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
+        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index, { signal, chunkController });
         sharedReviewerPackResult = await runReviewerPack(
           chunkText,
           eventUnderstanding,
@@ -2426,7 +2426,7 @@ export async function processChunkJudge(
           eventUnderstanding,
         } as MultiPassDetectionResult;
       } else if (useArticle14Experiment) {
-        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
+        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index, { signal, chunkController });
         multiPassResult = await runEventCandidateRunner({
           chunkText,
           eventUnderstanding,
@@ -2436,14 +2436,14 @@ export async function processChunkJudge(
           experimentLabel: "article_14_note_style",
         });
       } else if (useEventCandidateRunner) {
-        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
+        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index, { signal, chunkController });
         multiPassResult = await runEventCandidateRunner({
           chunkText,
           eventUnderstanding,
           signal,
         });
       } else if (notesOnlyTestMode) {
-        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
+        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index, { signal, chunkController });
         multiPassResult = {
           findings: [],
           passResults: [],

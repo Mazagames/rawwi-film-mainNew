@@ -10,6 +10,7 @@ import {
   parseEventUnderstandingOutput,
   parseEventUnderstandingVerificationOutput,
   renderStructuredEventContext,
+  runEventUnderstandingRequestWithLifecycle,
 } from "./eventUnderstanding.js";
 
 function assert(condition: boolean, message: string): void {
@@ -151,11 +152,54 @@ function testVerificationPromptContract(): void {
   console.log("✓ event understanding verification prompt contract");
 }
 
+async function testVerifierLifecycleUsesChunkController(): Promise<void> {
+  const controller = new (await import("./chunkExecutionController.js")).ChunkExecutionController({
+    softDeadlineMs: 2_000,
+    hardDeadlineMs: 3_000,
+    heartbeatMs: 250,
+  });
+  controller.start();
+
+  let attempts = 0;
+  let sawDeadlineError = false;
+  try {
+    await runEventUnderstandingRequestWithLifecycle({
+      prompt: "verify",
+      systemPrompt: EVENT_UNDERSTANDING_VERIFIER_SYSTEM_PROMPT,
+      model: "gemini-2.5-flash",
+      timeoutMs: 20,
+      signal: controller.signal,
+      chunkController: controller,
+      request: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw Object.assign(new Error("service unavailable"), { status: 503 });
+        }
+        return {
+          content: '{"status":"ok"}',
+          finishReason: "STOP",
+          usage: null,
+          responseId: null,
+          responseTimestamp: new Date().toISOString(),
+        };
+      },
+    });
+  } catch (error) {
+    sawDeadlineError = error instanceof Error && /chunk (soft|hard) deadline reached/i.test(error.message);
+  }
+
+  assert(sawDeadlineError, "verifier lifecycle should stop cleanly once the chunk deadline is reached");
+  assert(attempts >= 1, "verifier lifecycle should attempt at least one request before stopping");
+  assert(controller.getState().failedReviewerCount >= 1, "chunk controller should observe verifier failures while bounded");
+  console.log("✓ event understanding verifier lifecycle is bounded and telemetry-aware");
+}
+
 async function main(): Promise<void> {
   testPromptContract();
   testParseEventUnderstandingOutput();
   testStructuredContextWrapsEvents();
   testVerificationPromptContract();
+  await testVerifierLifecycleUsesChunkController();
   console.log("\nEvent understanding tests passed.");
 }
 
