@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation, useSearchParams } from 'react-rout
 import { supabase } from '@/lib/supabaseClient';
 import { useLangStore } from '@/store/langStore';
 import { useDataStore, Finding, type Script } from '@/store/dataStore';
-import type { NoteCategoryKey } from '@/api/models';
+import type { NoteCategoryKey, ReportNote } from '@/api/models';
 import { useAuthStore } from '@/store/authStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { formatDate, formatTime, formatDateTimeValue } from '@/utils/dateFormat';
@@ -696,7 +696,7 @@ function isReviewLayerOnlyWorkspaceFinding(f: AnalysisFinding): boolean {
 }
 
 function isWorkspaceActionDisabledFinding(f: AnalysisFinding): boolean {
-  return isSyntheticWorkspaceFinding(f) || isReviewLayerOnlyWorkspaceFinding(f) || f.source === 'manual_note';
+  return isSyntheticWorkspaceFinding(f) || isReviewLayerOnlyWorkspaceFinding(f) || f.source === 'manual_note' || f.source === 'report_note';
 }
 
 function synthesizeWorkspaceFindingFromCanonical(
@@ -912,6 +912,52 @@ function synthesizeWorkspaceManualNote(
     reviewedRole: null,
     createdBy: null,
     manualComment: typeof row.reviewer_comment === 'string' ? row.reviewer_comment : null,
+  };
+}
+
+function synthesizeWorkspaceReportNote(
+  row: ReportNote & { job_id: string; script_id?: string | null; version_id?: string | null; start_offset_global?: number | null; end_offset_global?: number | null; source?: string | null },
+  fallbackScriptId: string,
+  fallbackVersionId: string,
+): AnalysisFinding {
+  const category = row.category;
+  const articleMatch = /^article_(\d{2})$/u.exec(category);
+  const startOffsetGlobal = typeof row.start_offset_global === 'number' ? row.start_offset_global : null;
+  const endOffsetGlobal = typeof row.end_offset_global === 'number' ? row.end_offset_global : null;
+  return {
+    id: `report-note:${row.id}`,
+    jobId: row.job_id,
+    scriptId: row.script_id ?? fallbackScriptId,
+    versionId: row.version_id ?? fallbackVersionId,
+    source: row.source === 'manual' ? 'manual_note' : 'report_note',
+    articleId: articleMatch ? Number(articleMatch[1]) : 0,
+    atomId: null,
+    severity: 'low',
+    confidence: row.confidence,
+    titleAr: row.title,
+    descriptionAr: row.description,
+    evidenceSnippet: row.snippet,
+    startOffsetGlobal,
+    endOffsetGlobal,
+    startLineChunk: null,
+    endLineChunk: null,
+    pageNumber: null,
+    anchorStatus: startOffsetGlobal != null && endOffsetGlobal != null ? 'exact' : 'unresolved',
+    anchorMethod: startOffsetGlobal != null && endOffsetGlobal != null ? 'stored_offsets' : 'note_evidence_search',
+    anchorStartOffsetGlobal: startOffsetGlobal,
+    anchorEndOffsetGlobal: endOffsetGlobal,
+    anchorText: row.snippet,
+    anchorConfidence: startOffsetGlobal != null && endOffsetGlobal != null ? 1 : null,
+    anchorUpdatedAt: row.updated_at ?? row.created_at ?? null,
+    location: { noteId: row.id, category, source: row.source ?? 'ai' },
+    createdAt: row.created_at ?? new Date(0).toISOString(),
+    reviewStatus: 'violation',
+    reviewReason: null,
+    reviewedBy: null,
+    reviewedAt: row.reviewed_at ?? null,
+    reviewedRole: null,
+    createdBy: null,
+    manualComment: row.reviewer_comment ?? null,
   };
 }
 
@@ -2979,16 +3025,16 @@ export function ScriptWorkspace() {
           findingsApi.getReviewByJob(jobId),
           reportsApi.getByJob(jobId),
         ]);
-        const { data: noteRows } = await supabase
+        const { data: noteRows, error: notesError } = await supabase
           .from('analysis_notes')
-          .select('id, job_id, script_id, version_id, category, title, description, snippet, confidence, reviewer_comment, created_at, start_offset_global, end_offset_global')
+          .select('id, job_id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at, source, script_id, version_id, start_offset_global, end_offset_global')
           .eq('job_id', jobId)
-          .eq('source', 'manual')
           .order('created_at', { ascending: true });
+        if (notesError) throw new Error(`Notes query failed: ${notesError.message}`);
         setSelectedJobCanonicalHash((job as { scriptContentHash?: string | null }).scriptContentHash ?? null);
         setSelectedReportSummary(fullReport);
         setReportFindings(list);
-        setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceManualNote(row as Record<string, unknown>, script.id, script.currentVersionId ?? '')));
+        setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceReportNote(row as ReportNote & { job_id: string; source?: string | null; script_id?: string | null; version_id?: string | null; start_offset_global?: number | null; end_offset_global?: number | null }, script.id, script.currentVersionId ?? '')));
         setReportReviewFindings(reviewList);
         if (IS_DEV) console.log('[ScriptWorkspace] Findings loaded for highlights:', list.length);
         if (id) {
@@ -3001,25 +3047,26 @@ export function ScriptWorkspace() {
           findingsApi.getReviewByReport(reportId!),
           reportsApi.getById(reportId!),
         ]);
-        const { data: noteRows } = await supabase
+        const { data: noteRows, error: notesError } = await supabase
           .from('analysis_notes')
-          .select('id, job_id, script_id, version_id, category, title, description, snippet, confidence, reviewer_comment, created_at, start_offset_global, end_offset_global')
+          .select('id, job_id, reviewer, category, title, description, snippet, event_id, confidence, status, included_in_report, reviewer_comment, reviewed_at, updated_at, created_at, source, script_id, version_id, start_offset_global, end_offset_global')
           .eq('job_id', fullReport.jobId)
-          .eq('source', 'manual')
           .order('created_at', { ascending: true });
+        if (notesError) throw new Error(`Notes query failed: ${notesError.message}`);
         setSelectedReportSummary(fullReport);
         setReportFindings(list);
-        setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceManualNote(row as Record<string, unknown>, script.id, script.currentVersionId ?? '')));
+        setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceReportNote(row as ReportNote & { job_id: string; source?: string | null; script_id?: string | null; version_id?: string | null; start_offset_global?: number | null; end_offset_global?: number | null }, script.id, script.currentVersionId ?? '')));
         setReportReviewFindings(reviewList);
         if (IS_DEV) console.log('[ScriptWorkspace] Findings loaded for highlights:', list.length);
       }
-    } catch (_) {
+    } catch (error) {
       setReportFindings([]);
       setReportManualNotes([]);
       setReportReviewFindings([]);
       setSelectedReportSummary(null);
       setSelectedJobCanonicalHash(null);
-      toast.error(lang === 'ar' ? 'فشل تحميل الملاحظات' : 'Failed to load findings');
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(lang === 'ar' ? `فشل تحميل التقرير: ${message}` : `Failed to load report: ${message}`);
     } finally {
       // setReportFindingsLoading(false);
     }
@@ -6760,6 +6807,8 @@ export function ScriptWorkspace() {
                         <div className="relative flex items-center gap-1">
                           {f.source === 'manual_note' ? (
                             <Badge variant="outline" className="text-[10px] border-info/30 text-info">{lang === 'ar' ? 'ملاحظة يدوية' : 'Manual Note'}</Badge>
+                          ) : f.source === 'report_note' ? (
+                            <Badge variant="outline" className="text-[10px] border-info/30 text-info">{lang === 'ar' ? 'ملاحظة' : 'Note'}</Badge>
                           ) : f.source === 'manual' ? (
                             <Badge variant="outline" className="text-[10px]">{lang === 'ar' ? 'يدوي' : 'Manual'}</Badge>
                           ) : (f.source === 'ai' || f.source === 'lexicon_mandatory') ? (
@@ -6783,7 +6832,7 @@ export function ScriptWorkspace() {
                               {lang === 'ar' ? 'معدّل' : 'Edited'}
                             </Badge>
                           )}
-                          {f.source === 'manual_note' ? (
+                          {f.source === 'manual_note' || f.source === 'report_note' ? (
                             <Badge variant="outline" className="text-[10px] border-info/30 text-info">{lang === 'ar' ? 'ملاحظة' : 'Note'}</Badge>
                           ) : (
                             <Badge variant={f.reviewStatus === 'approved' ? 'success' : 'error'} className="text-[10px]">
