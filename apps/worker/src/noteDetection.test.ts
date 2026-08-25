@@ -9,6 +9,7 @@ import {
   runNotesProviderWithFallback,
   runWithBoundedConcurrency,
 } from "./noteDetection.js";
+import { AdaptiveReviewerScheduler } from "./reviewerLifecycle.js";
 import type { NoteItem } from "./schemas.js";
 
 function assert(cond: boolean, msg: string): void {
@@ -119,23 +120,48 @@ async function testBoundedConcurrencyAndTransientRetries() {
   console.log("✓ Notes use bounded concurrency, transient retries, failure isolation, and unchanged deduplication");
 }
 
+async function testAdaptiveReviewerSchedulerBackoff() {
+  const scheduler = new AdaptiveReviewerScheduler({ baseConcurrency: 3, minConcurrency: 1, recoveryDelayMs: 0, baseDelayMs: 2000 });
+  assert(scheduler.getCurrentConcurrency() === 3, "expected initial concurrency to be the configured base value");
+  scheduler.onTransientFailure({ status: 503, message: "service unavailable" });
+  assert(scheduler.getCurrentConcurrency() === 2, "expected concurrency to drop after the first transient overload");
+  scheduler.onTransientFailure({ status: 503, message: "service unavailable" });
+  assert(scheduler.getCurrentConcurrency() === 1, "expected concurrency to fall to the minimum after repeated transient overloads");
+  assert(scheduler.getNextRetryDelayMs(1) === 2000, "expected the initial retry delay to use the base backoff");
+  assert(scheduler.getNextRetryDelayMs(2) === 4000, "expected exponential backoff to increase on later attempts");
+  scheduler.onSuccess();
+  assert(scheduler.getCurrentConcurrency() === 2, "expected recovery to ramp concurrency gradually after success");
+  scheduler.onSuccess();
+  assert(scheduler.getCurrentConcurrency() === 3, "expected concurrency to return to the base level after recovery");
+  console.log("✓ adaptive reviewer scheduler reduces concurrency and recovers gradually under transient overload");
+}
+
 async function testNotesProviderFallback() {
+  process.env.AI_PROVIDER_MODE = "gemini-only";
+  process.env.AI_PROVIDER = "gemini";
+
   let geminiCalls = 0;
   let openAiCalls = 0;
-  const fallbackResult = await runNotesProviderWithFallback({
-    primaryProvider: "gemini",
-    primary: async () => {
-      geminiCalls += 1;
-      throw Object.assign(new Error("503 UNAVAILABLE"), { status: 503 });
-    },
-    fallback: async () => {
-      openAiCalls += 1;
-      return "accepted note";
-    },
-    retryBudgetMs: 10_000,
-  });
-  assert(fallbackResult === "accepted note", "OpenAI fallback should preserve the successful note result");
-  assert(geminiCalls === 3 && openAiCalls === 1, "exhausted Gemini retries should invoke OpenAI exactly once");
+  let surfacedError: unknown = null;
+  try {
+    await runNotesProviderWithFallback({
+      primaryProvider: "gemini",
+      primary: async () => {
+        geminiCalls += 1;
+        throw Object.assign(new Error("503 UNAVAILABLE"), { status: 503 });
+      },
+      fallback: async () => {
+        openAiCalls += 1;
+        return "accepted note";
+      },
+      retryBudgetMs: 10_000,
+    });
+  } catch (error) {
+    surfacedError = error;
+  }
+  assert(surfacedError instanceof Error, "expected the transient Gemini overload to surface as an error");
+  assert(/503|UNAVAILABLE/i.test(surfacedError.message), "expected the transient Gemini overload to be reflected in the surfaced error");
+  assert(geminiCalls === 3 && openAiCalls === 0, "gemini-only mode should retry transient failures without invoking OpenAI fallback");
 
   geminiCalls = 0;
   openAiCalls = 0;
@@ -151,7 +177,7 @@ async function testNotesProviderFallback() {
     },
   });
   assert(primaryResult === "gemini note" && geminiCalls === 1 && openAiCalls === 0, "successful Gemini must not call OpenAI");
-  console.log("✓ Notes fall back from exhausted Gemini transient failures and preserve Gemini successes");
+  console.log("✓ Gemini-only reviewer retries stay within the Gemini-only policy and do not invoke OpenAI fallback");
 }
 
 testNormalizeNoteStripsLineIds();
@@ -159,6 +185,10 @@ testNormalizeNoteMultipleLineIds();
 testNormalizeNotePreservesMiddleLineIds();
 testNormalizeNotePreservesNewlines();
 testBuildNoteSystemPrompt();
+testAdaptiveReviewerSchedulerBackoff().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 testBoundedConcurrencyAndTransientRetries().catch((error) => {
   console.error(error);
   process.exitCode = 1;

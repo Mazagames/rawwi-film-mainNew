@@ -1,5 +1,5 @@
 import { generateStructuredCompletion, isActiveAIProviderConfigured } from "./aiClient.js";
-import { config, getAIProviderPolicy, resolveAIProvider } from "./config.js";
+import { config, getAIProviderPolicy, resolveAIProvider, resolveModelForRole } from "./config.js";
 import type { GCAMArticle } from "./gcam.js";
 import {
   auditorAssessmentSchema,
@@ -99,8 +99,11 @@ export async function callRouter(
   const textSlice = chunkText.slice(0, 15_000);
   const userContent = `${payload}\n\n---\nمقطع النص:\n${textSlice}\n\nأرجع JSON بقائمة candidate_articles فقط.`;
 
+  const routerModelResolution = resolveModelForRole("router", jobConfig.router_model);
+
   logger.info("[DEBUG] Router request prepared", {
-    model: jobConfig.router_model,
+    provider: routerModelResolution.provider,
+    model: routerModelResolution.model,
     temperature: jobConfig.temperature,
     seed: jobConfig.seed,
     articleCount: articleList.length,
@@ -108,7 +111,7 @@ export async function callRouter(
   });
 
   const resp = await generateStructuredCompletion({
-    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_ROUTER_MODEL : jobConfig.router_model,
+    model: routerModelResolution.model,
     systemPrompt: routerSystemPrompt || ROUTER_SYSTEM_MSG,
     userPrompt: userContent,
     temperature: jobConfig.temperature,
@@ -121,7 +124,8 @@ export async function callRouter(
   const parsed = parseRouterOutput(raw);
 
   logger.info("[DEBUG] Router response parsed", {
-    model: jobConfig.router_model,
+    provider: routerModelResolution.provider,
+    model: routerModelResolution.model,
     rawLength: raw.length,
     candidateCount: parsed.candidate_articles?.length ?? 0,
   });
@@ -208,9 +212,8 @@ export async function callJudgeRaw(
     ? getAIProviderPolicy().primaryProvider
     : resolveAIProvider(configuredProvider);
   const configuredModel = options.modelOverride ?? (isV5EventFirst ? config.V5_VIOLATION_JUDGE_MODEL : jobConfig.judge_model);
-  const resolvedModel = provider === "gemini"
-    ? (options.modelOverride ?? (isV5EventFirst ? config.GEMINI_JUDGE_MODEL : config.GEMINI_JUDGE_MODEL))
-    : configuredModel;
+  const judgeRoleResolution = resolveModelForRole("judge", configuredModel);
+  const resolvedModel = judgeRoleResolution.model;
 
   logger.info("[DEBUG] Judge request prepared", {
     configuredModel,
@@ -294,7 +297,7 @@ export async function callRepairJson(
     sliceLength: slice.length,
   });
   const resp = await generateStructuredCompletion({
-    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_JUDGE_MODEL : model,
+    model: resolveModelForRole("judge", model).model,
     systemPrompt: REPAIR_SYSTEM,
     userPrompt: `Context: ${context}\n\nBroken JSON:\n${slice}\n\nReturn the corrected JSON only.`,
     maxTokens: 4096,
@@ -609,7 +612,7 @@ export async function callRationaleOnly(
     )
     .join("\n\n");
   const resp = await generateStructuredCompletion({
-    model: config.AI_PROVIDER === "gemini" ? config.GEMINI_RATIONALE_MODEL : model,
+    model: resolveModelForRole("rationale", model).model,
     systemPrompt: RATIONALE_ONLY_SYSTEM_MSG,
     userPrompt: `اكتب rationale_ar لكل عنصر بالعربية (جملة أو جملتان). أرجع JSON فقط: {"rationales":[{"canonical_finding_id":"...","rationale_ar":"..."}]}\n\nالعناصر:\n\n${payload}`,
     temperature: 0,
@@ -710,7 +713,7 @@ export async function callRevisitSpotter(
 
   try {
     const resp = await generateStructuredCompletion({
-      model: config.AI_PROVIDER === "gemini" ? config.GEMINI_ROUTER_MODEL : model, // Fallback to router model which is mini
+      model: resolveModelForRole("router", model).model,
       systemPrompt: REVISIT_SPOTTER_SYSTEM,
       userPrompt: userContent,
       temperature: 0,

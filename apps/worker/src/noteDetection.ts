@@ -16,6 +16,8 @@ import {
   logNotePipelineStage,
   normalizeNoteCategoryKey,
 } from "./notePipelineTelemetry.js";
+import { AdaptiveReviewerScheduler } from "./reviewerLifecycle.js";
+import { ChunkExecutionController } from "./chunkExecutionController.js";
 
 type OpenAiCallOptions = {
   signal?: AbortSignal;
@@ -282,7 +284,7 @@ export function isTransientProviderError(error: unknown): boolean {
 
 export async function retryTransientProviderFailure<T>(
   operation: () => Promise<T>,
-  options: { maxAttempts?: number; budgetMs?: number; delay?: (milliseconds: number) => Promise<void> } = {},
+  options: { maxAttempts?: number; budgetMs?: number; delay?: (milliseconds: number) => Promise<void>; scheduler?: AdaptiveReviewerScheduler } = {},
 ): Promise<T> {
   const maxAttempts = options.maxAttempts ?? 3;
   const delay = options.delay ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
@@ -294,10 +296,11 @@ export async function retryTransientProviderFailure<T>(
       if (!isTransientProviderError(error) || attempt === maxAttempts || (options.budgetMs !== undefined && Date.now() - startedAt >= options.budgetMs)) {
         throw error;
       }
-      const backoffMs = 2 ** (attempt - 1) * 1000;
-      const remainingMs = options.budgetMs === undefined ? backoffMs : options.budgetMs - (Date.now() - startedAt);
+      const computedBackoffMs = options.scheduler?.getNextRetryDelayMs(attempt) ?? (2 ** (attempt - 1) * 1000);
+      const remainingMs = options.budgetMs === undefined ? computedBackoffMs : options.budgetMs - (Date.now() - startedAt);
       if (remainingMs <= 0) throw error;
-      await delay(Math.min(backoffMs, remainingMs));
+      const jitteredBackoffMs = Math.max(1_000, Math.min(computedBackoffMs, remainingMs) + Math.floor(Math.random() * 1_000));
+      await delay(jitteredBackoffMs);
     }
   }
 }
@@ -308,9 +311,10 @@ export async function runNotesProviderWithFallback<T>(args: {
   fallback: () => Promise<T>;
   retryBudgetMs?: number;
   onFallback?: () => void;
+  scheduler?: AdaptiveReviewerScheduler;
 }): Promise<T> {
   try {
-    return await retryTransientProviderFailure(args.primary, { budgetMs: args.retryBudgetMs });
+    return await retryTransientProviderFailure(args.primary, { budgetMs: args.retryBudgetMs, scheduler: args.scheduler });
   } catch (error) {
     if (args.primaryProvider !== "gemini" || !isTransientProviderError(error)) {
       throw error;
@@ -342,6 +346,52 @@ export async function runWithBoundedConcurrency<T, R>(
     }
   };
   await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => runWorker()));
+  return results;
+}
+
+async function runWithAdaptiveConcurrency<T, R>(
+  items: T[],
+  scheduler: AdaptiveReviewerScheduler,
+  worker: (item: T, index: number) => Promise<R>,
+  options?: { chunkController?: ChunkExecutionController },
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  let activeCount = 0;
+  const launchNext = async (): Promise<void> => {
+    while (nextIndex < items.length) {
+      options?.chunkController?.tick();
+      if (options?.chunkController && !options.chunkController.shouldLaunchNewReviewers()) {
+        return;
+      }
+      if (options?.chunkController && activeCount >= 1) {
+        return;
+      }
+      if (activeCount >= scheduler.getCurrentConcurrency()) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+        continue;
+      }
+      const index = nextIndex++;
+      activeCount += 1;
+      const workerPromise = Promise.resolve().then(() => worker(items[index], index));
+      void workerPromise.then((value) => {
+        results[index] = value;
+      }).catch(() => {
+        // Preserve the slot and let the queue continue; the caller handles the error.
+      }).finally(() => {
+        activeCount -= 1;
+        void launchNext();
+      });
+      if (nextIndex < items.length) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      }
+    }
+  };
+
+  await launchNext();
+  while (activeCount > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  }
   return results;
 }
 
@@ -406,83 +456,211 @@ export async function runReviewerPack(
     chunkIndex?: number;
     signal?: AbortSignal;
     definitions?: NoteReviewerDefinition[];
-    reviewerResponse?: (definition: NoteReviewerDefinition) => Promise<string>;
+    reviewerResponse?: (definition: NoteReviewerDefinition, signal?: AbortSignal) => Promise<string>;
+    chunkController?: ChunkExecutionController;
   },
 ): Promise<ReviewerPackResult> {
   const startedAt = Date.now();
   const definitions = options.definitions ?? getNoteDefinitions();
   validateArticleNoteReviewerCoverage(definitions);
   const events = eventUnderstanding?.events ?? [];
-  const results = await runWithBoundedConcurrency(definitions, config.NOTE_REVIEWER_CONCURRENCY, async (definition) => {
-    const passStartedAt = Date.now();
-    const requestStartedAt = new Date(passStartedAt).toISOString();
-    let responseReceivedAt: string | null = null;
-    let fallbackProvider: "openai" | null = null;
-    let rawResponseLength = 0;
-    const provider = config.AI_PROVIDER;
-    const model = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL;
-    logger.info("NOTE_REVIEWER_START", {
-      jobId: options.jobId,
-      chunkId: options.chunkId,
-      chunkIndex: options.chunkIndex ?? null,
-      reviewerId: definition.id,
-      category: definition.category,
-      kind: definition.kind,
-      destination: definition.destination,
-      articleId: reviewerArticleId(definition),
-      promptFile: definition.filename,
-      promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
-    });
-    try {
-      const { response, parsed } = await runNotesProviderWithFallback({
-        primaryProvider: provider,
-        retryBudgetMs: config.NOTE_REVIEWER_RETRY_BUDGET_MS,
-        onFallback: () => { fallbackProvider = getAIProviderPolicy().fallbackProviders[0] ?? null; },
-        primary: async () => {
-          const response = options.reviewerResponse ? null : await callNotesOpenAI({
-            definition,
-            events,
-            chunkText,
-            temperature: jobConfig.temperature,
-            seed: jobConfig.seed,
-            signal: options.signal,
-            provider,
-            timeoutMs: config.NOTE_REVIEWER_REQUEST_TIMEOUT_MS,
-          });
-          const rawResponse = options.reviewerResponse ? await options.reviewerResponse(definition) : response!.rawResponse;
-          responseReceivedAt = new Date().toISOString();
-          rawResponseLength = rawResponse.length;
-          return { response, parsed: definition.kind === "note"
-            ? await parseNotesWithRepair(rawResponse, config.OPENAI_JUDGE_MODEL, options.signal)
-            : await parseJudgeWithRepair(rawResponse, model, { signal: options.signal, passName: definition.id }) };
-        },
-        fallback: async () => {
-          const fallbackProvider = getAIProviderPolicy().fallbackProviders[0];
-          if (!fallbackProvider) throw new Error("No provider fallback is allowed by the active provider policy");
-          const response = await callNotesOpenAI({ definition, events, chunkText, temperature: jobConfig.temperature, seed: jobConfig.seed, signal: options.signal, provider: fallbackProvider, timeoutMs: config.NOTE_REVIEWER_REQUEST_TIMEOUT_MS });
-          responseReceivedAt = new Date().toISOString();
-          rawResponseLength = response.rawResponse.length;
-          return { response, parsed: definition.kind === "note"
-            ? await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal)
-            : await parseJudgeWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, { signal: options.signal, finishReason: response.finishReason, passName: definition.id }) };
-        },
-      });
-      if (definition.kind === "note") {
-        const notes: NoteItem[] = [];
-        let rejectedCount = 0;
-        const rejectionReasons: string[] = [];
-        for (const candidate of parsed.notes ?? []) {
-          const validated = validateNoteCandidate(candidate);
-          const normalized = validated.note ? normalizeNote(validated.note, definition.id) : null;
-          if (normalized) {
-            notes.push(normalized);
-          } else {
-            rejectedCount += 1;
-            rejectionReasons.push(validated.rejectionReason ?? "unknown note category");
-          }
+  const scheduler = new AdaptiveReviewerScheduler({
+    baseConcurrency: config.NOTE_REVIEWER_CONCURRENCY,
+    minConcurrency: 1,
+    recoveryDelayMs: 5_000,
+    baseDelayMs: 2_000,
+  });
+  const chunkController = options.chunkController ?? null;
+  if (chunkController) {
+    chunkController.attachScheduler(scheduler);
+    chunkController.start();
+  }
+  const results = await runWithAdaptiveConcurrency(
+    definitions,
+    scheduler,
+    async (definition) => {
+      const passStartedAt = Date.now();
+      const requestStartedAt = new Date(passStartedAt).toISOString();
+      if (chunkController) {
+        chunkController.tick();
+        if (!chunkController.shouldLaunchNewReviewers()) {
+          return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: "chunk_degraded", diagnostics: {
+            requestStartedAt,
+            responseReceivedAt: null,
+            generatedNoteCount: 0,
+            parsedNoteCount: 0,
+            acceptedCount: 0,
+            rejectedCount: 0,
+            parseValidationError: "chunk soft deadline reached",
+            fallbackProvider: null,
+            status: "timeout" as NotePassResult["status"],
+          } };
         }
-        const reviewerStatus: NotePassResult["status"] = parsed.parseError && notes.length === 0 ? "parse_error" : (notes.length > 0 ? "success" : "empty");
-        logger.info("Note reviewer completion diagnostics", {
+        chunkController.markReviewerStarted();
+      }
+      let responseReceivedAt: string | null = null;
+      let fallbackProvider: "openai" | null = null;
+      let rawResponseLength = 0;
+      const provider = config.AI_PROVIDER;
+      const model = provider === "gemini" ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL;
+      logger.info("NOTE_REVIEWER_START", {
+        jobId: options.jobId,
+        chunkId: options.chunkId,
+        chunkIndex: options.chunkIndex ?? null,
+        reviewerId: definition.id,
+        category: definition.category,
+        kind: definition.kind,
+        destination: definition.destination,
+        articleId: reviewerArticleId(definition),
+        promptFile: definition.filename,
+        promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
+      });
+      try {
+        const { response, parsed } = await runNotesProviderWithFallback({
+          primaryProvider: provider,
+          retryBudgetMs: config.NOTE_REVIEWER_RETRY_BUDGET_MS,
+          onFallback: () => { fallbackProvider = getAIProviderPolicy().fallbackProviders[0] ?? null; },
+          scheduler,
+          primary: async () => {
+            const response = options.reviewerResponse ? null : await callNotesOpenAI({
+              definition,
+              events,
+              chunkText,
+              temperature: jobConfig.temperature,
+              seed: jobConfig.seed,
+              signal: options.signal,
+              provider,
+              timeoutMs: config.NOTE_REVIEWER_REQUEST_TIMEOUT_MS,
+            });
+            const rawResponse = options.reviewerResponse ? await options.reviewerResponse(definition, options.signal) : response!.rawResponse;
+            responseReceivedAt = new Date().toISOString();
+            rawResponseLength = rawResponse.length;
+            return { response, parsed: definition.kind === "note"
+              ? await parseNotesWithRepair(rawResponse, config.OPENAI_JUDGE_MODEL, options.signal)
+              : await parseJudgeWithRepair(rawResponse, model, { signal: options.signal, passName: definition.id }) };
+          },
+          fallback: async () => {
+            const fallbackProvider = getAIProviderPolicy().fallbackProviders[0];
+            if (!fallbackProvider) throw new Error("No provider fallback is allowed by the active provider policy");
+            const response = await callNotesOpenAI({ definition, events, chunkText, temperature: jobConfig.temperature, seed: jobConfig.seed, signal: options.signal, provider: fallbackProvider, timeoutMs: config.NOTE_REVIEWER_REQUEST_TIMEOUT_MS });
+            responseReceivedAt = new Date().toISOString();
+            rawResponseLength = response.rawResponse.length;
+            return { response, parsed: definition.kind === "note"
+              ? await parseNotesWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, options.signal)
+              : await parseJudgeWithRepair(response.rawResponse, config.OPENAI_JUDGE_MODEL, { signal: options.signal, finishReason: response.finishReason, passName: definition.id }) };
+          },
+        });
+        if (definition.kind === "note") {
+          const notes: NoteItem[] = [];
+          let rejectedCount = 0;
+          const rejectionReasons: string[] = [];
+          for (const candidate of parsed.notes ?? []) {
+            const validated = validateNoteCandidate(candidate);
+            const normalized = validated.note ? normalizeNote(validated.note, definition.id) : null;
+            if (normalized) {
+              notes.push(normalized);
+            } else {
+              rejectedCount += 1;
+              rejectionReasons.push(validated.rejectionReason ?? "unknown note category");
+            }
+          }
+          const reviewerStatus: NotePassResult["status"] = parsed.parseError && notes.length === 0 ? "parse_error" : (notes.length > 0 ? "success" : "empty");
+          logger.info("Note reviewer completion diagnostics", {
+            jobId: options.jobId,
+            chunkId: options.chunkId,
+            chunkIndex: options.chunkIndex ?? null,
+            reviewer: definition.id,
+            provider,
+            model,
+            requestStartedAt,
+            responseReceivedAt,
+            rawResponseLength,
+            generatedNoteCount: parsed.notes?.length ?? 0,
+            parsedNoteCount: parsed.notes?.length ?? 0,
+            acceptedCount: notes.length,
+            rejectedCount,
+            parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
+            fallbackProvider,
+            status: reviewerStatus,
+          });
+          logger.info("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
+            jobId: options.jobId,
+            chunkId: options.chunkId,
+            chunkIndex: options.chunkIndex ?? null,
+            reviewerId: definition.id,
+            category: definition.category,
+            responseReceived: responseReceivedAt !== null,
+            responseLength: rawResponseLength,
+            parsed: true,
+            generatedCount: parsed.notes?.length ?? 0,
+            acceptedCount: notes.length,
+            error: parsed.parseError,
+            fallbackProvider,
+            status: reviewerStatus,
+          });
+          logger.info("NOTE_REVIEWER_END", {
+            jobId: options.jobId,
+            chunkId: options.chunkId,
+            reviewerId: definition.id,
+            category: definition.category,
+            generatedCount: parsed.notes?.length ?? 0,
+            acceptedCount: notes.length,
+            passedToPersistenceCount: notes.length,
+            durationMs: Date.now() - passStartedAt,
+            status: reviewerStatus,
+            articleId: reviewerArticleId(definition),
+            promptFile: definition.filename,
+            promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
+          });
+          if (chunkController) {
+            chunkController.noteProviderSuccess();
+            chunkController.markReviewerCompleted();
+          }
+          scheduler.onSuccess();
+          return { definition, notes, findings: [], response, duration: Date.now() - passStartedAt, diagnostics: {
+            requestStartedAt,
+            responseReceivedAt,
+            rawResponseLength,
+            generatedNoteCount: parsed.notes?.length ?? 0,
+            parsedNoteCount: parsed.notes?.length ?? 0,
+            acceptedCount: notes.length,
+            rejectedCount,
+            parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
+            fallbackProvider,
+            status: reviewerStatus,
+          } };
+        }
+        const articleId = reviewerArticleId(definition);
+        const findings = (parsed as { findings?: JudgeFinding[] }).findings ?? [];
+        if (chunkController) {
+          chunkController.noteProviderSuccess();
+          chunkController.markReviewerCompleted();
+        }
+        scheduler.onSuccess();
+        return {
+          definition,
+          notes: [],
+          findings: findings.map((finding) => ({
+            ...finding,
+            article_id: articleId ?? finding.article_id,
+            detection_pass: definition.id,
+          })),
+          response,
+          duration: Date.now() - passStartedAt,
+        };
+      } catch (error) {
+        if (chunkController) {
+          chunkController.markReviewerFailed();
+        }
+        if (isTransientProviderError(error)) {
+          if (chunkController) {
+            chunkController.noteProviderFailure(error);
+          }
+          scheduler.onTransientFailure({ status: 503, message: error instanceof Error ? error.message : String(error) });
+        }
+        const reviewerStatus = classifyReviewerError(error);
+        logger.warn("Reviewer pack entry failed", { jobId: options.jobId, chunkId: options.chunkId, reviewer: definition.id, error: error instanceof Error ? error.message : String(error), status: reviewerStatus });
+        logger.warn("Note reviewer completion diagnostics", {
           jobId: options.jobId,
           chunkId: options.chunkId,
           chunkIndex: options.chunkIndex ?? null,
@@ -491,16 +669,16 @@ export async function runReviewerPack(
           model,
           requestStartedAt,
           responseReceivedAt,
-          rawResponseLength,
-          generatedNoteCount: parsed.notes?.length ?? 0,
-          parsedNoteCount: parsed.notes?.length ?? 0,
-          acceptedCount: notes.length,
-          rejectedCount,
-          parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
+          rawResponseLength: 0,
+          generatedNoteCount: 0,
+          parsedNoteCount: 0,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          parseValidationError: error instanceof Error ? error.message : String(error),
           fallbackProvider,
           status: reviewerStatus,
         });
-        logger.info("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
+        logger.warn("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
           jobId: options.jobId,
           chunkId: options.chunkId,
           chunkIndex: options.chunkIndex ?? null,
@@ -508,117 +686,41 @@ export async function runReviewerPack(
           category: definition.category,
           responseReceived: responseReceivedAt !== null,
           responseLength: rawResponseLength,
-          parsed: true,
-          generatedCount: parsed.notes?.length ?? 0,
-          acceptedCount: notes.length,
-          error: parsed.parseError,
+          parsed: false,
+          generatedCount: 0,
+          acceptedCount: 0,
+          error: error instanceof Error ? error.message : String(error),
           fallbackProvider,
           status: reviewerStatus,
         });
-        logger.info("NOTE_REVIEWER_END", {
+        logger.warn("NOTE_REVIEWER_END", {
           jobId: options.jobId,
           chunkId: options.chunkId,
+          chunkIndex: options.chunkIndex ?? null,
           reviewerId: definition.id,
           category: definition.category,
-          generatedCount: parsed.notes?.length ?? 0,
-          acceptedCount: notes.length,
-          passedToPersistenceCount: notes.length,
+          generatedCount: 0,
+          acceptedCount: 0,
+          passedToPersistenceCount: 0,
           durationMs: Date.now() - passStartedAt,
           status: reviewerStatus,
           articleId: reviewerArticleId(definition),
           promptFile: definition.filename,
           promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
         });
-        return { definition, notes, findings: [], response, duration: Date.now() - passStartedAt, diagnostics: {
+        return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: String(error), diagnostics: {
           requestStartedAt,
           responseReceivedAt,
-          rawResponseLength,
-          generatedNoteCount: parsed.notes?.length ?? 0,
-          parsedNoteCount: parsed.notes?.length ?? 0,
-          acceptedCount: notes.length,
-          rejectedCount,
-          parseValidationError: parsed.parseError ?? (rejectionReasons.length > 0 ? rejectionReasons.join("; ") : null),
+          generatedNoteCount: 0,
+          parsedNoteCount: 0,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          parseValidationError: error instanceof Error ? error.message : String(error),
           fallbackProvider,
           status: reviewerStatus,
         } };
       }
-      const articleId = reviewerArticleId(definition);
-      const findings = (parsed as { findings?: JudgeFinding[] }).findings ?? [];
-      return {
-        definition,
-        notes: [],
-        findings: findings.map((finding) => ({
-          ...finding,
-          article_id: articleId ?? finding.article_id,
-          detection_pass: definition.id,
-        })),
-        response,
-        duration: Date.now() - passStartedAt,
-      };
-    } catch (error) {
-      const reviewerStatus = classifyReviewerError(error);
-      logger.warn("Reviewer pack entry failed", { jobId: options.jobId, chunkId: options.chunkId, reviewer: definition.id, error: error instanceof Error ? error.message : String(error), status: reviewerStatus });
-      logger.warn("Note reviewer completion diagnostics", {
-        jobId: options.jobId,
-        chunkId: options.chunkId,
-        chunkIndex: options.chunkIndex ?? null,
-        reviewer: definition.id,
-        provider,
-        model,
-        requestStartedAt,
-        responseReceivedAt,
-        rawResponseLength: 0,
-        generatedNoteCount: 0,
-        parsedNoteCount: 0,
-        acceptedCount: 0,
-        rejectedCount: 0,
-        parseValidationError: error instanceof Error ? error.message : String(error),
-        fallbackProvider,
-        status: reviewerStatus,
-      });
-      logger.warn("NOTE_REVIEWER_PROVIDER_PARSE_RESULT", {
-        jobId: options.jobId,
-        chunkId: options.chunkId,
-        chunkIndex: options.chunkIndex ?? null,
-        reviewerId: definition.id,
-        category: definition.category,
-        responseReceived: responseReceivedAt !== null,
-        responseLength: rawResponseLength,
-        parsed: false,
-        generatedCount: 0,
-        acceptedCount: 0,
-        error: error instanceof Error ? error.message : String(error),
-        fallbackProvider,
-        status: reviewerStatus,
-      });
-      logger.warn("NOTE_REVIEWER_END", {
-        jobId: options.jobId,
-        chunkId: options.chunkId,
-        chunkIndex: options.chunkIndex ?? null,
-        reviewerId: definition.id,
-        category: definition.category,
-        generatedCount: 0,
-        acceptedCount: 0,
-        passedToPersistenceCount: 0,
-        durationMs: Date.now() - passStartedAt,
-        status: reviewerStatus,
-        articleId: reviewerArticleId(definition),
-        promptFile: definition.filename,
-        promptHash: createHash("sha256").update(definition.prompt).digest("hex"),
-      });
-      return { definition, notes: [], findings: [], response: null, duration: Date.now() - passStartedAt, error: String(error), diagnostics: {
-        requestStartedAt,
-        responseReceivedAt,
-        generatedNoteCount: 0,
-        parsedNoteCount: 0,
-        acceptedCount: 0,
-        rejectedCount: 0,
-        parseValidationError: error instanceof Error ? error.message : String(error),
-        fallbackProvider,
-        status: reviewerStatus,
-      } };
-    }
-  });
+  }, { chunkController });
   const notes = results.flatMap((result) => result.notes);
   const violationCandidates = results.flatMap((result) => result.findings);
   const dedup = <T extends { event_id?: number | null; category?: string; article_id?: number | null; evidence_snippet?: string }>(items: T[]) => {

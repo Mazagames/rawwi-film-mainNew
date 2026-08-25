@@ -5,7 +5,7 @@ import {
   type AICompletionRequest,
   type AICompletionResponse,
 } from "./aiClient.js";
-import { config, getAIProviderPolicy } from "./config.js";
+import { config, getAIProviderPolicy, resolveModelForRole } from "./config.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { extractJsonFromText } from "./schemas.js";
 import { logger } from "./logger.js";
@@ -799,10 +799,7 @@ async function callEventUnderstandingOpenAI(
     chunkEnd,
   );
 
-  const resolvedModel =
-    config.AI_PROVIDER === "gemini"
-      ? config.GEMINI_ROUTER_MODEL
-      : config.OPENAI_JUDGE_MODEL;
+  const resolvedModel = resolveModelForRole("router", config.OPENAI_JUDGE_MODEL).model;
 
   logger.info("[DEBUG] Event understanding request prepared", {
     model: resolvedModel,
@@ -852,10 +849,7 @@ async function callEventUnderstandingVerificationOpenAI(
 }> {
   const userPrompt = buildEventUnderstandingVerifierUserPrompt(result);
 
-  const resolvedModel =
-    config.AI_PROVIDER === "gemini"
-      ? config.GEMINI_ROUTER_MODEL
-      : config.OPENAI_JUDGE_MODEL;
+  const resolvedModel = resolveModelForRole("router", config.OPENAI_JUDGE_MODEL).model;
 
   logger.info("[DEBUG] Event understanding verifier request prepared", {
     model: resolvedModel,
@@ -951,10 +945,7 @@ export async function buildEventUnderstandingPass(
     const elapsed = Date.now() - startTime;
     logger.info("Event Understanding Diagnostics", {
       chunkIndex,
-      model:
-        config.AI_PROVIDER === "gemini"
-          ? config.GEMINI_ROUTER_MODEL
-          : config.OPENAI_JUDGE_MODEL,
+      model: resolveModelForRole("router", config.OPENAI_JUDGE_MODEL).model,
       inputTokens: aiResult.usage?.prompt_tokens ?? 0,
       outputTokens: aiResult.usage?.completion_tokens ?? 0,
       finishReason: aiResult.finishReason,
@@ -978,10 +969,7 @@ export async function buildEventUnderstandingPass(
 
     logger.error("Event Understanding Diagnostics (Failure)", {
       chunkIndex,
-      model:
-        config.AI_PROVIDER === "gemini"
-          ? config.GEMINI_ROUTER_MODEL
-          : config.OPENAI_JUDGE_MODEL,
+      model: resolveModelForRole("router", config.OPENAI_JUDGE_MODEL).model,
       inputTokens:
         aiResult?.usage?.prompt_tokens ?? errObj?.usage?.prompt_tokens ?? null,
       outputTokens:

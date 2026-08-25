@@ -14,7 +14,7 @@ import { analyzeLexiconMatches } from "./lexiconMatcher.js";
 import { findStringMatches, getLexiconCache } from "./lexiconCache.js";
 import { logger } from "./logger.js";
 import { buildRouterTraceSummary, callJudgeRaw, callRouter, parseJudgeWithRepair } from "./openai.js";
-import { config, resolveV5CandidateEngine, resolveViolationSystemVersion } from "./config.js";
+import { config, resolveModelForRole, resolveV5CandidateEngine, resolveViolationSystemVersion } from "./config.js";
 import { isValidAtomForArticle, normalizeAtomId } from "./policyMap.js";
 import type { JudgeFinding } from "./schemas.js";
 import { runNotesDetection, runReviewerPack, toNoteInsertRows } from "./noteDetection.js";
@@ -1785,7 +1785,8 @@ export async function processChunkJudge(
   job: AnalysisJob,
   chunk: AnalysisChunk,
   normalizedText: string | null,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  chunkController?: ChunkExecutionController,
 ): Promise<void> {
   const chunkStartedAt = Date.now();
   const { id: jobId, script_id: scriptId, version_id: versionId } = job;
@@ -2136,15 +2137,16 @@ export async function processChunkJudge(
     : "";
   const deepAuditorEnabled =
     typeof jobConfig.deep_auditor_enabled === "boolean" ? jobConfig.deep_auditor_enabled : config.ANALYSIS_DEEP_AUDITOR;
-  const rationaleModel = config.OPENAI_RATIONALE_MODEL;
+  const rationaleModelResolution = resolveModelForRole("rationale", config.OPENAI_RATIONALE_MODEL);
+  const rationaleModel = rationaleModelResolution.model;
   const logicVersion = `pipeline:${PIPELINE_LOGIC_VERSION}|version:${pipelineVersion}${v2FeatureSignature}|evidenceGrounding:${PIPELINE_EVIDENCE_GROUNDING_VERSION}|profile:${analysisProfile}|engine:${analysisEngine}|deepAuditor:${deepAuditorEnabled}|auditorLayer:${config.AUDITOR_LAYER_VERSION}|rationaleModel:${rationaleModel}|router:${PROMPT_VERSIONS.router}|judge:${PROMPT_VERSIONS.judge}|violationSystem:${PROMPT_VERSIONS.violation_system}|auditor:${PROMPT_VERSIONS.auditor}|schema:${PROMPT_VERSIONS.schema}|passes:${passSignature}|passGating:${config.ANALYSIS_PASS_GATING_ENABLED ? PASS_GATING_VERSION : "off"}`;
   const forceFresh = jobConfig.force_fresh === true;
   const routerModel = typeof jobConfig.router_model === "string" && jobConfig.router_model.trim().length > 0
-    ? jobConfig.router_model
-    : config.OPENAI_ROUTER_MODEL;
+    ? resolveModelForRole("router", jobConfig.router_model).model
+    : resolveModelForRole("router", config.OPENAI_ROUTER_MODEL).model;
   const judgeModel = typeof jobConfig.judge_model === "string" && jobConfig.judge_model.trim().length > 0
-    ? jobConfig.judge_model
-    : config.OPENAI_JUDGE_MODEL;
+    ? resolveModelForRole("judge", jobConfig.judge_model).model
+    : resolveModelForRole("judge", config.OPENAI_JUDGE_MODEL).model;
   const temperature = typeof jobConfig.temperature === "number"
     ? jobConfig.temperature
     : (config.DETERMINISTIC_MODE ? 0 : 0.4);
@@ -2175,12 +2177,12 @@ export async function processChunkJudge(
     script_id: scriptId,
     version_id: versionId,
     created_at: job.created_at ?? null,
-    provider_name: "openai",
+    provider_name: resolveModelForRole("judge", judgeModel).provider,
     model_name: judgeModel,
     model_version: null,
     router_model_name: routerModel,
-    auditor_model_name: config.OPENAI_AUDITOR_MODEL,
-    rationale_model_name: config.OPENAI_RATIONALE_MODEL,
+    auditor_model_name: resolveModelForRole("auditor", config.OPENAI_AUDITOR_MODEL).model,
+    rationale_model_name: rationaleModel,
     temperature,
     top_p: null,
     seed: seed ?? null,
@@ -2406,7 +2408,7 @@ export async function processChunkJudge(
           chunkText,
           eventUnderstanding,
           { temperature, seed },
-          { jobId, chunkId: chunk.id, signal },
+          { jobId, chunkId: chunk.id, signal, chunkController },
         );
         const ownership = enforceDeterministicOwnership(
           sharedReviewerPackResult.violationCandidates,

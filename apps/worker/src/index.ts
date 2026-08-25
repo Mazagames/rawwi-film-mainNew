@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { runAggregation } from "./aggregation.js";
-import { config } from "./config.js";
+import { config, resolveModelForRole } from "./config.js";
 import { supabase } from "./db.js";
 import {
   fetchNextJob,
@@ -23,6 +23,7 @@ import { processChunkForJob } from "./pipelineRunner.js";
 import { processPdfExtraction } from "./pdfExtraction.js";
 import { classifyProviderFailure } from "./aiClient.js";
 import { getAIProviderPolicy } from "./config.js";
+import { ChunkExecutionController } from "./chunkExecutionController.js";
 
 type ChunkProcessResult = {
   ok: boolean;
@@ -49,10 +50,10 @@ function getRuntimeConfigLogPayload() {
     providerMode: providerPolicy.mode,
     fallbackAllowed: providerPolicy.fallbackAllowed,
     fallbackProviders: providerPolicy.fallbackProviders,
-    routerModel: isGemini ? config.GEMINI_ROUTER_MODEL : config.OPENAI_ROUTER_MODEL,
-    judgeModel: isGemini ? config.GEMINI_JUDGE_MODEL : config.OPENAI_JUDGE_MODEL,
-    auditorModel: isGemini ? config.GEMINI_AUDITOR_MODEL : config.OPENAI_AUDITOR_MODEL,
-    rationaleModel: isGemini ? config.GEMINI_RATIONALE_MODEL : config.OPENAI_RATIONALE_MODEL,
+    routerModel: resolveModelForRole("router", config.OPENAI_ROUTER_MODEL).model,
+    judgeModel: resolveModelForRole("judge", config.OPENAI_JUDGE_MODEL).model,
+    auditorModel: resolveModelForRole("auditor", config.OPENAI_AUDITOR_MODEL).model,
+    rationaleModel: resolveModelForRole("rationale", config.OPENAI_RATIONALE_MODEL).model,
     judgeTimeoutMs: config.JUDGE_TIMEOUT_MS,
     passHardTimeoutMs: config.PASS_HARD_TIMEOUT_MS,
     chunkSoftTimeoutMs: config.CHUNK_SOFT_TIMEOUT_MS,
@@ -148,23 +149,14 @@ async function processClaimedChunk(
   normalizedText: string | null,
 ): Promise<ChunkProcessResult> {
   setContext({ jobId: job.id, chunkId: claimed.id });
-  const abortController = new AbortController();
-  const chunkTimeoutMs = Math.min(config.CHUNK_SOFT_TIMEOUT_MS, config.CHUNK_HARD_TIMEOUT_MS);
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const chunkController = new ChunkExecutionController({
+    softDeadlineMs: config.CHUNK_SOFT_TIMEOUT_MS,
+    hardDeadlineMs: config.CHUNK_HARD_TIMEOUT_MS,
+    heartbeatMs: 30_000,
+  });
   try {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(() => {
-        const error = new ChunkTimeoutError(
-          `Chunk exceeded timeout of ${chunkTimeoutMs}ms`,
-        );
-        abortController.abort(error);
-        reject(error);
-      }, chunkTimeoutMs);
-    });
-    await Promise.race([
-      processChunkForJob(job as any, claimed as any, normalizedText, abortController.signal),
-      timeoutPromise,
-    ]);
+    chunkController.start();
+    await processChunkForJob(job as any, claimed as any, normalizedText, chunkController.signal, chunkController);
     return { ok: true, retryable: false };
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);
@@ -175,37 +167,19 @@ async function processClaimedChunk(
       });
       return { ok: false, retryable: false, error: errMsg };
     }
-    const timeoutReason = abortController.signal.reason;
+    const state = chunkController.getState();
     const isChunkTimeout =
-      (e instanceof Error && e.name === "ChunkTimeoutError") ||
-      (e instanceof Error &&
-        e.name === "AbortError" &&
-        timeoutReason instanceof Error &&
-        timeoutReason.name === "ChunkTimeoutError");
+      state.hardDeadlineReached ||
+      (e instanceof Error && (e.name === "ChunkTimeoutError" || e.name === "AbortError"));
     if (isChunkTimeout) {
-      const retryCount = getChunkTimeoutRetryCount(claimed.last_error) + 1;
-      if (retryCount <= config.CHUNK_HARD_TIMEOUT_MAX_RETRIES) {
-        logger.warn("Chunk processing exceeded hard timeout; re-queueing chunk", {
-          jobId: job.id,
-          chunkId: claimed.id,
-          retryCount,
-          maxRetries: config.CHUNK_HARD_TIMEOUT_MAX_RETRIES,
-          timeoutMs: chunkTimeoutMs,
-        });
-        await setChunkPending(claimed.id, encodeChunkTimeoutRetry(errMsg, retryCount));
-        return { ok: false, retryable: true, error: CHUNK_TIMEOUT_REQUEUED_PUBLIC_MESSAGE };
-      }
-
-      logger.error("Chunk processing exceeded hard timeout retries", {
+      logger.warn("Chunk processing hit hard deadline", {
         jobId: job.id,
         chunkId: claimed.id,
-        retryCount,
-        maxRetries: config.CHUNK_HARD_TIMEOUT_MAX_RETRIES,
-        timeoutMs: chunkTimeoutMs,
+        state,
+        error: errMsg,
       });
-      await setChunkFailed(claimed.id, CHUNK_TIMEOUT_FAILED_PUBLIC_MESSAGE);
-      await setJobFailed(job.id, CHUNK_TIMEOUT_FAILED_PUBLIC_MESSAGE);
-      return { ok: false, retryable: false, error: CHUNK_TIMEOUT_FAILED_PUBLIC_MESSAGE };
+      await setChunkFailed(claimed.id, errMsg);
+      return { ok: false, retryable: false, error: errMsg };
     }
     if (e instanceof Error && e.name === "OperationTimeoutError") {
       logger.error("Chunk processing hit internal operation timeout", {
@@ -271,8 +245,7 @@ async function processClaimedChunk(
     await setJobFailed(job.id, errMsg);
     return { ok: false, retryable: false, error: errMsg };
   } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle);
-    abortController.abort();
+    chunkController.dispose();
   }
 }
 

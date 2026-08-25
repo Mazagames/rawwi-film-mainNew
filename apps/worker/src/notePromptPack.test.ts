@@ -41,7 +41,7 @@ function testRepositoryNotePackLoads(): void {
   assert(entityNote?.filename === "note_entities_and_brands.md", "expected pluralized entity note filename");
   assert(entityNote?.prompt.includes("#"), "expected note prompt to contain markdown content");
   const securityNote = noteDefinitions.find((definition) => definition.id === "notes_security_scenes");
-  assert(securityNote?.displayLabel === "المشاهد الأمنية", "expected Security Scenes display label");
+  assert(securityNote?.category === "security_scenes", "expected Security Scenes runtime category key");
 
   console.log("✓ repository note pack loads all 24 article categories");
 }

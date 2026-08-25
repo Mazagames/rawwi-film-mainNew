@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import nock from "nock";
-import { config, getAIProviderPolicy } from "./config.js";
+import { config, getAIProviderPolicy, resolveModelForRole } from "./config.js";
 import { classifyProviderFailure, generateStructuredCompletion } from "./aiClient.js";
 
 // Ensure keys are set before aiClient initialization
@@ -218,5 +218,17 @@ test("aiClient - abstraction tests", async (t) => {
     assert.deepStrictEqual(getAIProviderPolicy(), { mode: "gemini-only", primaryProvider: "gemini", fallbackProviders: [], fallbackAllowed: false });
     process.env.AI_PROVIDER_MODE = "openai-only";
     assert.deepStrictEqual(getAIProviderPolicy(), { mode: "openai-only", primaryProvider: "openai", fallbackProviders: [], fallbackAllowed: false });
+  });
+
+  await t.test("Gemini-only mode resolves router model to Gemini defaults", async () => {
+    process.env.AI_PROVIDER_MODE = "gemini-only";
+    const resolved = resolveModelForRole("router", "gpt-4.1-mini");
+    assert.deepStrictEqual(resolved, { provider: "gemini", model: config.GEMINI_ROUTER_MODEL });
+  });
+
+  await t.test("OpenAI-only mode resolves router model to OpenAI defaults", async () => {
+    process.env.AI_PROVIDER_MODE = "openai-only";
+    const resolved = resolveModelForRole("router", "gemini-2.5-flash");
+    assert.deepStrictEqual(resolved, { provider: "openai", model: config.OPENAI_ROUTER_MODEL });
   });
 });

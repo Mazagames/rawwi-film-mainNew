@@ -9,6 +9,8 @@ export type AIProviderPolicy = {
   fallbackAllowed: boolean;
 };
 
+export type ModelRole = "router" | "judge" | "auditor" | "rationale";
+
 export function parseAIProviderMode(value: unknown): AIProviderMode {
   return value === "gemini-only" || value === "openai-only" || value === "auto" ? value : "auto";
 }
@@ -29,6 +31,35 @@ export function getAIProviderPolicy(): AIProviderPolicy {
     primaryProvider,
     fallbackProviders: mode === "auto" ? (primaryProvider === "gemini" ? ["openai"] : []) : [],
     fallbackAllowed: mode === "auto" && primaryProvider === "gemini",
+  };
+}
+
+export function resolveModelForRole(role: ModelRole, requestedModel: string): { provider: AIProvider; model: string } {
+  const policy = getAIProviderPolicy();
+  const provider = policy.primaryProvider;
+  const resolvedDefault = (provider === "gemini"
+    ? (role === "router"
+      ? config.GEMINI_ROUTER_MODEL
+      : role === "judge"
+        ? config.GEMINI_JUDGE_MODEL
+        : role === "auditor"
+          ? config.GEMINI_AUDITOR_MODEL
+          : config.GEMINI_RATIONALE_MODEL)
+    : (role === "router"
+      ? config.OPENAI_ROUTER_MODEL
+      : role === "judge"
+        ? config.OPENAI_JUDGE_MODEL
+        : role === "auditor"
+          ? config.OPENAI_AUDITOR_MODEL
+          : config.OPENAI_RATIONALE_MODEL));
+
+  const explicitOverride = policy.mode === "auto" && typeof requestedModel === "string" && requestedModel.trim().length > 0
+    ? requestedModel.trim()
+    : null;
+
+  return {
+    provider,
+    model: explicitOverride ?? resolvedDefault,
   };
 }
 

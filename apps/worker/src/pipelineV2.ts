@@ -8,6 +8,7 @@ import { buildScriptMemoryPromptContext, getCachedPipelineV2ScriptMemory } from 
 import { buildMemory2StageBundle, buildMemory2StagePromptContext } from "./pipelineV2/stagedMemory2.js";
 import { sha256 } from "./hash.js";
 import { canonicalStringify } from "./canonicalJson.js";
+import type { ChunkExecutionController } from "./chunkExecutionController.js";
 
 /**
  * Pipeline V2 scaffold:
@@ -20,6 +21,7 @@ export async function processChunkJudgeV2(
   chunk: AnalysisChunk,
   normalizedText: string | null,
   signal?: AbortSignal,
+  chunkController?: ChunkExecutionController,
 ): Promise<void> {
   const contextEnvelope = buildChunkContextEnvelope({ job, chunk, normalizedText });
   const sceneMemory = buildChunkSceneMemory({ job, chunk, normalizedText });
@@ -95,5 +97,5 @@ export async function processChunkJudgeV2(
     },
   };
 
-  await processChunkJudgeV1(v2Job, chunk, normalizedText, signal);
+  await processChunkJudgeV1(v2Job, chunk, normalizedText, signal, chunkController);
 }
