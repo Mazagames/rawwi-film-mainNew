@@ -38,6 +38,7 @@ interface FindingCardProps {
   onToggleNoteReportVisibility?: (note: NoteCardData) => void;
   onMarkNoteReviewed?: (note: NoteCardData) => void;
   onEditNote?: (note: NoteCardData) => void;
+  noteAccent?: 'info' | 'error';
   /** When set with finding.startOffsetGlobal, page label matches workspace viewer. */
   scriptViewerPages?: Array<{ pageNumber: number; content: string }> | null;
 }
@@ -58,6 +59,7 @@ export function FindingCard({
   onToggleNoteReportVisibility,
   onMarkNoteReviewed,
   onEditNote,
+  noteAccent = 'info',
   scriptViewerPages,
 }: FindingCardProps) {
   const { lang, t } = useLangStore();
@@ -100,7 +102,7 @@ export function FindingCard({
   const showHiddenFromOwner = isHiddenFromOwner && enableHiddenOverrides;
 
   // Strip Color Logic
-  let stripColor = isNoteCard ? 'bg-info' : severityConfig[finding!.severity].strip;
+  let stripColor = isNoteCard ? (noteAccent === 'error' ? 'bg-error' : 'bg-info') : severityConfig[finding!.severity].strip;
   if (isOverriddenNotViolation) stripColor = 'bg-success';
   if (showHiddenFromOwner) stripColor = 'bg-text-muted';
 
@@ -169,7 +171,7 @@ export function FindingCard({
             <div className="flex flex-wrap items-center gap-2 mt-2">
               {isNoteCard ? (
                 <>
-                  <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">
+                  <Badge variant="outline" className={cn('text-[10px]', noteAccent === 'error' ? 'bg-error/10 text-error border-error/30' : 'bg-info/10 text-info border-info/30')}>
                     {note!.category}
                   </Badge>
                   <Badge variant="outline" className="text-[10px] text-text-muted border-border/60">
@@ -328,7 +330,7 @@ export function FindingCard({
             {isNoteCard ? (lang === 'ar' ? 'الوصف' : 'Description') : t('findingDescription')}
           </span>
           {isNoteCard && (
-            <div className="mb-2 inline-flex rounded-full border border-info/30 bg-info/10 px-2.5 py-1 text-[11px] font-semibold text-info">
+            <div className={cn('mb-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold', noteAccent === 'error' ? 'border-error/30 bg-error/10 text-error' : 'border-info/30 bg-info/10 text-info')}>
               {lang === 'ar' ? 'هذه ملاحظة. ليست مخالفة.' : 'This is a Note. Not a violation.'}
             </div>
           )}
@@ -370,7 +372,7 @@ export function FindingCard({
             )}
           </div>
           <div className="p-4">
-            <blockquote className="border-s-2 border-primary/50 ps-4 text-sm font-medium text-text-main italic leading-relaxed" dir="rtl">
+            <blockquote className={cn('border-s-2 ps-4 text-sm font-medium text-text-main italic leading-relaxed', isNoteCard && noteAccent === 'error' ? 'border-error/50' : 'border-primary/50')} dir="rtl">
               "{isNoteCard ? note!.snippet : (finding!.evidenceSnippet || finding!.excerpt)}"
             </blockquote>
           </div>

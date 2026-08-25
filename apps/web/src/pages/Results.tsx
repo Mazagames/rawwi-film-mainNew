@@ -1432,6 +1432,15 @@ export function Results() {
     ? displayApprovedFindings.filter(() => findingFilter === 'approved' || findingFilter === 'all')
     : [];
   const filteredCanonicalSummaryFindings = canonicalSummaryFindings.filter((f) => matchesFindingFilter(f));
+  const allReviewViolations = reviewViolations.filter((f) => findingKindFromReviewSource(f.sourceKind) === 'ai');
+  const allReviewManual = reviewViolations.filter((f) => findingKindFromReviewSource(f.sourceKind) === 'manual');
+  const allReviewDictionary = reviewViolations.filter((f) => findingKindFromReviewSource(f.sourceKind) === 'glossary');
+  const allRealViolations = displayViolations.filter((f) => findingKindFromSource(f.source) === 'ai');
+  const allRealManual = displayViolations.filter((f) => findingKindFromSource(f.source) === 'manual');
+  const allRealDictionary = displayViolations.filter((f) => findingKindFromSource(f.source) === 'glossary');
+  const allCanonicalViolations = canonicalSummaryFindings.filter((f) => findingKindFromSource(f.source) === 'ai');
+  const allCanonicalManual = canonicalSummaryFindings.filter((f) => findingKindFromSource(f.source) === 'manual');
+  const allCanonicalDictionary = canonicalSummaryFindings.filter((f) => findingKindFromSource(f.source) === 'glossary');
   const selectableReviewRawIds = filteredReviewViolations
     .map((f) => matchRawFindingForReview(f)?.id ?? null)
     .filter((id): id is string => Boolean(id));
@@ -2961,6 +2970,32 @@ function displayFindingTitle(params: {
     });
   }
 
+  function renderCombinedFindingSection(
+    key: string,
+    titleAr: string,
+    titleEn: string,
+    reviewList: AnalysisReviewFinding[],
+    realList: AnalysisFinding[],
+    canonicalList: CanonicalSummaryFinding[],
+  ) {
+    const count = useReviewFindingsUi ? reviewList.length : useRealFindingsUi ? realList.length : canonicalList.length;
+    if (count === 0) return null;
+    return (
+      <section key={key} className="mt-12" aria-label={lang === 'ar' ? `قسم ${titleAr}` : `${titleEn} section`}>
+        <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
+          <ShieldAlert className="w-5 h-5 text-primary" />
+          {lang === 'ar' ? titleAr : titleEn}
+          <Badge variant="outline" className="ms-2">{count}</Badge>
+        </h3>
+        {useReviewFindingsUi
+          ? renderFindingsFromReview(reviewList)
+          : useRealFindingsUi
+            ? renderFindingsFromReal(realList)
+            : renderFindingsFromCanonicalSummary(canonicalList)}
+      </section>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-full w-full pb-20">
       {/* Header */}
@@ -3221,12 +3256,15 @@ function displayFindingTitle(params: {
       {/* Main findings */}
         <div className="space-y-8">
           {reportSection === 'all' && (
+            <>
             <div className="space-y-8">
               <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
                 <Info className="w-5 h-5 text-info" />
                 {lang === 'ar' ? 'الكل' : 'All'}
               </h3>
             </div>
+            {renderCombinedFindingSection('all-violations', 'المخالفات', 'Violations', allReviewViolations, allRealViolations, allCanonicalViolations)}
+            </>
           )}
 
           {false && ((reportSection === 'violations' || reportSection === 'all') && hasViolationContent) && (
@@ -3377,7 +3415,8 @@ function displayFindingTitle(params: {
                       {section === 'article' ? (lang === 'ar' ? 'المخالفات' : 'Violations') : (lang === 'ar' ? 'الملاحظات' : 'Notes')}
                       <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{filterTabs[0].count}</Badge>
                     </h3>
-                    <div className="mt-4 space-y-4">
+                    {reportSection !== 'all' && (
+                      <div className="mt-4 space-y-4">
                       <div className={cn('mb-2 text-xs font-semibold uppercase tracking-wider', section === 'article' ? 'text-error' : 'text-info')}>
                         {section === 'article'
                           ? (lang === 'ar' ? 'ملاحظات المواد' : 'Article-derived note categories')
@@ -3406,12 +3445,14 @@ function displayFindingTitle(params: {
                           );
                         })}
                       </div>
-                    </div>
+                      </div>
+                    )}
                     <div className="mt-4 space-y-4">
                       {cards.length > 0 ? cards.map((note) => (
                         <FindingCard
                           key={note.id}
                           mode="note"
+                          noteAccent={section === 'article' ? 'error' : 'info'}
                           note={noteCardFromReportNote(note)}
                           onToggleNoteReportVisibility={handleToggleNoteReportVisibility}
                           onMarkNoteReviewed={handleMarkNoteReviewed}
@@ -3426,6 +3467,13 @@ function displayFindingTitle(params: {
                   </section>
                 );
               })}
+            </>
+          )}
+
+          {reportSection === 'all' && (
+            <>
+              {renderCombinedFindingSection('all-manual', 'يدوية', 'Manual', allReviewManual, allRealManual, allCanonicalManual)}
+              {renderCombinedFindingSection('all-dictionary', 'قاموس', 'Glossary', allReviewDictionary, allRealDictionary, allCanonicalDictionary)}
             </>
           )}
 
