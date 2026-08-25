@@ -54,6 +54,12 @@ globalThis.fetch = async (url: any, options: any) => {
           });
         }
       }
+      else if (payload.candidate_article === 14 && payload.raw_event_quote.includes("لا تتفلسفين")) {
+        mockResponseText = JSON.stringify({
+          action: "REJECT",
+          reason: "Mild colloquial language does not constitute a definitive personal insult."
+        });
+      }
       else if (payload.canonical_atom === "MISINFORMATION") {
         mockResponseText = JSON.stringify({
           action: "KEEP",
@@ -64,7 +70,13 @@ globalThis.fetch = async (url: any, options: any) => {
         });
       }
       else {
-        mockResponseText = JSON.stringify({ action: "REJECT", reason: "Fallback reject in mock.", findings: [] });
+        mockResponseText = JSON.stringify({
+          action: "KEEP",
+          final_article_id: payload.candidate_article,
+          final_canonical_atom: payload.canonical_atom || "FALLBACK",
+          final_evidence: payload.raw_event_quote || "...",
+          reason: "Fallback keep in mock."
+        });
       }
     }
     // Is it Event Understanding?
@@ -73,10 +85,10 @@ globalThis.fetch = async (url: any, options: any) => {
       const cachedEvents = [
         { event_id: 1, event_summary: "المشهد الأول - البداية", actor: "unknown", target: "unknown", action: "يبدأ الفيلم", quote: "...", start_offset: 0, end_offset: 10, dominant_meaning: "Opening" },
         { event_id: 13, event_summary: "المشهد 5 - تهديد بالإصلاحية", actor: "المعلم", target: "الطالب", action: "يهدد", quote: "مكانك الاصلاحية انت و امثالك", start_offset: 100, end_offset: 120, dominant_meaning: "Threat" },
-        { event_id: 17, event_summary: "المشهد 7 - المطبخ", actor: "الأب", target: "البنت", action: "يهين", quote: "مكان البنت… المطبخ وبس...", start_offset: 200, end_offset: 220, dominant_meaning: "Sexist insult" },
-        { event_id: 18, event_summary: "المشهد 8 - ساحة المدرسة", actor: "ناصر", target: "سامي", action: "يمسك أذن", quote: "ناصر، المعلم، يمسك أذن سامي", start_offset: 300, end_offset: 330, dominant_meaning: "School abuse" },
-        { event_id: 23, event_summary: "المشهد 9 - الغرفة المظلمة", actor: "سعيد", target: "الجمهور", action: "يخطط", quote: "نستخدم حسابات وهمية، نكتب إشاعات", start_offset: 400, end_offset: 440, dominant_meaning: "Misinformation planning" },
-        { event_id: 24, event_summary: "المشهد 9 - الغرفة المظلمة", actor: "سعيد", target: "الجمهور", action: "يخطط", quote: "نركّب قصص", start_offset: 450, end_offset: 470, dominant_meaning: "Fabrication" },
+        { event_id: 17, event_summary: "المشهد 7 - المطبخ", actor: "الأب", target: "البنت", action: "يهين", quote: "مكان البنت… المطبخ وبس...", start_offset: 9330, end_offset: 9355, dominant_meaning: "Sexist insult" },
+        { event_id: 18, event_summary: "المشهد 8 - ساحة المدرسة", actor: "ناصر", target: "سامي", action: "يمسك أذن", quote: "ناصر، المعلم، يمسك أذن سامي", start_offset: 1961, end_offset: 1988, dominant_meaning: "School abuse" },
+        { event_id: 23, event_summary: "المشهد 9 - الغرفة المظلمة", actor: "سعيد", target: "الجمهور", action: "يخطط", quote: "نستخدم حسابات وهمية، نكتب إشاعات", start_offset: 1680, end_offset: 1712, dominant_meaning: "Misinformation planning" },
+        { event_id: 24, event_summary: "المشهد 9 - الغرفة المظلمة", actor: "سعيد", target: "الجمهور", action: "يخطط", quote: "نركّب قصص", start_offset: 1716, end_offset: 1725, dominant_meaning: "Fabrication" },
         { event_id: 25, event_summary: "المشهد 10 - المكتب", actor: "المدير", target: "الموظف", action: "يكشف", quote: "ملف مسرّب", start_offset: 500, end_offset: 510, dominant_meaning: "Leak" },
         { event_id: 30, event_summary: "المشهد 16 - شقة سعيد", actor: "الشرطة", target: "سعيد", action: "تداهم", quote: "افتح الباب! شرطة!", start_offset: 600, end_offset: 620, dominant_meaning: "Police Raid" },
       ];
@@ -97,24 +109,32 @@ globalThis.fetch = async (url: any, options: any) => {
     }
     // Is it V5 Judge candidate generation?
     else if (systemPrompt.includes("CRITICAL EVALUATION RULES (HIGH RECALL)")) {
+      let findings: any[] = [];
       if (systemPrompt.includes("حماية الأطفال")) {
-        mockResponseText = JSON.stringify({
-          findings: [{ article_id: 12, atom_id: "CHILD_SAFETY", canonical_atom: "CHILD_SAFETY", title_ar: "إساءة للطفلة", description_ar: "إهانة الفتاة وإرسالها للمطبخ", evidence_snippet: "مكان البنت… المطبخ وبس...", location: { start_offset: 200, end_offset: 220, start_line: null, end_line: null }, event_id: 17 }]
-        });
+        findings = [
+          { article_id: 12, atom_id: "CHILD_SAFETY", canonical_atom: "CHILD_SAFETY", title_ar: "إساءة للطفلة", description_ar: "إهانة الفتاة", evidence_snippet: "مكان البنت… المطبخ وبس...", location: { start_offset: 9330, end_offset: 9355 }, event_id: 17 },
+          { article_id: 12, atom_id: "SCHOOL_ABUSE", canonical_atom: "SCHOOL_ABUSE", title_ar: "عنف مدرسي", description_ar: "ضرب", evidence_snippet: "ناصر، المعلم، يمسك أذن سامي", location: { start_offset: 1961, end_offset: 1988 }, event_id: 18 },
+          { article_id: 12, atom_id: "CHILD_ABUSE", canonical_atom: "CHILD_ABUSE", title_ar: "إهانة", description_ar: "شتم طفل", evidence_snippet: "قوم يا عديم التربية", location: { start_offset: 567, end_offset: 586 }, event_id: 53 }
+        ];
+      } else if (systemPrompt.includes("المعلومات المضللة")) {
+        findings = [
+          { article_id: 16, atom_id: "MISINFORMATION", canonical_atom: "MISINFORMATION", title_ar: "إشاعات", description_ar: "وهمية", evidence_snippet: "نستخدم حسابات وهمية، نكتب إشاعات", location: { start_offset: 1680, end_offset: 1712 }, event_id: 23 },
+          { article_id: 16, atom_id: "FABRICATION", canonical_atom: "MISINFORMATION", title_ar: "فبركة", description_ar: "قصص", evidence_snippet: "نركّب قصص", location: { start_offset: 1716, end_offset: 1725 }, event_id: 24 }
+        ];
+      } else if (systemPrompt.includes("العنف والقتل")) {
+        findings = [
+          { article_id: 5, atom_id: "THREAT_VIOLENCE", canonical_atom: "THREAT_VIOLENCE", title_ar: "تهديد بعنف", description_ar: "ضرب", evidence_snippet: "بقوم آخذ الجزمة وأضربك فيها", location: { start_offset: 870, end_offset: 897 }, event_id: 50 },
+          { article_id: 5, atom_id: "INCITEMENT", canonical_atom: "INCITEMENT", title_ar: "تحريض", description_ar: "ضرب", evidence_snippet: "اللي ما يفهم بالكلام… يفهم بالضرب", location: { start_offset: 2093, end_offset: 2126 }, event_id: 51 }
+        ];
+      } else if (systemPrompt.includes("الألفاظ النابية")) {
+        findings = [
+          { article_id: 14, atom_id: "INSULT", canonical_atom: "INSULT", title_ar: "إهانة", description_ar: "شتم", evidence_snippet: "بقوم آخذ الجزمة وأضربك فيها", location: { start_offset: 870, end_offset: 897 }, event_id: 50 },
+          { article_id: 14, atom_id: "INSULT", canonical_atom: "INSULT", title_ar: "إهانة", description_ar: "شتم", evidence_snippet: "اللي ما يفهم بالكلام… يفهم بالضرب", location: { start_offset: 2093, end_offset: 2126 }, event_id: 51 },
+          { article_id: 14, atom_id: "PROFANITY", canonical_atom: "PROFANITY", title_ar: "نابية", description_ar: "فلسفة", evidence_snippet: "لا تتفلسفين", location: { start_offset: 834, end_offset: 845 }, event_id: 52 },
+          { article_id: 14, atom_id: "INSULT", canonical_atom: "INSULT", title_ar: "إهانة", description_ar: "عديم التربية", evidence_snippet: "قوم يا عديم التربية", location: { start_offset: 567, end_offset: 586 }, event_id: 53 }
+        ];
       }
-      else if (systemPrompt.includes("المعلومات المضللة")) {
-        mockResponseText = JSON.stringify({
-          findings: [{ article_id: 16, atom_id: "MISINFORMATION", canonical_atom: "MISINFORMATION", title_ar: "حملة إشاعات", description_ar: "تخطيط لنشر إشاعات عبر حسابات وهمية", evidence_snippet: "نستخدم حسابات وهمية، نكتب إشاعات", location: { start_offset: 400, end_offset: 440, start_line: null, end_line: null }, event_id: 23 }]
-        });
-      }
-      else if (systemPrompt.includes("الكرامة") || systemPrompt.includes("الجرائم") || systemPrompt.includes("الإرهاب")) {
-        mockResponseText = JSON.stringify({
-          findings: [{ article_id: systemPrompt.includes("الكرامة") ? 17 : (systemPrompt.includes("الجرائم") ? 9 : 3), atom_id: "SCHOOL_ABUSE", canonical_atom: systemPrompt.includes("الكرامة") ? "DIGNITY" : "MISINFORMATION", title_ar: "عنف مدرسي", description_ar: "المعلم يضرب الطالب", evidence_snippet: "ناصر، المعلم، يمسك أذن سامي", location: { start_offset: 300, end_offset: 330, start_line: null, end_line: null }, event_id: 18 }]
-        });
-      }
-      else {
-        mockResponseText = JSON.stringify({ findings: [] });
-      }
+      mockResponseText = JSON.stringify({ findings });
     }
     // Fallback for Media / Classified Documents
     else if (systemPrompt.includes("Media Credibility")) {
@@ -196,6 +216,10 @@ async function main() {
     { event_id: 30, event_summary: "المشهد 16 - شقة سعيد", actor: "الشرطة", target: "سعيد", action: "تداهم", quote: "افتح الباب! شرطة!", start_offset: 600, end_offset: 620, dominant_meaning: "Police Raid" },
     { event_id: 40, event_summary: "المشهد 20 - مجلس عزاء", actor: "الملا", target: "الحاضرين", action: "يرثي", quote: "البكاء على الحسين في هذا اليوم العظيم", start_offset: 700, end_offset: 750, dominant_meaning: "Lamentation/Ashura" },
     { event_id: 41, event_summary: "المشهد 21 - حوار", actor: "علي", target: "حسن", action: "يقول", quote: "قارورة كربلاء تحولت إلى دم", start_offset: 760, end_offset: 800, dominant_meaning: "Disputed narrative" },
+    { event_id: 50, event_summary: "تهديد بالضرب", actor: "unknown", target: "unknown", action: "يهدد", quote: "بقوم آخذ الجزمة وأضربك فيها", start_offset: 900, end_offset: 930, dominant_meaning: "Threat" },
+    { event_id: 51, event_summary: "تبرير العنف", actor: "unknown", target: "unknown", action: "يبرر", quote: "اللي ما يفهم بالكلام… يفهم بالضرب", start_offset: 940, end_offset: 970, dominant_meaning: "Violence justification" },
+    { event_id: 52, event_summary: "إهانة بسيطة", actor: "unknown", target: "unknown", action: "يهين", quote: "لا تتفلسفين", start_offset: 980, end_offset: 990, dominant_meaning: "Insult" },
+    { event_id: 53, event_summary: "إهانة تربوية", actor: "unknown", target: "unknown", action: "يهين", quote: "قوم يا عديم التربية", start_offset: 1000, end_offset: 1020, dominant_meaning: "Insult" },
   ];
 
   if (!cachedEvents) {
@@ -241,7 +265,9 @@ async function main() {
     undefined, // executionPlan
     undefined, // promptContext
     undefined, // signal
-    { chunkId: 'test-chunk' } // diagnosticContext
+    { chunkId: 'test-chunk' }, // diagnosticContext
+    true, // isV5EventFirst
+    eventUnderstandingResult // eventUnderstandingResult
   );
 
   let rawCandidates = judgeResult.findings;
@@ -252,6 +278,24 @@ async function main() {
     return acc;
   }, {});
   console.log("Per Article Counts:", candidatesPerArticle);
+
+  const assert = (condition: boolean, msg: string) => {
+    if (!condition) {
+      console.error(`[ASSERTION FAILED] ${msg}`);
+      process.exit(1);
+    }
+  };
+
+  // V5 Candidate Generation Assertions (Post-Ownership in runMultiPassDetection)
+  assert(rawCandidates.some((f: any) => f.event_id === 50 && f.article_id === 5), "Candidate stage should flag 'بقوم آخذ الجزمة وأضربك فيها' under Article 5");
+  assert(rawCandidates.some((f: any) => f.event_id === 51 && f.article_id === 5), "Candidate stage should flag 'اللي ما يفهم بالكلام… يفهم بالضرب' under Article 5");
+  assert(rawCandidates.some((f: any) => f.event_id === 52 && f.article_id === 14), "Candidate stage should flag 'لا تتفلسفين' under Article 14");
+  assert(rawCandidates.some((f: any) => f.event_id === 53 && f.article_id === 12), "Candidate stage should flag 'قوم يا عديم التربية' under Article 12");
+  assert(!rawCandidates.some((f: any) => f.event_id === 53 && f.article_id === 14), "Article 14 candidate for 'قوم يا عديم التربية' should be dropped by ownership in favor of Article 12");
+  assert(rawCandidates.some((f: any) => f.event_id === 18 && f.article_id === 12), "Candidate stage should flag known child-abuse event 18");
+  assert(rawCandidates.some((f: any) => f.event_id === 23 && f.article_id === 16), "Candidate stage should flag known misinformation event 23");
+  assert(rawCandidates.some((f: any) => f.event_id === 24 && f.article_id === 16), "Candidate stage should flag known misinformation event 24");
+  console.log("✓ All V5 Candidate High-Recall Assertions Passed!");
 
   // 3. Grounding
   console.log("\n-------------------------------------------");
@@ -282,8 +326,18 @@ async function main() {
   console.log("\n-------------------------------------------");
   console.log("RUNNING FINAL ADJUDICATOR");
   console.log("-------------------------------------------");
+  // Convert JudgeFinding objects to DB-row shape expected by runFinalAdjudicator
+  // (it accesses event_id via row.location.v3.event_id, not top-level)
+  const dbRowFindings = ownershipResult.finalFindings.map((f: any) => ({
+    ...f,
+    finding_uuid: `mock-${f.event_id}-${f.article_id}`,
+    location: {
+      ...f.location,
+      v3: { event_id: f.event_id }
+    }
+  }));
   const finalFindings = await runFinalAdjudicator(
-    ownershipResult.finalFindings,
+    dbRowFindings,
     cachedEvents,
     chunkText
   );
@@ -291,9 +345,17 @@ async function main() {
 
   console.log("\nFINAL VIOLATIONS:");
   finalFindings.forEach(f => {
-    console.log(`- Article ${f.article_id}: ${f.title_ar}`);
+    console.log(`- Article ${f.article_id}: ${f.canonical_atom}`);
     console.log(`  Evidence: "${f.evidence_snippet}"`);
   });
+
+  // Final Adjudicator Assertions (event_id is now under location.v3.event_id)
+  const getEventId = (f: any) => f.location?.v3?.event_id ?? f.event_id;
+  assert(finalFindings.some((f: any) => getEventId(f) === 50), "Event 50 should survive final adjudication");
+  assert(finalFindings.some((f: any) => getEventId(f) === 51), "Event 51 should survive final adjudication");
+  assert(!finalFindings.some((f: any) => getEventId(f) === 52), "Event 52 (لا تتفلسفين) should be REJECTED by final adjudicator");
+  assert(finalFindings.some((f: any) => getEventId(f) === 53), "Event 53 should survive final adjudication");
+  console.log("✓ All V5 Adjudicator Assertions Passed!");
 
   // 6. Notes Pipeline
   console.log("\n-------------------------------------------");

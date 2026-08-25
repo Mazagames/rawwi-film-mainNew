@@ -316,6 +316,24 @@ function hasRequiredTitle(titleAr: unknown): boolean {
   return typeof titleAr === "string" && titleAr.trim().length > 0;
 }
 
+function normalizeV5CandidateAtomIds(parsed: unknown, passName?: string): unknown {
+  if (!passName?.startsWith("v5_article_") || !parsed || typeof parsed !== "object") {
+    return parsed;
+  }
+  const payload = parsed as { findings?: unknown };
+  if (!Array.isArray(payload.findings)) return parsed;
+  return {
+    ...payload,
+    findings: payload.findings.map((finding) => {
+      if (!finding || typeof finding !== "object") return finding;
+      const candidate = finding as { atom_id?: unknown };
+      return typeof candidate.atom_id === "number"
+        ? { ...candidate, atom_id: String(candidate.atom_id) }
+        : finding;
+    }),
+  };
+}
+
 /**
  * Parse judge output with repair loop: if JSON parse or zod fails, call repair and retry once.
  */
@@ -338,7 +356,7 @@ export async function parseJudgeWithRepair(
     try {
       const json = extractJsonFromText(content);
       const parsed = JSON.parse(json) as unknown;
-      const out = judgeOutputSchema.parse(parsed);
+      const out = judgeOutputSchema.parse(normalizeV5CandidateAtomIds(parsed, options.passName));
       const keptFindings: JudgeFinding[] = [];
       
       let expectedArticleId: number | null = null;
@@ -419,6 +437,10 @@ export async function parseJudgeWithRepair(
           let dropped = 0;
           for (const rf of rawFindings) {
             const normalized = { ...(rf ?? {}) } as Record<string, unknown>;
+
+            if (options.passName?.startsWith("v5_article_") && typeof normalized.atom_id === "number") {
+              normalized.atom_id = String(normalized.atom_id);
+            }
             
             // Extract expected reviewer article if available (from passName like "v5_article_14")
             let expectedArticleId: number | null = null;

@@ -2251,6 +2251,7 @@ export async function processChunkJudge(
   let multiPassEventUnderstanding: MultiPassDetectionResult["eventUnderstanding"] = null;
   let multiPassPassResults: MultiPassDetectionResult["passResults"] = [];
   let sharedReviewerPackResult: Awaited<ReturnType<typeof runReviewerPack>> | null = null;
+  let notesOnlyTestMode = false;
 
   const cachedValidated = ((cachedRun?.validated_ai_findings as any[]) || []) as FindingWithGlobal[];
   const cachedLegacy = ((cachedRun?.ai_findings as any[]) || []) as FindingWithGlobal[];
@@ -2378,6 +2379,7 @@ export async function processChunkJudge(
     try {
       const useArticle14Experiment = config.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED && violationSystemVersion === "v5";
       const useEventCandidateRunner = config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && violationSystemVersion === "v5";
+      notesOnlyTestMode = violationSystemVersion === "v5" && !useArticle14Experiment && !useEventCandidateRunner && !config.V5_SHARED_REVIEWER_PACK_ENABLED;
       logger.info(`Violation candidate engine: ${useArticle14Experiment ? "article_14_note_style_experiment" : resolveV5CandidateEngine(useEventCandidateRunner)}`, {
         jobId,
         chunkId: chunk.id,
@@ -2385,6 +2387,12 @@ export async function processChunkJudge(
         model: config.V5_VIOLATION_JUDGE_MODEL,
         enabled: config.V5_EVENT_CANDIDATE_RUNNER_ENABLED,
         violationSystemVersion,
+      });
+      logger.info("Notes-only test mode", {
+        jobId,
+        chunkId: chunk.id,
+        effective: notesOnlyTestMode,
+        legacyViolationExecutionSkipped: notesOnlyTestMode,
       });
       const passExecutionPlan = planDetectionPassExecution(chunkText, selectedArticles, terms, violationSystemVersion);
       await setChunkMultipassStart(chunk.id, Math.max(1, passExecutionPlan.activePasses.length));
@@ -2430,6 +2438,16 @@ export async function processChunkJudge(
           eventUnderstanding,
           signal,
         });
+      } else if (notesOnlyTestMode) {
+        const eventUnderstanding = await buildEventUnderstandingPass(chunkText, chunkStart, chunkEnd, chunk.chunk_index);
+        multiPassResult = {
+          findings: [],
+          passResults: [],
+          totalDuration: 0,
+          executedPassCount: 0,
+          skippedPassCount: passExecutionPlan.activePasses.length,
+          eventUnderstanding,
+        } as MultiPassDetectionResult;
       } else {
         multiPassResult = await runMultiPassDetection(
           chunkText,
@@ -3230,6 +3248,21 @@ export async function processChunkJudge(
         executedPassCount: noteDetectionResult.executedPassCount,
         skippedPassCount: noteDetectionResult.skippedPassCount,
         totalDurationMs: noteDetectionResult.totalDuration,
+        reviewerDiagnostics: noteDetectionResult.passResults.map((pass) => ({
+          reviewer: pass.reviewerId,
+          provider: pass.provider,
+          model: pass.model,
+          requestStartedAt: pass.requestStartedAt,
+          responseReceivedAt: pass.responseReceivedAt,
+          rawResponseLength: pass.rawResponseLength,
+          generatedNoteCount: pass.generatedNoteCount,
+          parsedNoteCount: pass.parsedNoteCount,
+          acceptedCount: pass.acceptedCount,
+          rejectedCount: pass.rejectedCount,
+          parseValidationError: pass.parseValidationError,
+          fallbackProvider: pass.fallbackProvider,
+          deduplicationDroppedCount: 0,
+        })),
       });
 
       let persistStatus: "succeeded" | "failed" | "skipped" = "skipped";
@@ -3282,6 +3315,10 @@ export async function processChunkJudge(
           persistStatus,
           persistedCount,
           attemptedCount: noteRows.length,
+          persistedByReviewer: Object.fromEntries(noteRows.reduce((counts, row) => {
+            counts.set(row.reviewer, (counts.get(row.reviewer) ?? 0) + 1);
+            return counts;
+          }, new Map<string, number>())),
           ...(persistError ? { error: persistError } : {}),
         },
       });
@@ -3835,7 +3872,7 @@ export async function processChunkJudge(
       }
     }
 
-    if (violationSystemVersion === "v5" && !config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && !config.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED && !config.V5_SHARED_REVIEWER_PACK_ENABLED) {
+    if (violationSystemVersion === "v5" && !config.V5_EVENT_CANDIDATE_RUNNER_ENABLED && !config.V5_ARTICLE_14_NOTE_STYLE_EXPERIMENT_ENABLED && !config.V5_SHARED_REVIEWER_PACK_ENABLED && !notesOnlyTestMode) {
       const { runFinalAdjudicator } = await import("./finalAdjudicator.js");
       rows = await runFinalAdjudicator(rows, multiPassEventUnderstanding?.events ?? [], normalizedText ?? "");
     }

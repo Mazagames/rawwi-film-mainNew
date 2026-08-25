@@ -1,3 +1,4 @@
+import { persistV5PassStart, updateV5PassLedger } from "./v5PassLedger.js";
 /**
  * Multi-Pass Detection System
  * 
@@ -1983,6 +1984,17 @@ async function runSinglePass(
     }
     let judgeCall: Awaited<ReturnType<typeof callJudgeRaw>> | undefined;
     let repairAttempts = 0;
+    const ledgerKey = diagnosticContext && isV5Reviewer
+      ? { jobId: diagnosticContext.jobId, chunkId: diagnosticContext.chunkId, passName: pass.name }
+      : null;
+    if (ledgerKey) {
+      const provider = config.V5_VIOLATION_JUDGE_PROVIDER;
+      await persistV5PassStart({
+        ...ledgerKey,
+        provider,
+        model: provider === "gemini" ? config.V5_VIOLATION_JUDGE_MODEL : config.V5_VIOLATION_JUDGE_MODEL,
+      });
+    }
     try {
       judgeCall = await callJudgeRaw(
         chunkText,
@@ -2022,6 +2034,14 @@ async function runSinglePass(
       passName: pass.name
     });
     repairAttempts = diagnostics.repair_invoked ? 1 : 0;
+        if (ledgerKey) {
+          await updateV5PassLedger({
+            ...ledgerKey,
+            status: "completed",
+            rawResponseLength: judgeCall.raw_judge_response.length,
+            parsedFindingsCount: findings.length,
+          });
+        }
     logger.info("Judge Call Diagnostics", {
       jobId: diagnosticContext?.jobId ?? null,
       chunkId: diagnosticContext?.chunkId ?? null,
@@ -2239,6 +2259,14 @@ async function runSinglePass(
     };
     
     } catch (err: any) {
+      if (ledgerKey) {
+        await updateV5PassLedger({
+          ...ledgerKey,
+          status: "failed",
+          rawResponseLength: judgeCall?.raw_judge_response?.length ?? null,
+          errorMessage: err?.message ?? String(err),
+        });
+      }
       logger.error("Judge Call Diagnostics (Failed)", {
         jobId: diagnosticContext?.jobId ?? null,
         chunkId: diagnosticContext?.chunkId ?? null,
@@ -2575,8 +2603,18 @@ export async function runMultiPassDetection(
       });
     }
   }
-  const activeResults = activeResultsRaw.map((result) => {
+  const activeResults = await Promise.all(activeResultsRaw.map(async (result) => {
     const early = applyEarlyPassFilters(result.passName, result.findings, chunkText);
+    if (violationSystemVersion === "v5" && diagnosticContext && !result.error && !result.skipped) {
+      await updateV5PassLedger({
+        jobId: diagnosticContext.jobId,
+        chunkId: diagnosticContext.chunkId,
+        passName: result.passName,
+        status: "completed",
+        earlyFilterInputCount: result.findings.length,
+        earlyFilterOutputCount: early.filtered.length,
+      });
+    }
     if (early.dropped > 0) {
       logger.warn("Early pass filter dropped findings before merge", {
         pass: result.passName,
@@ -2589,7 +2627,7 @@ export async function runMultiPassDetection(
       ...result,
       findings: early.filtered,
     };
-  });
+  }));
   throwIfAborted(signal);
 
   if (progressOpts?.chunkId) {

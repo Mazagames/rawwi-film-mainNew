@@ -32,6 +32,7 @@ async function main(): Promise<void> {
         title_ar: "إهانة شخصية",
         rationale_ar: "مرشح عالي الاستدعاء مرتبط بالحدث.",
         evidence_snippet: event.quote,
+        atom_id: event.event_id === 50 ? 14 : "14-1",
         confidence: 0.9,
       })),
     }),
@@ -41,7 +42,10 @@ async function main(): Promise<void> {
   assert(result.passResults.length === 1 && result.passResults[0]?.passName === "v5_article_14", "experiment must execute only Article 14");
   assert(result.rawCandidateCount === 3, `expected 3 raw candidates, got ${result.rawCandidateCount}`);
   assert(result.parsedCandidateCount === 3, `expected 3 parsed candidates, got ${result.parsedCandidateCount}`);
+  assert(result.passResults.length === 1, "expected one Article 14 pass result");
   assert(result.groundedCandidateCount === 3, `expected 3 grounded candidates, got ${result.groundedCandidateCount}`);
+  assert(result.groundedCandidates.find((finding) => finding.event_id === 50)?.atom_id === "14", "numeric atom_id must normalize to string 14");
+  assert(result.groundedCandidates.find((finding) => finding.event_id === 52)?.atom_id === "14-1", "string atom_id must remain unchanged");
   assert(result.ownershipSurvivorCount === 3, `expected 3 Ownership survivors, got ${result.ownershipSurvivorCount}`);
   assert(result.finalAdjudicatorSurvivorCount === 2, `expected 2 Final Adjudicator survivors, got ${result.finalAdjudicatorSurvivorCount}`);
   assert(result.groundedCandidateCount === result.groundedCandidates.length, "all generated Article 14 candidates must be grounded");

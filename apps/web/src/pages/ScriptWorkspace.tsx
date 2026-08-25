@@ -696,7 +696,7 @@ function isReviewLayerOnlyWorkspaceFinding(f: AnalysisFinding): boolean {
 }
 
 function isWorkspaceActionDisabledFinding(f: AnalysisFinding): boolean {
-  return isSyntheticWorkspaceFinding(f) || isReviewLayerOnlyWorkspaceFinding(f);
+  return isSyntheticWorkspaceFinding(f) || isReviewLayerOnlyWorkspaceFinding(f) || f.source === 'manual_note';
 }
 
 function synthesizeWorkspaceFindingFromCanonical(
@@ -867,6 +867,51 @@ function synthesizeWorkspaceFindingFromReview(
     manualComment: reviewFinding.manualComment ?? rawFinding?.manualComment ?? null,
     editedBy: reviewFinding.editedBy ?? rawFinding?.editedBy ?? null,
     editedAt: reviewFinding.editedAt ?? rawFinding?.editedAt ?? null,
+  };
+}
+
+function synthesizeWorkspaceManualNote(
+  row: Record<string, unknown>,
+  fallbackScriptId: string,
+  fallbackVersionId: string,
+): AnalysisFinding {
+  const startOffsetGlobal = typeof row.start_offset_global === 'number' ? row.start_offset_global : null;
+  const endOffsetGlobal = typeof row.end_offset_global === 'number' ? row.end_offset_global : null;
+  const snippet = String(row.snippet ?? '');
+  return {
+    id: `manual-note:${String(row.id)}`,
+    jobId: String(row.job_id ?? ''),
+    scriptId: String(row.script_id ?? fallbackScriptId),
+    versionId: String(row.version_id ?? fallbackVersionId),
+    source: 'manual_note',
+    articleId: 0,
+    atomId: null,
+    severity: 'low',
+    confidence: Number(row.confidence ?? 1),
+    titleAr: String(row.title ?? 'ملاحظة يدوية'),
+    descriptionAr: String(row.description ?? row.reviewer_comment ?? snippet),
+    evidenceSnippet: snippet,
+    startOffsetGlobal,
+    endOffsetGlobal,
+    startLineChunk: null,
+    endLineChunk: null,
+    pageNumber: null,
+    anchorStatus: 'exact',
+    anchorMethod: 'stored_offsets',
+    anchorStartOffsetGlobal: startOffsetGlobal,
+    anchorEndOffsetGlobal: endOffsetGlobal,
+    anchorText: snippet,
+    anchorConfidence: 1,
+    anchorUpdatedAt: typeof row.created_at === 'string' ? row.created_at : null,
+    location: { noteId: row.id, category: row.category },
+    createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+    reviewStatus: 'violation',
+    reviewReason: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    reviewedRole: null,
+    createdBy: null,
+    manualComment: typeof row.reviewer_comment === 'string' ? row.reviewer_comment : null,
   };
 }
 
@@ -2017,6 +2062,7 @@ export function ScriptWorkspace() {
   const [selectedReportSummary, setSelectedReportSummary] = useState<AnalysisReport | null>(null);
   const [selectedJobCanonicalHash, setSelectedJobCanonicalHash] = useState<string | null>(null);
   const [reportFindings, setReportFindings] = useState<AnalysisFinding[]>([]);
+  const [reportManualNotes, setReportManualNotes] = useState<AnalysisFinding[]>([]);
   const [reportReviewFindings, setReportReviewFindings] = useState<AnalysisReviewFinding[]>([]);
   const [highlightExpectedCount, setHighlightExpectedCount] = useState(0);
   const [highlightLocatableCount, setHighlightLocatableCount] = useState(0);
@@ -2421,9 +2467,11 @@ export function ScriptWorkspace() {
   const workspaceUsesReviewLayer = workspaceReviewLayerViolations.length > 0 || workspaceReviewLayerApproved.length > 0;
 
   const workspaceVisibleReportFindings = useMemo(() => {
-    if (workspaceUsesReviewLayer) return workspaceReviewLayerViolations;
-    if (!workspaceUseCanonicalFallback) return workspaceRealViolationFindings;
-    return workspaceCanonicalSummaryFindings.map((finding) => {
+    const violations = workspaceUsesReviewLayer
+      ? workspaceReviewLayerViolations
+      : !workspaceUseCanonicalFallback
+        ? workspaceRealViolationFindings
+        : workspaceCanonicalSummaryFindings.map((finding) => {
       return (
         matchWorkspaceFindingForCanonical(finding, workspaceRealViolationFindings) ??
         synthesizeWorkspaceFindingFromCanonical(
@@ -2433,7 +2481,8 @@ export function ScriptWorkspace() {
           selectedReportForHighlights?.jobId ?? undefined
         )
       );
-    });
+        });
+    return [...violations, ...reportManualNotes];
   }, [
     workspaceUseCanonicalFallback,
     workspaceUsesReviewLayer,
@@ -2443,6 +2492,7 @@ export function ScriptWorkspace() {
     script?.id,
     script?.currentVersionId,
     selectedReportForHighlights?.jobId,
+    reportManualNotes,
   ]);
 
   const workspaceActionableFindings = useMemo(
@@ -2899,6 +2949,7 @@ export function ScriptWorkspace() {
         setSelectedReportSummary(null);
         setSelectedJobCanonicalHash(null);
         setReportFindings([]);
+        setReportManualNotes([]);
         setReportReviewFindings([]);
       }
       loadReportHistory();
@@ -2928,9 +2979,16 @@ export function ScriptWorkspace() {
           findingsApi.getReviewByJob(jobId),
           reportsApi.getByJob(jobId),
         ]);
+        const { data: noteRows } = await supabase
+          .from('analysis_notes')
+          .select('id, job_id, script_id, version_id, category, title, description, snippet, confidence, reviewer_comment, created_at, start_offset_global, end_offset_global')
+          .eq('job_id', jobId)
+          .eq('source', 'manual')
+          .order('created_at', { ascending: true });
         setSelectedJobCanonicalHash((job as { scriptContentHash?: string | null }).scriptContentHash ?? null);
         setSelectedReportSummary(fullReport);
         setReportFindings(list);
+        setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceManualNote(row as Record<string, unknown>, script.id, script.currentVersionId ?? '')));
         setReportReviewFindings(reviewList);
         if (IS_DEV) console.log('[ScriptWorkspace] Findings loaded for highlights:', list.length);
         if (id) {
@@ -2943,13 +3001,21 @@ export function ScriptWorkspace() {
           findingsApi.getReviewByReport(reportId!),
           reportsApi.getById(reportId!),
         ]);
+        const { data: noteRows } = await supabase
+          .from('analysis_notes')
+          .select('id, job_id, script_id, version_id, category, title, description, snippet, confidence, reviewer_comment, created_at, start_offset_global, end_offset_global')
+          .eq('job_id', fullReport.jobId)
+          .eq('source', 'manual')
+          .order('created_at', { ascending: true });
         setSelectedReportSummary(fullReport);
         setReportFindings(list);
+        setReportManualNotes((noteRows ?? []).map((row) => synthesizeWorkspaceManualNote(row as Record<string, unknown>, script.id, script.currentVersionId ?? '')));
         setReportReviewFindings(reviewList);
         if (IS_DEV) console.log('[ScriptWorkspace] Findings loaded for highlights:', list.length);
       }
     } catch (_) {
       setReportFindings([]);
+      setReportManualNotes([]);
       setReportReviewFindings([]);
       setSelectedReportSummary(null);
       setSelectedJobCanonicalHash(null);
@@ -4035,6 +4101,7 @@ export function ScriptWorkspace() {
       setExtractedText(textToShow);
       // The file/context was replaced: clear stale highlight/report state immediately in UI.
       setReportFindings([]);
+      setReportManualNotes([]);
       setReportReviewFindings([]);
       setSelectedReportForHighlights(null);
       setSelectedReportSummary(null);
@@ -4291,8 +4358,27 @@ export function ScriptWorkspace() {
       });
       toast.success(lang === 'ar' ? 'تمت إضافة الملاحظة اليدوية' : 'Manual finding added');
       if (formData.findingType === 'note') {
-        setIsViolationModalOpen(false);
-        return;
+        setReportManualNotes((prev) => [
+          ...prev,
+          synthesizeWorkspaceManualNote({
+            id: created.id,
+            job_id: created.jobId,
+            script_id: created.scriptId,
+            version_id: created.versionId,
+            category: formData.noteCategory,
+            title: created.titleAr,
+            description: created.descriptionAr,
+            snippet: created.evidenceSnippet,
+            confidence: created.confidence,
+            reviewer_comment: created.manualComment,
+            created_at: created.createdAt,
+            start_offset_global: created.startOffsetGlobal,
+            end_offset_global: created.endOffsetGlobal,
+          },
+          script.id,
+          script.currentVersionId ?? '',
+        ),
+        ]);
       }
       // const report = reportHistory.find((r) => r.id === formData.reportId) ?? selectedReportForHighlights;
       // const jobId = (report as { jobId?: string })?.jobId ?? created.jobId;
@@ -6461,6 +6547,7 @@ export function ScriptWorkspace() {
                       setSelectedReportForHighlights(null);
                       setSelectedReportSummary(null);
                       setReportFindings([]);
+                      setReportManualNotes([]);
                       setReportReviewFindings([]);
                       setSelectedFindingId(null);
                       setSelectedReportFindingIds([]);
@@ -6671,7 +6758,9 @@ export function ScriptWorkspace() {
                           </span>
                         </div>
                         <div className="relative flex items-center gap-1">
-                          {f.source === 'manual' ? (
+                          {f.source === 'manual_note' ? (
+                            <Badge variant="outline" className="text-[10px] border-info/30 text-info">{lang === 'ar' ? 'ملاحظة يدوية' : 'Manual Note'}</Badge>
+                          ) : f.source === 'manual' ? (
                             <Badge variant="outline" className="text-[10px]">{lang === 'ar' ? 'يدوي' : 'Manual'}</Badge>
                           ) : (f.source === 'ai' || f.source === 'lexicon_mandatory') ? (
                             <Badge variant="warning" className="text-[10px]">{f.source === 'lexicon_mandatory' ? t('findingSourceGlossary') : 'AI'}</Badge>
@@ -6694,9 +6783,13 @@ export function ScriptWorkspace() {
                               {lang === 'ar' ? 'معدّل' : 'Edited'}
                             </Badge>
                           )}
-                          <Badge variant={f.reviewStatus === 'approved' ? 'success' : 'error'} className="text-[10px]">
-                            {f.reviewStatus === 'approved' ? (lang === 'ar' ? 'آمن' : 'Safe') : (lang === 'ar' ? 'مخالفة' : 'Violation')}
-                          </Badge>
+                          {f.source === 'manual_note' ? (
+                            <Badge variant="outline" className="text-[10px] border-info/30 text-info">{lang === 'ar' ? 'ملاحظة' : 'Note'}</Badge>
+                          ) : (
+                            <Badge variant={f.reviewStatus === 'approved' ? 'success' : 'error'} className="text-[10px]">
+                              {f.reviewStatus === 'approved' ? (lang === 'ar' ? 'آمن' : 'Safe') : (lang === 'ar' ? 'مخالفة' : 'Violation')}
+                            </Badge>
+                          )}
                           {!isWorkspaceActionDisabledFinding(f) && (
                             <>
                               <button
