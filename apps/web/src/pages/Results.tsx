@@ -416,7 +416,7 @@ export function Results() {
   const [groupFindingsByAtom, setGroupFindingsByAtom] = useState(false);
   /** false = deduped list (default); true = every DB row (duplicates visible). */
   const [showAllFindingRows, setShowAllFindingRows] = useState(false);
-  const [reportSection, setReportSection] = useState<'notes' | 'manual' | 'dictionary'>('notes');
+  const [reportSection, setReportSection] = useState<'all' | 'violations' | 'notes' | 'manual' | 'dictionary'>('notes');
   const [noteSubSection, setNoteSubSection] = useState<'article' | 'informational'>('article');
   const [findingFilter, setFindingFilter] = useState<FindingKindFilter>('all');
   const [noteCategoryFilter, setNoteCategoryFilter] = useState<NoteCategoryKey | 'all'>('all');
@@ -1463,6 +1463,8 @@ export function Results() {
   };
   const DecisionIcon = decisionConfig[decision].icon;
   const primaryReportSections = [
+    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: displayTotal + notesTotalCount, tone: 'neutral' as const },
+    { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: displayTotal, tone: 'warning' as const },
     { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: notesTotalCount, tone: 'info' as const },
     { key: 'manual' as const, labelAr: 'يدوية', labelEn: 'Manual', value: displayTypeCounts.manual, tone: 'neutral' as const },
     { key: 'dictionary' as const, labelAr: 'قاموس', labelEn: 'Glossary', value: displayTypeCounts.glossary, tone: 'primary' as const },
@@ -3064,6 +3066,13 @@ function displayFindingTitle(params: {
                     setNoteSubSection('article');
                     setFindingFilter('all');
                     setNoteCategoryFilter('all');
+                  } else if (section.key === 'violations') {
+                    setFindingFilter('all');
+                    setNoteCategoryFilter('all');
+                  } else if (section.key === 'all') {
+                    setFindingFilter('all');
+                    setNoteSubSection('article');
+                    setNoteCategoryFilter('all');
                   } else {
                     setFindingFilter(section.key === 'manual' ? 'manual' : 'glossary');
                   }
@@ -3208,7 +3217,16 @@ function displayFindingTitle(params: {
 
       {/* Main findings */}
         <div className="space-y-8">
-          {reportSection === 'violations' && hasViolationContent && (
+          {reportSection === 'all' && (
+            <div className="space-y-8">
+              <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
+                <Info className="w-5 h-5 text-info" />
+                {lang === 'ar' ? 'الكل' : 'All'}
+              </h3>
+            </div>
+          )}
+
+          {((reportSection === 'violations' || reportSection === 'all') && hasViolationContent) && (
             <>
           {/* Violations section */}
           <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
@@ -3326,7 +3344,7 @@ function displayFindingTitle(params: {
             </>
           )}
 
-          {reportSection === 'notes' && (
+          {((reportSection === 'notes' || reportSection === 'all') && (
           <section className="mt-12" aria-label={lang === 'ar' ? 'قسم الملاحظات' : 'Notes section'}>
               <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                 <Info className="w-5 h-5 text-info" />
@@ -3338,40 +3356,6 @@ function displayFindingTitle(params: {
                   ? 'هذه ملاحظات للمراجعة البشرية، وتبقى داخل نموذج الملاحظات ولا تُعامل كمخالفات.'
                   : 'These are review notes that remain within the note model and are not treated as violations.'}
               </p>
-              <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label={lang === 'ar' ? 'أقسام الملاحظات' : 'Notes sections'}>
-                {[
-                  { key: 'article', labelAr: 'مخالفات', labelEn: 'Violations', tone: 'red' as const },
-                  { key: 'informational', labelAr: 'ملاحظات', labelEn: 'Notes', tone: 'blue' as const },
-                ].map((tab) => {
-                  const isActive = noteSubSection === tab.key;
-                  const activeClasses = tab.tone === 'red'
-                    ? isActive
-                      ? 'border-error bg-error text-white'
-                      : 'border-error/30 bg-error/10 text-error hover:bg-error/20'
-                    : isActive
-                      ? 'border-info bg-info text-white'
-                      : 'border-info/30 bg-info/10 text-info hover:bg-info/20';
-
-                  return (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
-                      onClick={() => {
-                        setNoteSubSection(tab.key);
-                        setNoteCategoryFilter('all');
-                      }}
-                      className={cn(
-                        'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
-                        activeClasses,
-                      )}
-                    >
-                      <span>{lang === 'ar' ? tab.labelAr : tab.labelEn}</span>
-                    </button>
-                  );
-                })}
-              </div>
               <div className="mt-4 space-y-4">
                 <div role="group" aria-label={noteSubSection === 'article' ? (lang === 'ar' ? 'ملاحظات المواد' : 'Article-derived note categories') : (lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational note categories')}>
                   <div className={cn(
@@ -3448,7 +3432,7 @@ function displayFindingTitle(params: {
           )}
 
           {/* Report hints: not violations but notes for director (e.g. Islamic rules when filming) */}
-          {reportSection === 'violations' && !showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0))) && (
+          {((reportSection === 'violations' || reportSection === 'all') && !showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0)))) && (
             <>
               <h3 className={cn(
                 "font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2",
@@ -3501,7 +3485,7 @@ function displayFindingTitle(params: {
           )}
 
           {/* Approved section */}
-          {reportSection === 'violations' && !showOnlySpecialNotes && !showOnlyApproved && useReviewFindingsUi && reviewApproved.length > 0 && (
+          {((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && useReviewFindingsUi && reviewApproved.length > 0) && (
             <>
               <h3 className="font-bold text-xl text-text-main border-b border-success/30 pb-2 flex items-center gap-2 mt-12">
                 <Shield className="w-5 h-5 text-success" />
@@ -3511,7 +3495,7 @@ function displayFindingTitle(params: {
               {renderFindingsFromReview(reviewApproved)}
             </>
           )}
-          {reportSection === 'violations' && !showOnlySpecialNotes && !showOnlyApproved && !useReviewFindingsUi && useRealFindingsUi && displayApprovedFindings.length > 0 && (
+          {((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && !useReviewFindingsUi && useRealFindingsUi && displayApprovedFindings.length > 0) && (
             <>
               <h3 className="font-bold text-xl text-text-main border-b border-success/30 pb-2 flex items-center gap-2 mt-12">
                 <Shield className="w-5 h-5 text-success" />
