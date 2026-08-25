@@ -1,4 +1,4 @@
-# Article 04
+# ملاحظة — المادة 04: المخدرات والكحول وتصنيعها والترويج لها
 ## المخدرات والكحول وتصنيعها والترويج لها
 
 ---
@@ -102,3 +102,7 @@
 ولا تعتبر المحتوى العلاجي، أو التوعوي، أو الطبي، أو الأمني، أو القضائي، أو الإخباري، أو التوثيقي، أو السرد الدرامي الذي يدين التعاطي أو يوضح أضراره مرشح (Candidate).
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن تشجيعاً أو تمجيداً أو ترويجاً أو دعوة إلى التعاطي أو تعليم تصنيع أو تهريب أو توزيع أو إخفاء المخدرات أو الكحول أو الاتجار بها بما يدخل مباشرة ضمن نطاق المادة (04).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_04`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

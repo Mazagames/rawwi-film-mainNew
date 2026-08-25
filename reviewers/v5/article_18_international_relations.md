@@ -1,4 +1,4 @@
-# Article 18
+# ملاحظة — المادة 18: العلاقات الدولية
 ## العلاقات الدولية
 
 ---
@@ -110,3 +110,7 @@
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن تحريضاً أو تشجيعاً أو تمجيداً أو دعوةً للاعتداء على دولة أو حكومة أو شعب، أو الإضرار بالعلاقات الدولية، أو نشر معلومات مضللة بقصد واضح للإضرار بالعلاقات الخارجية، بما يدخل مباشرة ضمن نطاق المادة (18).
 
 إذا كان الحكم يحتاج إلى التحقق من أحداث أو تصريحات أو معلومات خارج السيناريو أو إلى مراجعة بشرية، فلا تستبعد الحدث.
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_18`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

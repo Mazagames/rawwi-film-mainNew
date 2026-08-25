@@ -155,7 +155,6 @@ function testRepositoryFallbackDiscovery(): void {
 function buildFullReviewerPack(baseDir: string): string {
   const dir = makeCanonicalReviewerDir(baseDir);
   for (let article = 1; article <= 24; article += 1) {
-    if (article === 5 || article === 12 || article === 14) continue;
     writeReviewer(dir, `article_${articleNumber(article)}_reviewer.md`, article, `العنوان ${articleNumber(article)}`);
   }
   return dir;
@@ -166,12 +165,11 @@ function testFilenameIgnoredDuringLoad(): void {
   try {
     const dir = makeCanonicalReviewerDir(baseDir);
     for (let article = 1; article <= 24; article += 1) {
-      if (article === 5 || article === 12 || article === 14) continue;
       const filename = article === 1 ? "article_01_custom.md" : article === 2 ? "article_02_custom.md" : `article_${articleNumber(article)}_custom.md`;
       writeReviewer(dir, filename, article, `عنوان ${articleNumber(article)}`);
     }
     const pack = loadV5ReviewerPackFromDirectoryForTests(dir);
-    assert(pack.reviewerDefinitions.length === 21, `expected 21 reviewers, got ${pack.reviewerDefinitions.length}`);
+    assert(pack.reviewerDefinitions.length === 24, `expected 24 reviewers, got ${pack.reviewerDefinitions.length}`);
     const reviewer1 = pack.reviewerDefinitions.find((reviewer) => reviewer.articleNumber === 1);
     assert(reviewer1?.filename === "article_01_custom.md", `expected custom filename for article 1, got ${reviewer1?.filename ?? "missing"}`);
     const reviewer2 = pack.reviewerDefinitions.find((reviewer) => reviewer.articleNumber === 2);
@@ -225,6 +223,7 @@ function testStartupValidationFailure(): void {
   try {
     const dir = makeCanonicalReviewerDir(baseDir);
     for (let article = 1; article <= 23; article += 1) {
+      if (article === 5 || article === 12 || article === 14) continue;
       writeReviewer(dir, `article_${articleNumber(article)}_reviewer.md`, article, `عنوان ${articleNumber(article)}`);
     }
     clearV5ReviewerPackCacheForTests();
@@ -269,12 +268,12 @@ function testValidPackLoadsAllArticles(): void {
   try {
     const dir = buildFullReviewerPack(baseDir);
     const pack = loadV5ReviewerPackFromDirectoryForTests(dir);
-    assert(pack.reviewerDefinitions.length === 21, `expected 21 reviewers, got ${pack.reviewerDefinitions.length}`);
+    assert(pack.reviewerDefinitions.length === 24, `expected 24 reviewers, got ${pack.reviewerDefinitions.length}`);
     const articles = pack.reviewerDefinitions.map((reviewer) => reviewer.articleNumber);
-    const expectedArticles = Array.from({ length: 24 }, (_, i) => i + 1).filter((article) => article !== 5 && article !== 12 && article !== 14);
-    assert(JSON.stringify(articles) === JSON.stringify(expectedArticles), "article numbers must exclude pilot Notes in order");
+    const expectedArticles = Array.from({ length: 24 }, (_, i) => i + 1);
+    assert(JSON.stringify(articles) === JSON.stringify(expectedArticles), "article numbers must be 1..24 in order");
     assert(readFileSync(join(dir, "article_01_reviewer.md"), "utf8").startsWith("# Article 01"), "test fixture sanity check");
-    console.log("✓ valid pack loads exactly 21 ordered legacy reviewers");
+    console.log("✓ valid synthetic pack loads exactly 24 ordered reviewers");
   } finally {
     rmSync(baseDir, { recursive: true, force: true });
   }
@@ -285,16 +284,13 @@ function testRepositoryPackExcludesNotesPilot(): void {
   const pack = getV5ReviewerPack();
   const articles = pack.reviewerDefinitions.map((reviewer) => reviewer.articleNumber);
   const filenames = pack.reviewerDefinitions.map((reviewer) => reviewer.filename);
-  const expectedArticles = Array.from({ length: 24 }, (_, index) => index + 1).filter(
-    (article) => article !== 5 && article !== 12 && article !== 14,
-  );
 
-  assert(pack.reviewerDefinitions.length === 21, `expected 21 legacy reviewers, got ${pack.reviewerDefinitions.length}`);
-  assert(JSON.stringify(articles) === JSON.stringify(expectedArticles), `unexpected legacy reviewer articles: ${JSON.stringify(articles)}`);
+  assert(pack.reviewerDefinitions.length === 0, `expected zero legacy reviewers, got ${pack.reviewerDefinitions.length}`);
   assert(!filenames.includes("article_05_violence_torture.md"), "legacy pack must exclude Article 05 Note file");
   assert(!filenames.includes("article_12_child_protection_exploitation.md"), "legacy pack must exclude Article 12 Note file");
   assert(!filenames.includes("article_14_profanity_personal_insults.md"), "legacy pack must exclude Article 14 Note file");
-  console.log(`✓ repository legacy V5 pack loads ${articles.length} reviewers: ${articles.map(articleNumber).join(", ")}`);
+  assert(articles.length === 0, "all repository Article reviewers must be excluded from legacy V5");
+  console.log("✓ repository legacy V5 pack excludes all Article 01-24 reviewers");
 }
 
 async function main(): Promise<void> {

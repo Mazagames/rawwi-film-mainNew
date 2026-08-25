@@ -1,4 +1,4 @@
-# Article 22
+# ملاحظة — المادة 22: الاتفاقيات والمعاهدات
 ## الاتفاقيات والمعاهدات
 
 ---
@@ -110,3 +110,7 @@
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن تحريضاً أو تشجيعاً أو دعوةً واضحة إلى مرشح (Candidate) أو نقض أو عدم الالتزام بالاتفاقيات أو المعاهدات أو الالتزامات الدولية، بما يدخل مباشرة ضمن نطاق المادة (22).
 
 إذا كان الحكم يحتاج إلى التحقق من معلومات أو وقائع أو اتفاقيات خارج السيناريو أو إلى مراجعة بشرية، فلا تستبعد الحدث.
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_22`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

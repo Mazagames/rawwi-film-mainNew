@@ -1,4 +1,4 @@
-# Article 11
+# ملاحظة — المادة 11: المصداقية الإعلامية
 ## المصداقية الإعلامية
 
 ---
@@ -122,7 +122,7 @@
 {
   "notes": [
     {
-      "category": "Media Credibility",
+      "category": "article_11",
       "title": "",
       "description": "",
       "paragraph": "",

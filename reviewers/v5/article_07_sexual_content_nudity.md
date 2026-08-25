@@ -1,4 +1,4 @@
-# Article 07
+# ملاحظة — المادة 07: المحتوى الجنسي والعري
 ## المحتوى الجنسي والعري
 
 ---
@@ -102,3 +102,7 @@
 ولا تعتبر المحتوى الطبي، أو العلمي، أو القانوني، أو التوعوي، أو الإخباري، أو التوثيقي، أو السرد الدرامي الذي لا يتبنى أو يشجع أو يروج لسلوك جنسي مرشح (Candidate).
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن ممارسة جنسية صريحة، أو وصفاً جنسياً مثيراً، أو تحريضاً أو طلباً أو عرضاً لممارسة جنسية، أو إيحاءً جنسياً واضحاً، أو أي محتوى يتبنى أو يشجع أو يروج لسلوك جنسي بما يدخل مباشرة ضمن نطاق المادة (07).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_07`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

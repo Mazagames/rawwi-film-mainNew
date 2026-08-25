@@ -1,4 +1,4 @@
-# Article 06
+# ملاحظة — المادة 06: الانتحار وإيذاء النفس وتشجيعها
 ## الانتحار وإيذاء النفس وتشجيعها
 
 ---
@@ -104,3 +104,7 @@
 ولا تعتبر المحتوى الطبي، أو النفسي، أو التوعوي، أو الإخباري، أو التوثيقي، أو السرد الدرامي الذي يدين الانتحار أو يشجع على العلاج وطلب المساعدة مرشح (Candidate).
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن تحريضاً أو تشجيعاً أو تمجيداً أو تبريراً أو تعليماً لوسائل الانتحار أو إيذاء النفس، أو تقديم الانتحار كحل إيجابي أو مساعدة مباشرة على تنفيذه بما يدخل مباشرة ضمن نطاق المادة (06).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_06`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

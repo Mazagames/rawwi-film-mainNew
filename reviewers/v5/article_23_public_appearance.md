@@ -1,4 +1,4 @@
-# Article 23
+# ملاحظة — المادة 23: المظهر العام
 ## المظهر العام
 
 ---
@@ -107,3 +107,7 @@
 ولا تخلط بين هذه المادة والمادة (07) الخاصة بالمحتوى الجنسي.
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن وصفاً بصرياً واضحاً لمظهر أو لباس أو كشف للجسد يخالف الذوق العام، بما يدخل مباشرة ضمن نطاق المادة (23).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_23`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

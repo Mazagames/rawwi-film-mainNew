@@ -1,4 +1,4 @@
-# Article 03
+# ملاحظة — المادة 03: الإرهاب والتطرف والجماعات الإرهابية
 ## الإرهاب والتطرف والجماعات الإرهابية
 
 ---
@@ -106,3 +106,7 @@
 ولا تعتبر التناول التاريخي، أو الإخباري، أو التوثيقي، أو الأكاديمي، أو السرد الدرامي الذي يدين الإرهاب أو ينقله دون تبنٍ مرشح (Candidate).
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن تأييداً أو تمجيداً أو تبريراً أو تحريضاً أو تجنيداً أو دعوة إلى تنفيذ أعمال إرهابية أو الانضمام إلى جماعات إرهابية أو استخدام الخطاب الديني لتبرير الإرهاب أو العنف بما يدخل مباشرة ضمن نطاق المادة (03).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_03`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

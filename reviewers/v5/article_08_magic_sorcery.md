@@ -1,4 +1,4 @@
-# Article 08
+# ملاحظة — المادة 08: السحر والشعوذة والخرافات والتنجيم
 ## السحر والشعوذة والخرافات والتنجيم
 
 ---
@@ -106,3 +106,7 @@
 ولا تعتبر الرقية الشرعية، أو المحتوى الديني أو التوعوي، أو الأعمال التاريخية، أو الخيالية، أو الوثائقية، أو السرد الدرامي الذي يحذر من السحر أو يكشف خداع المشعوذين مرشح (Candidate).
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن تشجيعاً أو ترويجاً أو تمجيداً أو تعليماً أو ممارسة فعلية للسحر أو الشعوذة أو التنجيم أو ادعاء معرفة الغيب أو استحضار الجن أو الشياطين أو تقديم هذه الممارسات كوسيلة حقيقية وفعالة بما يدخل مباشرة ضمن نطاق المادة (08).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_08`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

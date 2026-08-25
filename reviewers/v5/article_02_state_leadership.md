@@ -1,4 +1,4 @@
-# Article 02
+# ملاحظة — المادة 02: الإساءة إلى القيادة السياسية ورموز الدولة والسيادة الوطنية
 ## الإساءة إلى القيادة السياسية ورموز الدولة والسيادة الوطنية
 
 ---
@@ -104,3 +104,7 @@
 ولا تعتبر النقد الموضوعي، أو التناول التاريخي، أو التوثيقي، أو الإخباري، أو الأكاديمي، أو الدرامي الذي لا يتبنى الإساءة أو التحريض مرشح (Candidate).
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن إساءة أو إهانة أو تحريضاً أو دعوة إلى زعزعة استقرار الدولة أو الدعوة إلى إسقاط نظام الحكم أو استهداف القيادة السياسية بصورة تدخل مباشرة ضمن نطاق المادة (02).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_02`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

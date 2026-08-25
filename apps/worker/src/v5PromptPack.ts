@@ -28,11 +28,32 @@ type ParsedV5ReviewerMarkdown = {
 };
 
 const LEGACY_V5_EXCLUDED_FILENAMES = new Set([
+  "article_01_religion.md",
+  "article_02_state_leadership.md",
+  "article_03_terrorism.md",
+  "article_04_drugs_alcohol.md",
   "article_05_violence_torture.md",
+  "article_06_suicide_self_harm.md",
+  "article_07_sexual_content_nudity.md",
+  "article_08_magic_sorcery.md",
+  "article_09_crime_criminal_methods.md",
+  "article_10_hate_speech_discrimination.md",
+  "article_11_media_credibility.md",
   "article_12_child_protection_exploitation.md",
+  "article_13_medical_health_misinformation.md",
   "article_14_profanity_personal_insults.md",
+  "article_15_public_order.md",
+  "article_16_misinformation_rumors.md",
+  "article_17_dignity_reputation_privacy.md",
+  "article_18_international_relations.md",
+  "article_19_economic_stability.md",
+  "article_20_bankruptcy_commercial_cases.md",
+  "article_21_classified_documents.md",
+  "article_22_treaties_agreements.md",
+  "article_23_public_appearance.md",
+  "article_24_clothing_modesty.md",
 ]);
-const EXPECTED_V5_REVIEWER_COUNT = 21;
+const EXPECTED_V5_REVIEWER_COUNT = 24;
 const EXPECTED_ARTICLE_MIN = 1;
 const EXPECTED_ARTICLE_MAX = 24;
 const MODULE_URL = import.meta.url;
@@ -192,9 +213,7 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
     .filter(isLegacyV5ReviewerFile);
 
   if (reviewerFiles.length === 0) {
-    failV5ReviewerLoad("No V5 reviewer markdown files were found", {
-      reviewerDirectory,
-    });
+    return { reviewerDirectory, reviewerDefinitions: [] };
   }
 
   const parsedReviewers = reviewerFiles.map((filename) => {
@@ -234,9 +253,6 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
 
   const missingArticleNumbers: number[] = [];
   for (let articleNumber = EXPECTED_ARTICLE_MIN; articleNumber <= EXPECTED_ARTICLE_MAX; articleNumber += 1) {
-    if (articleNumber === 5 || articleNumber === 12 || articleNumber === 14) {
-      continue;
-    }
     if (!byArticle.has(articleNumber)) {
       missingArticleNumbers.push(articleNumber);
     }
@@ -251,7 +267,7 @@ function loadReviewerPackFromDirectory(reviewerDirectory: string): LoadedV5Pack 
   }
 
   if (parsedReviewers.length !== EXPECTED_V5_REVIEWER_COUNT) {
-    failV5ReviewerLoad("V5 reviewer pack must contain exactly 21 markdown files", {
+    failV5ReviewerLoad("V5 reviewer pack must contain exactly 0 markdown files", {
       reviewerDirectory,
       reviewerCount: parsedReviewers.length,
       expectedCount: EXPECTED_V5_REVIEWER_COUNT,

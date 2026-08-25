@@ -61,9 +61,20 @@ const DEFAULT_ACTIONABLE_ARTICLE_ID = policyArticlesForForm[0]?.articleId ?? 4;
 const VIOLATION_TYPES_OPTIONS = violationTypesForChecklist();
 const DEFAULT_VIOLATION_TYPE_ID = VIOLATION_TYPES_OPTIONS[0]?.id ?? 'other';
 const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
+  { key: 'article_01', labelAr: 'الإساءة إلى الذات والدين', labelEn: 'Article 01' },
+  { key: 'article_02', labelAr: 'القيادة السياسية ورموز الدولة', labelEn: 'Article 02' },
+  { key: 'article_03', labelAr: 'الإرهاب والتطرف', labelEn: 'Article 03' },
+  { key: 'article_04', labelAr: 'المخدرات والكحول', labelEn: 'Article 04' },
   { key: 'article_05', labelAr: 'العنف والقتل والتعذيب', labelEn: 'Article 05' },
   { key: 'article_12', labelAr: 'حماية الأطفال والقُصّر', labelEn: 'Article 12' },
   { key: 'article_14', labelAr: 'الألفاظ النابية والإهانات', labelEn: 'Article 14' },
+  { key: 'article_06', labelAr: 'الانتحار وإيذاء النفس', labelEn: 'Article 06' },
+  { key: 'article_07', labelAr: 'المحتوى الجنسي والعري', labelEn: 'Article 07' },
+  { key: 'article_08', labelAr: 'السحر والشعوذة', labelEn: 'Article 08' },
+  { key: 'article_09', labelAr: 'الجرائم وتقنياتها', labelEn: 'Article 09' },
+  { key: 'article_10', labelAr: 'خطاب الكراهية والتمييز', labelEn: 'Article 10' },
+  { key: 'article_11', labelAr: 'المصداقية الإعلامية', labelEn: 'Article 11' },
+  { key: 'article_13', labelAr: 'المعلومات الطبية والصحية', labelEn: 'Article 13' },
   { key: 'security_scenes', labelAr: 'مشاهد أمنية', labelEn: 'Security Scenes' },
   { key: 'saudi_names', labelAr: 'أسماء سعودية', labelEn: 'Saudi Names' },
   { key: 'commercial_entities', labelAr: 'كيانات تجارية', labelEn: 'Commercial Entities' },
@@ -71,11 +82,24 @@ const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelE
   { key: 'media_credibility', labelAr: 'مصداقية الوسائط', labelEn: 'Media Credibility' },
   { key: 'classified_documents', labelAr: 'وثائق مصنفة', labelEn: 'Classified Documents' },
   { key: 'religious_content', labelAr: 'محتوى ديني / مذهبي حساس', labelEn: 'Religious Content' },
+  { key: 'article_15', labelAr: 'النظام العام', labelEn: 'Article 15' },
+  { key: 'article_16', labelAr: 'الشائعات والمعلومات المضللة', labelEn: 'Article 16' },
+  { key: 'article_17', labelAr: 'الكرامة والسمعة والخصوصية', labelEn: 'Article 17' },
+  { key: 'article_18', labelAr: 'العلاقات الدولية', labelEn: 'Article 18' },
+  { key: 'article_19', labelAr: 'الاقتصاد والاستقرار المالي', labelEn: 'Article 19' },
+  { key: 'article_20', labelAr: 'الإفلاس والقضايا التجارية', labelEn: 'Article 20' },
+  { key: 'article_21', labelAr: 'الوثائق السرية', labelEn: 'Article 21' },
+  { key: 'article_22', labelAr: 'الاتفاقيات والمعاهدات', labelEn: 'Article 22' },
+  { key: 'article_23', labelAr: 'المظهر العام', labelEn: 'Article 23' },
+  { key: 'article_24', labelAr: 'الزي والاحتشام', labelEn: 'Article 24' },
 ];
 const EMPTY_NOTES_BY_CATEGORY: Record<NoteCategoryKey, ReportNote[]> = {
+  article_01: [], article_02: [], article_03: [], article_04: [],
   article_05: [],
   article_12: [],
   article_14: [],
+  article_06: [], article_07: [], article_08: [], article_09: [], article_10: [],
+  article_11: [], article_13: [],
   media_credibility: [],
   medical_notes: [],
   classified_documents: [],
@@ -83,6 +107,8 @@ const EMPTY_NOTES_BY_CATEGORY: Record<NoteCategoryKey, ReportNote[]> = {
   security_scenes: [],
   saudi_names: [],
   commercial_entities: [],
+  article_15: [], article_16: [], article_17: [], article_18: [], article_19: [],
+  article_20: [], article_21: [], article_22: [], article_23: [], article_24: [],
 };
 
 function formatAtomDisplayR(articleId: number, atomId: string | null): string {

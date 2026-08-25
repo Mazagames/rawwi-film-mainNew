@@ -1,4 +1,4 @@
-# Article 09
+# ملاحظة — المادة 09: الجرائم وتقنيات ارتكابها وتعليمها
 ## الجرائم وتقنيات ارتكابها وتعليمها
 
 ---
@@ -106,3 +106,7 @@
 ولا تعتبر المحتوى الأمني، أو القانوني، أو القضائي، أو الإخباري، أو التوعوي، أو الأكاديمي، أو السرد الدرامي الذي يدين الجريمة أو يحقق فيها أو يعاقب مرتكبيها مرشح (Candidate).
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن تعليم الجريمة، أو شرح وسائل تنفيذها، أو تقديم خطوات عملية تساعد على ارتكابها، أو تشجيعها، أو تبريرها، أو تسهيل تنفيذها، بما يدخل مباشرة ضمن نطاق المادة (09).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_09`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

@@ -1,6 +1,7 @@
 import type { NoteCategoryKey, ReportNote } from "@/api/models";
 
 const NOTE_CATEGORY_LABELS: Record<NoteCategoryKey, string> = {
+  ...Object.fromEntries(Array.from({ length: 24 }, (_, index) => [`article_${String(index + 1).padStart(2, "0")}`, `Article${String(index + 1).padStart(2, "0")}`])),
   security_scenes: "Security",
   saudi_names: "SaudiNames",
   commercial_entities: "Entities",
@@ -11,6 +12,7 @@ const NOTE_CATEGORY_LABELS: Record<NoteCategoryKey, string> = {
 };
 
 const NOTE_CATEGORY_ORDER: NoteCategoryKey[] = [
+  ...(Array.from({ length: 24 }, (_, index) => `article_${String(index + 1).padStart(2, "0")}`) as NoteCategoryKey[]),
   "security_scenes",
   "saudi_names",
   "commercial_entities",
@@ -23,15 +25,7 @@ const NOTE_CATEGORY_ORDER: NoteCategoryKey[] = [
 type NoteCounts = Record<NoteCategoryKey, number>;
 
 export function countNotesByCategory(notes: Partial<Record<NoteCategoryKey, ReportNote[]>> | null | undefined): NoteCounts {
-  const counts: NoteCounts = {
-    security_scenes: 0,
-    saudi_names: 0,
-    commercial_entities: 0,
-    medical_notes: 0,
-    media_credibility: 0,
-    classified_documents: 0,
-    religious_content: 0,
-  };
+  const counts = Object.fromEntries(NOTE_CATEGORY_ORDER.map((category) => [category, 0])) as NoteCounts;
   if (!notes) return counts;
   for (const category of NOTE_CATEGORY_ORDER) {
     const list = notes[category];

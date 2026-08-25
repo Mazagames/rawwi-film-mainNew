@@ -1,4 +1,4 @@
-# Article 17
+# ملاحظة — المادة 17: الكرامة والسمعة والخصوصية
 ## الكرامة والسمعة والخصوصية
 
 ---
@@ -27,3 +27,7 @@
 - استخرج جميع الأحداث المرتبطة دون استثناء.
 - لا تستبعد أي حدث لمجرد أنك تعتقد أنه يتبع مادة أخرى. استخرج الحدث دائمًا إذا كان يحتوي على أي إشارة للمادة.
 - حافظ على توثيق كل حدث (event_id) بشكل منفصل لتسهيل التتبع.
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_17`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

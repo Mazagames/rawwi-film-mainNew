@@ -1,4 +1,4 @@
-# Article 21
+# ملاحظة — المادة 21: الوثائق والمعلومات السرية
 ## الوثائق والمعلومات السرية
 
 ---
@@ -121,7 +121,7 @@
 {
   "notes": [
     {
-      "category": "Classified Documents",
+      "category": "article_21",
       "title": "",
       "description": "",
       "paragraph": "",

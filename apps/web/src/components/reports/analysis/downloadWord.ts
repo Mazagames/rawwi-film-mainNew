@@ -25,6 +25,9 @@ type ScriptSummary = {
 };
 
 const NOTE_CATEGORY_ORDER: NoteCategoryKey[] = [
+  ...(Array.from({ length: 24 }, (_, index) => `article_${String(index + 1).padStart(2, "0")}`) as NoteCategoryKey[]),
+  "article_05",
+  "article_12",
   "security_scenes",
   "saudi_names",
   "commercial_entities",
@@ -590,6 +593,9 @@ function buildNotesBlock(params: DownloadAnalysisWordParams): string {
 
   const categoryLabel = (key: NoteCategoryKey): string => {
     const labels: Record<NoteCategoryKey, { ar: string; en: string }> = {
+      ...Object.fromEntries(Array.from({ length: 24 }, (_, index) => { const article = String(index + 1).padStart(2, "0"); return [`article_${article}`, { ar: `المادة ${article}`, en: `Article ${article}` }]; })),
+      article_05: { ar: "العنف والقتل والتعذيب", en: "Article 05" },
+      article_12: { ar: "حماية الأطفال والقُصّر", en: "Article 12" },
       security_scenes: { ar: "مشاهد أمنية", en: "Security Scenes" },
       saudi_names: { ar: "أسماء سعودية", en: "Saudi Names" },
       commercial_entities: { ar: "كيانات تجارية", en: "Commercial Entities" },

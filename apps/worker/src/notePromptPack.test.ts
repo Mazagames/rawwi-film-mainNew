@@ -18,19 +18,14 @@ function testRepositoryNotePackLoads(): void {
   const noteDirectory = resolveNoteDirectoryForTests(process.cwd());
   const pack = loadNotePackFromDirectoryForTests(noteDirectory);
   const noteDefinitions = pack.noteDefinitions.filter((definition) => definition.kind === "note");
-  assert(noteDefinitions.length === 10, `expected 10 note reviewers, got ${noteDefinitions.length}`);
+  assert(noteDefinitions.length === 28, `expected 28 note reviewers, got ${noteDefinitions.length}`);
 
   const expectedCategories = [
-    "media_credibility",
-    "medical_notes",
-    "classified_documents",
+    ...Array.from({ length: 24 }, (_, index) => `article_${String(index + 1).padStart(2, "0")}`),
     "saudi_names",
     "security_scenes",
     "commercial_entities",
     "religious_content",
-    "article_05",
-    "article_12",
-    "article_14",
   ];
 
   for (const category of expectedCategories) {
@@ -46,13 +41,13 @@ function testRepositoryNotePackLoads(): void {
   const securityNote = noteDefinitions.find((definition) => definition.id === "notes_security_scenes");
   assert(securityNote?.displayLabel === "المشاهد الأمنية", "expected Security Scenes display label");
 
-  console.log("✓ repository note pack loads and preserves all seven categories");
+  console.log("✓ repository note pack loads all 24 article categories");
 }
 
 function testNoteDefinitionsAccessibleFromRuntime(): void {
   const definitions = getNoteDefinitions();
   const noteDefinitions = definitions.filter((definition) => definition.kind === "note");
-  assert(noteDefinitions.length === 10, `expected 10 loaded note definitions, got ${noteDefinitions.length}`);
+  assert(noteDefinitions.length === 28, `expected 28 loaded note definitions, got ${noteDefinitions.length}`);
   for (const definition of noteDefinitions) {
     assert(definition.prompt.trim().length > 0, `note prompt should not be empty for ${definition.id}`);
     assert(definition.category.trim().length > 0, `note category should not be empty for ${definition.id}`);
@@ -62,20 +57,17 @@ function testNoteDefinitionsAccessibleFromRuntime(): void {
 
 function testPilotArticlesAreOrdinaryNotes(): void {
   const definitions = getNoteDefinitions();
-  const ids = [
-    "article_05_violence_torture",
-    "article_12_child_protection_exploitation",
-    "article_14_profanity_personal_insults",
-  ];
+  const ids = Array.from({ length: 24 }, (_, index) => `article_${String(index + 1).padStart(2, "0")}`);
 
   for (const id of ids) {
-    const definition = definitions.find((entry) => entry.id === id);
-    assert(definition, `missing pilot reviewer definition: ${id}`);
+    const definition = definitions.find((entry) => entry.category === id);
+    assert(definition, `missing article reviewer definition: ${id}`);
     assert(definition.kind === "note", `${id} must be registered as kind=note`);
     assert(definition.destination === "analysis_notes", `${id} must persist to analysis_notes`);
+    assert(definition.prompt.includes("# Output Contract (MANDATORY)"), `${id} must have a Note output contract`);
   }
 
-  console.log("✓ pilot Articles 05/12/14 are registered as ordinary Notes in analysis_notes");
+  console.log("✓ all Article 01-24 reviewers are ordinary Notes in analysis_notes");
 }
 
 function testNoteMarkdownFilesExist(): void {

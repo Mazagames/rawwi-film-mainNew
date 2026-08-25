@@ -22,6 +22,7 @@ type QuickPdfHint = {
 };
 
 const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
+  ...Array.from({ length: 24 }, (_, index) => ({ key: `article_${String(index + 1).padStart(2, "0")}` as NoteCategoryKey, labelAr: `المادة ${String(index + 1).padStart(2, "0")}`, labelEn: `Article ${String(index + 1).padStart(2, "0")}` })),
   { key: "security_scenes", labelAr: "مشاهد أمنية", labelEn: "Security Scenes" },
   { key: "saudi_names", labelAr: "أسماء سعودية", labelEn: "Saudi Names" },
   { key: "commercial_entities", labelAr: "كيانات تجارية", labelEn: "Commercial Entities" },

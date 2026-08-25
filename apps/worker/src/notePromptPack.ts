@@ -34,9 +34,13 @@ const MODULE_URL = import.meta.url;
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
 const NOTE_PACK_ENTRIES: NotePackEntry[] = [
+  { id: "article_01_religion", category: "article_01", displayLabel: "الإساءة إلى الذات الإلهية والأنبياء والرسل والكتب السماوية والشعائر الإسلامية", filename: "article_01_religion.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_02_state_leadership", category: "article_02", displayLabel: "الإساءة إلى القيادة السياسية ورموز الدولة والسيادة الوطنية", filename: "article_02_state_leadership.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_03_terrorism", category: "article_03", displayLabel: "الإرهاب والتطرف والجماعات الإرهابية", filename: "article_03_terrorism.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_04_drugs_alcohol", category: "article_04", displayLabel: "المخدرات والكحول وتصنيعها والترويج لها", filename: "article_04_drugs_alcohol.md", kind: "note", destination: "analysis_notes" },
   {
     id: "article_11_media_credibility",
-    category: "media_credibility",
+    category: "article_11",
     displayLabel: "مصداقية الإعلام",
     filename: "article_11_media_credibility.md",
     kind: "note",
@@ -44,7 +48,7 @@ const NOTE_PACK_ENTRIES: NotePackEntry[] = [
   },
   {
     id: "article_13_medical_health_misinformation",
-    category: "medical_notes",
+    category: "article_13",
     displayLabel: "ملاحظات طبية وصحية",
     filename: "article_13_medical_health_misinformation.md",
     kind: "note",
@@ -52,7 +56,7 @@ const NOTE_PACK_ENTRIES: NotePackEntry[] = [
   },
   {
     id: "article_21_classified_documents",
-    category: "classified_documents",
+    category: "article_21",
     displayLabel: "الوثائق السرية",
     filename: "article_21_classified_documents.md",
     kind: "note",
@@ -98,6 +102,20 @@ const NOTE_PACK_ENTRIES: NotePackEntry[] = [
     kind: "note",
     destination: "analysis_notes",
   },
+  { id: "article_06_suicide_self_harm", category: "article_06", displayLabel: "الانتحار وإيذاء النفس وتشجيعها", filename: "article_06_suicide_self_harm.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_07_sexual_content_nudity", category: "article_07", displayLabel: "المحتوى الجنسي والعري", filename: "article_07_sexual_content_nudity.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_08_magic_sorcery", category: "article_08", displayLabel: "السحر والشعوذة والخرافات والتنجيم", filename: "article_08_magic_sorcery.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_09_crime_criminal_methods", category: "article_09", displayLabel: "الجرائم وتقنيات ارتكابها وتعليمها", filename: "article_09_crime_criminal_methods.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_10_hate_speech_discrimination", category: "article_10", displayLabel: "خطاب الكراهية والتمييز والإهانة ضد الفئات", filename: "article_10_hate_speech_discrimination.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_15_public_order", category: "article_15", displayLabel: "النظام العام", filename: "article_15_public_order.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_16_misinformation_rumors", category: "article_16", displayLabel: "الشائعات والمعلومات المضللة", filename: "article_16_misinformation_rumors.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_17_dignity_reputation_privacy", category: "article_17", displayLabel: "الكرامة والسمعة والخصوصية", filename: "article_17_dignity_reputation_privacy.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_18_international_relations", category: "article_18", displayLabel: "العلاقات الدولية", filename: "article_18_international_relations.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_19_economic_stability", category: "article_19", displayLabel: "الاقتصاد والاستقرار المالي", filename: "article_19_economic_stability.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_20_bankruptcy_commercial_cases", category: "article_20", displayLabel: "الإفلاس والقضايا التجارية", filename: "article_20_bankruptcy_commercial_cases.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_22_treaties_agreements", category: "article_22", displayLabel: "الاتفاقيات والمعاهدات", filename: "article_22_treaties_agreements.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_23_public_appearance", category: "article_23", displayLabel: "المظهر العام", filename: "article_23_public_appearance.md", kind: "note", destination: "analysis_notes" },
+  { id: "article_24_clothing_modesty", category: "article_24", displayLabel: "الزي والاحتشام", filename: "article_24_clothing_modesty.md", kind: "note", destination: "analysis_notes" },
   {
     id: "article_12_child_protection_exploitation",
     category: "article_12",
@@ -116,7 +134,7 @@ const NOTE_PACK_ENTRIES: NotePackEntry[] = [
   },
 ];
 
-export const NOTE_REVIEWER_ARTICLE_NUMBERS = new Set([11, 13, 14, 21]);
+export const NOTE_REVIEWER_ARTICLE_NUMBERS = new Set(Array.from({ length: 24 }, (_, index) => index + 1));
 
 let cachedPack: LoadedNotePack | null = null;
 
@@ -182,7 +200,7 @@ function resolveNoteDirectory(baseDir = process.cwd()): string {
   });
 }
 
-function normalizeNotePrompt(markdown: string, displayLabel: string): string {
+function normalizeNotePrompt(markdown: string, displayLabel: string, category: string): string {
   const normalized = normalizeMarkdown(markdown).trim();
   if (!normalized) {
     failNoteLoad("V5 note markdown file is empty", { displayLabel });
@@ -202,9 +220,14 @@ function normalizeNotePrompt(markdown: string, displayLabel: string): string {
     });
   }
 
-  return normalized;
-}
+  const noteFraming = "This is a Note reviewer for human review. A Note is not a violation. Do not produce findings or violation decisions.";
+  const framing = normalized.includes(noteFraming) ? normalized : `${normalized}\n\n${noteFraming}`;
+  if (framing.includes("# Output Contract (MANDATORY)")) {
+    return framing;
+  }
 
+  return `${framing}\n\n---\n\n# Output Contract (MANDATORY)\n\nReturn valid JSON only, with no prose or Markdown outside one JSON object:\n\n{\n  "notes": [\n    {\n      "category": "${category}",\n      "title": "",\n      "description": "",\n      "paragraph": "",\n      "quote": "",\n      "event_id": 12,\n      "confidence": 0.7\n    }\n  ]\n}\n\nThe event_id MUST come from the provided StructuredEvents. The quote MUST be an exact literal substring from the provided event. If any required field cannot be produced, omit that Note. If no relevant Note exists, return {"notes": []}.`;
+}
 function loadNotePackFromDirectory(noteDirectory: string): LoadedNotePack {
   const noteDefinitions = NOTE_PACK_ENTRIES.map((entry) => {
     const filePath = resolve(noteDirectory, entry.filename);
@@ -218,7 +241,7 @@ function loadNotePackFromDirectory(noteDirectory: string): LoadedNotePack {
     const markdown = readFileSync(filePath, "utf8");
     return {
       ...entry,
-      prompt: normalizeNotePrompt(markdown, entry.displayLabel),
+      prompt: normalizeNotePrompt(markdown, entry.displayLabel, entry.category),
     } satisfies NoteReviewerDefinition;
   });
 

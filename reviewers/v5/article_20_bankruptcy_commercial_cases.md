@@ -1,4 +1,4 @@
-# Article 20
+# ملاحظة — المادة 20: الإفلاس والقضايا التجارية
 ## الإفلاس والقضايا التجارية
 
 ---
@@ -110,3 +110,7 @@
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن نشر معلومات تجارية مضللة، أو تشهيراً غير مستند إلى وقائع، أو تحريضاً يهدف إلى الإضرار بالثقة التجارية أو الاستثمارية، بما يدخل مباشرة ضمن نطاق المادة (20).
 
 إذا كان الحكم يحتاج إلى التحقق من وقائع أو معلومات خارج السيناريو أو إلى مراجعة بشرية، فلا تستبعد الحدث.
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_20`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

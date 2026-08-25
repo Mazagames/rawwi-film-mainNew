@@ -14,7 +14,7 @@ async function main(): Promise<void> {
 
   const definitions = getNoteDefinitions();
   const sharedDefinitions = definitions.filter((definition) => definition.kind === "note");
-  assert(sharedDefinitions.length === 10, `expected 10 note reviewers, got ${sharedDefinitions.length}`);
+  assert(sharedDefinitions.length === 28, `expected 28 note reviewers, got ${sharedDefinitions.length}`);
   assert(sharedDefinitions.every((definition) => definition.kind === "note"), "all reviewers in the pilot must be note-kind");
   assert(sharedDefinitions.every((definition) => definition.destination === "analysis_notes"), "all pilot reviewers must persist to analysis_notes");
   assert(definitions.every((definition) => definition.kind !== "violation"), "pilot must contain zero violation-kind definitions");
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   assert(result.notes.filter((note) => note.category === "article_14").length === 2, "Article 14 mock output must preserve both Notes");
   assert(result.passResults.some((pass) => pass.passName === "article_14_profanity_personal_insults"), "Article 14 must use the shared note pass result");
   console.log("✓ pilot Article 05/12/14 reviewers are note-kind definitions in analysis_notes");
-  console.log("✓ all 10 pilot reviewers are Note-compatible and preserve exact event_id/quote evidence");
+  console.log("✓ all 28 Notes are Note-compatible and preserve exact event_id/quote evidence");
   console.log("✓ no violation candidates, no analysis_findings, no grounding, no ownership, and no final adjudicator in the pilot");
 }
 

@@ -1,4 +1,4 @@
-# Article 24
+# ملاحظة — المادة 24: الزي والاحتشام
 ## الزي والاحتشام
 
 ---
@@ -108,3 +108,7 @@
 ولا تخلط بين هذه المادة والمادة (23) الخاصة بالمظهر العام، أو المادة (07) الخاصة بالمحتوى الجنسي.
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن وصفاً واضحاً لزي أو ملابس غير محتشمة أو تكشف أجزاءً من الجسد بصورة تخالف متطلبات الاحتشام، بما يدخل مباشرة ضمن نطاق المادة (24).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_24`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

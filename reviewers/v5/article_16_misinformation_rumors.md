@@ -1,4 +1,4 @@
-# Article 16
+# ملاحظة — المادة 16: الشائعات والمعلومات المضللة
 ## الشائعات والمعلومات المضللة
 
 ---
@@ -110,3 +110,7 @@
 لا تستبعد الحدث إذا كان الحكم يحتاج إلى التحقق من مصادر خارجية أو مراجعة بشرية، أو إذا تعذر الجزم بصحة المعلومة من السيناريو وحده.
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن تضليلاً واضحاً وخطيراً يمكن إثباته من النص مباشرة، بما يدخل ضمن نطاق المادة (16).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_16`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

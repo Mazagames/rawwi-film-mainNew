@@ -1,4 +1,4 @@
-# Article 15
+# ملاحظة — المادة 15: النظام العام
 ## النظام العام
 
 ---
@@ -107,3 +107,7 @@
 ولا تعتبر المحتوى الإخباري، أو التاريخي، أو الوثائقي، أو القانوني، أو السرد الدرامي الذي يصف أو يناقش أو يدين أحداث الشغب أو الاحتجاجات أو مرشح (Candidate) الأنظمة مرشح (Candidate).
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن دعوة أو تحريضاً أو تشجيعاً أو تمجيداً للإخلال بالنظام العام، أو زعزعة الاستقرار، أو مرشح (Candidate) الأنظمة، أو تعطيل مؤسسات أو مرافق الدولة، أو الاعتداء على رجال الأمن، بما يدخل مباشرة ضمن نطاق المادة (15).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_15`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

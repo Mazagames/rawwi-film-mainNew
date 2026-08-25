@@ -1,4 +1,4 @@
-# Article 01
+# ملاحظة — المادة 01: الإساءة إلى الذات الإلهية والأنبياء والرسل والكتب السماوية والشعائر الإسلامية
 ## الإساءة إلى الذات الإلهية والأنبياء والرسل والكتب السماوية والشعائر الإسلامية
 
 ---
@@ -91,3 +91,7 @@
 إذا كان ذكر الدين أو النصوص أو الأنبياء أو الشعائر وارداً في سياق تعليمي، أو تاريخي، أو توثيقي، أو نقدي لا يتبنى الإساءة، فلا تستبعد الحدث.
 
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن إساءة أو سخرية أو انتقاصاً أو ازدراءً يدخل مباشرة ضمن نطاق المادة (01).
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_01`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

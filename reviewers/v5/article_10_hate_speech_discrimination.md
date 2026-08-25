@@ -1,4 +1,4 @@
-# Article 10
+# ملاحظة — المادة 10: خطاب الكراهية والتمييز والإهانة ضد الفئات
 ## خطاب الكراهية والتمييز والإهانة ضد الفئات
 
 ---
@@ -316,3 +316,7 @@ dominant_meaning
 إذا لم يكن الاستهداف الجماعي أو سبب الاستهداف واضحاً، فتجاهل الحدث.
 
 الهدف هو تسجيل خطاب الكراهية والتمييز والتحريض الذي يمكن إثباته من الحدث، وليس كل خلاف أو إساءة أو نقاش يتعلق بجماعة أو مذهب.
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_10`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.

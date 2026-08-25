@@ -1,4 +1,4 @@
-# Article 19
+# ملاحظة — المادة 19: الاقتصاد والاستقرار المالي
 ## الاقتصاد والاستقرار المالي
 
 ---
@@ -110,3 +110,7 @@
 لا تستبعد الحدث واستخرجه كمرشح إذا كان يتضمن نشر إشاعة أو معلومات مالية مضللة، أو إثارة الذعر المالي، أو الدعوة إلى سحب الأموال من المؤسسات المالية دون أساس، أو التحريض على الإضرار بالاقتصاد الوطني أو الأسواق أو العملة الوطنية، بما يدخل مباشرة ضمن نطاق المادة (19).
 
 إذا كان الحكم يحتاج إلى التحقق من معلومات اقتصادية أو مالية خارج السيناريو أو إلى مراجعة بشرية، فلا تستبعد الحدث.
+
+---
+# Output Contract (MANDATORY)
+Return valid JSON only. Each Note must contain category `article_19`, title, description, paragraph, quote, event_id, and confidence. event_id MUST come from the provided StructuredEvents, and quote MUST be an exact literal substring from the provided event. A Note is informational human-review material, not a violation. If no relevant Note exists, return {"notes": []}.
