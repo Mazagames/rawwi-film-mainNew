@@ -78,6 +78,12 @@ export function resolveV5CandidateEngine(enabled: boolean): "legacy_v5" | "event
   return enabled ? "event_candidate_runner" : "legacy_v5";
 }
 
+const configuredProvider = (process.env.AI_PROVIDER ?? "openai").toLowerCase() as AIProvider;
+const resolvedProviderMode = parseAIProviderMode(process.env.AI_PROVIDER_MODE);
+const isGeminiActive = resolvedProviderMode === "gemini-only" || (resolvedProviderMode !== "openai-only" && configuredProvider === "gemini");
+const defaultGeminiModel = process.env.GEMINI_JUDGE_MODEL ?? "gemini-2.5-flash";
+const defaultV5ViolationJudgeModel = isGeminiActive ? defaultGeminiModel : (process.env.V5_VIOLATION_JUDGE_MODEL ?? process.env.OPENAI_JUDGE_MODEL ?? "gpt-4.1");
+
 /**
  * Worker env config. Load with dotenv in index or require env at startup.
  */
@@ -88,15 +94,15 @@ export const config = {
   AI_PROVIDER_MODE: parseAIProviderMode(process.env.AI_PROVIDER_MODE),
   GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "",
   GEMINI_ROUTER_MODEL: process.env.GEMINI_ROUTER_MODEL ?? "gemini-2.5-flash",
-  GEMINI_JUDGE_MODEL: process.env.GEMINI_JUDGE_MODEL ?? "gemini-2.5-pro",
-  GEMINI_AUDITOR_MODEL: process.env.GEMINI_AUDITOR_MODEL ?? "gemini-2.5-pro",
-  GEMINI_RATIONALE_MODEL: process.env.GEMINI_RATIONALE_MODEL ?? "gemini-2.5-pro",
+  GEMINI_JUDGE_MODEL: process.env.GEMINI_JUDGE_MODEL ?? "gemini-2.5-flash",
+  GEMINI_AUDITOR_MODEL: process.env.GEMINI_AUDITOR_MODEL ?? "gemini-2.5-flash",
+  GEMINI_RATIONALE_MODEL: process.env.GEMINI_RATIONALE_MODEL ?? "gemini-2.5-flash",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
   OPENAI_ROUTER_MODEL: process.env.OPENAI_ROUTER_MODEL ?? "gpt-4.1-mini",
   OPENAI_JUDGE_MODEL: process.env.OPENAI_JUDGE_MODEL ?? "gpt-4.1",
   OPENAI_AUDITOR_MODEL: process.env.OPENAI_AUDITOR_MODEL ?? "gpt-4.1",
-  V5_VIOLATION_JUDGE_PROVIDER: (process.env.V5_VIOLATION_JUDGE_PROVIDER ?? process.env.AI_PROVIDER ?? "openai").toLowerCase() as "openai" | "gemini",
-  V5_VIOLATION_JUDGE_MODEL: process.env.V5_VIOLATION_JUDGE_MODEL ?? process.env.OPENAI_JUDGE_MODEL ?? "gpt-4.1",
+  V5_VIOLATION_JUDGE_PROVIDER: (process.env.V5_VIOLATION_JUDGE_PROVIDER ?? (isGeminiActive ? "gemini" : (process.env.AI_PROVIDER ?? "openai"))).toLowerCase() as "openai" | "gemini",
+  V5_VIOLATION_JUDGE_MODEL: defaultV5ViolationJudgeModel,
   /** Model for rationale-only pass. Use gpt-4.1 by default (gpt-4o if your project has access). */
   OPENAI_RATIONALE_MODEL: process.env.OPENAI_RATIONALE_MODEL ?? "gpt-4.1",
   JUDGE_TIMEOUT_MS: parseInt(process.env.JUDGE_TIMEOUT_MS ?? "120000", 10),
