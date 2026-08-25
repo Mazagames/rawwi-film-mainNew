@@ -261,15 +261,15 @@ export function FindingCard({
             <div className="relative flex gap-2 print:hidden">
               <button
                 type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-text-muted hover:bg-surface"
+                className="inline-flex h-6 w-6 items-center justify-center rounded border border-border bg-background text-text-muted hover:bg-surface"
                 onClick={() => setNoteMenuOpen((prev) => !prev)}
                 aria-label={lang === 'ar' ? 'خيارات الملاحظة' : 'Note actions'}
                 data-note-menu={note!.id}
               >
-                <MoreVertical className="h-4 w-4" />
+                <MoreVertical className="h-3.5 w-3.5" />
               </button>
               {noteMenuOpen && (
-                <div className="absolute end-0 top-10 z-20 min-w-[220px] rounded-md border border-border bg-background p-1 shadow-lg" data-note-menu={note!.id}>
+                <div className="absolute end-0 top-7 z-20 min-w-[180px] rounded-md border border-border bg-background p-1 shadow-lg" data-note-menu={note!.id}>
                   <button
                     type="button"
                     className="w-full rounded px-2 py-1.5 text-start text-xs hover:bg-surface"
@@ -279,8 +279,8 @@ export function FindingCard({
                     }}
                   >
                     {note!.includedInReport === false
-                      ? (lang === 'ar' ? 'تضمين في التقرير' : 'Include in final report')
-                      : (lang === 'ar' ? 'استبعاد من التقرير' : 'Exclude from final report')}
+                      ? (lang === 'ar' ? 'تضمين في التقرير' : 'Include in report')
+                      : (lang === 'ar' ? 'استبعاد من التقرير' : 'Exclude from report')}
                   </button>
                   <button
                     type="button"

@@ -1335,6 +1335,9 @@ export function Results() {
   const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
   const selectedNotes = notesByCategory[noteCategoryFilter] ?? [];
   const selectedNoteCards = selectedNotes.map(noteCardFromReportNote);
+  const informationalNoteCategories = noteCategoryCounts.filter((category) => !category.key.startsWith('article_'));
+  const articleNoteCategories = noteCategoryCounts.filter((category) => category.key.startsWith('article_'));
+  const hasViolationContent = hasRealFindings || hasReviewFindings || reportHints.length > 0;
 
   const checklistSubjectRows = (summary.checklist_articles ?? [])
     .map((article) => ({
@@ -3225,7 +3228,9 @@ function displayFindingTitle(params: {
       </div>
 
       {/* Main findings */}
-      <div className="space-y-8">
+        <div className="space-y-8">
+          {hasViolationContent && (
+            <>
           {/* Violations section */}
           <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
             {showOnlySpecialNotes ? (
@@ -3320,8 +3325,10 @@ function displayFindingTitle(params: {
                 ? renderFindingsFromReal(filteredDisplayViolations)
                 : renderFindingsFromSummary(filteredCanonicalSummaryFindings)}
 
-          {notesTotalCount > 0 && (
-            <section className="mt-12">
+            </>
+          )}
+
+          <section className="mt-12" aria-label={lang === 'ar' ? 'قسم الملاحظات' : 'Notes section'}>
               <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                 <Info className="w-5 h-5 text-info" />
                 {lang === 'ar' ? 'ملاحظات' : 'Notes'}
@@ -3332,8 +3339,13 @@ function displayFindingTitle(params: {
                   ? 'هذه ملاحظات معلوماتية للمراجعة البشرية، وليست مخالفات.'
                   : 'These are informational observations for human review, not violations.'}
               </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {noteCategoryCounts.map((cat) => {
+              <div className="mt-4 space-y-4">
+                <div role="group" aria-label={lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational notes'}>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-info">
+                    {lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational notes'}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                {informationalNoteCategories.map((cat) => {
                   const isActive = noteCategoryFilter === cat.key;
                   return (
                     <button
@@ -3343,8 +3355,8 @@ function displayFindingTitle(params: {
                       className={cn(
                         'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
                         isActive
-                          ? 'border-info/40 bg-info/10 text-info'
-                          : 'border-border bg-background/70 text-text-muted hover:bg-background hover:text-text-main'
+                          ? 'border-info bg-info text-white'
+                          : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
                       )}
                     >
                       <span>{lang === 'ar' ? cat.labelAr : cat.labelEn}</span>
@@ -3352,7 +3364,7 @@ function displayFindingTitle(params: {
                         variant="outline"
                         className={cn(
                           'text-[10px]',
-                          isActive ? 'bg-info/10 text-info border-info/30' : 'text-text-muted'
+                          isActive ? 'bg-white/20 text-white border-white/30' : 'text-info border-info/30'
                         )}
                       >
                         {cat.count}
@@ -3360,6 +3372,42 @@ function displayFindingTitle(params: {
                     </button>
                   );
                 })}
+                  </div>
+                </div>
+                <div role="group" aria-label={lang === 'ar' ? 'ملاحظات مرتبطة بالمواد' : 'Article-derived notes'}>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-error">
+                    {lang === 'ar' ? 'ملاحظات مرتبطة بالمواد' : 'Article-derived notes'}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                {articleNoteCategories.map((cat) => {
+                  const isActive = noteCategoryFilter === cat.key;
+                  return (
+                    <button
+                      key={cat.key}
+                      type="button"
+                      onClick={() => setNoteCategoryFilter(cat.key)}
+                      className={cn(
+                        'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                        isActive
+                          ? 'border-error bg-error text-white'
+                          : 'border-error/30 bg-error/10 text-error hover:bg-error/20'
+                      )}
+                    >
+                      <span>{lang === 'ar' ? cat.labelAr : cat.labelEn}</span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'text-[10px]',
+                          isActive ? 'bg-white/20 text-white border-white/30' : 'text-error border-error/30'
+                        )}
+                      >
+                        {cat.count}
+                      </Badge>
+                    </button>
+                  );
+                })}
+                  </div>
+                </div>
               </div>
               <div className="mt-4 space-y-4">
         {selectedNoteCards.length > 0 ? (
@@ -3381,8 +3429,7 @@ function displayFindingTitle(params: {
                   </div>
                 )}
               </div>
-            </section>
-          )}
+          </section>
 
           {/* Report hints: not violations but notes for director (e.g. Islamic rules when filming) */}
           {!showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0))) && (
