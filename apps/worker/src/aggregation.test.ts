@@ -2,7 +2,7 @@
  * Tests for report aggregation: taxonomy order, dedup, article 26 excluded.
  * Run: npx tsx src/aggregation.test.ts (from apps/worker or repo root)
  */
-import { buildSummaryJson } from "./aggregation.js";
+import { buildSummaryJson, isArticleNoteCanonicalFindingId } from "./aggregation.js";
 import { getPolicyArticles } from "./policyMap.js";
 
 type DbFinding = {
@@ -233,6 +233,14 @@ function testUnknownNoteCategoryRejected() {
   console.log("✓ Unknown note categories are rejected");
 }
 
+function testArticleNoteCanonicalIdsAreBlockedFromReviewLayer() {
+  assert(isArticleNoteCanonicalFindingId("article14-note-32ff4f9d-4e45-43c8-9a9a-0c6b5493c8d3"), "Article 14 note IDs must be recognized as note-originated");
+  assert(isArticleNoteCanonicalFindingId("article05-note-abc123"), "Article 05 note IDs must be recognized as note-originated");
+  assert(!isArticleNoteCanonicalFindingId("canonical-finding-123"), "Real violation IDs must remain valid for review-layer materialization");
+  assert(!isArticleNoteCanonicalFindingId("article99-note-foo"), "Non-article note IDs should not be treated as Article Note IDs");
+  console.log("✓ Article Note canonical IDs are identified separately from real violation IDs");
+}
+
 async function main() {
   testArticleOrder();
   testDedup();
@@ -241,6 +249,7 @@ async function main() {
   testCrossArticleOverlapKeepsOwnershipSeparate();
   testNotesAreGroupedSeparately();
   testUnknownNoteCategoryRejected();
+  testArticleNoteCanonicalIdsAreBlockedFromReviewLayer();
   console.log("\nAll aggregation tests passed.");
 }
 

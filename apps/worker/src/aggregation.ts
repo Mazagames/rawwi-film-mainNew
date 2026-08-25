@@ -186,6 +186,22 @@ export type SummaryJson = {
     }>;
   }>;
   notes?: {
+    [category: string]: Array<{
+      id: string | null;
+      reviewer: string | null;
+      category: string;
+      title: string;
+      description: string;
+      snippet: string;
+      event_id: number;
+      confidence: number;
+      status: string;
+      included_in_report: boolean;
+      reviewer_comment: string | null;
+      reviewed_at: string | null;
+      updated_at: string | null;
+      created_at?: string | null;
+    }>;
     media_credibility: Array<{
       id: string | null;
       reviewer: string | null;
@@ -696,6 +712,7 @@ function buildReviewFindingRows(
 ): ReviewFindingInsertRow[] {
   const canonical = (summary.canonical_findings ?? [])
     .filter((finding) => toReviewSourceKind(finding.source) !== "manual")
+    .filter((finding) => !isArticleNoteCanonicalFindingId(finding.canonical_finding_id ?? null))
     .map((finding) => ({
       job_id: summary.job_id,
       report_id: reportId,
@@ -1583,6 +1600,13 @@ function getFindingV3(f: DbFinding): Record<string, unknown> {
 function getStoredCanonicalId(f: DbFinding): string | null {
   const raw = getFindingV3(f).canonical_finding_id;
   return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+}
+
+export function isArticleNoteCanonicalFindingId(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim();
+  if (!normalized) return false;
+  return /^article(?:_)?(?:0?[1-9]|1[0-9]|2[0-4])(?:[-_]?note)(?:[-_]|$)/i.test(normalized);
 }
 
 /** Options controlling how findings are grouped into canonical report cards. */
