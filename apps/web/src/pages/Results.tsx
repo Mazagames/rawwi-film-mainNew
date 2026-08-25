@@ -3344,8 +3344,8 @@ function displayFindingTitle(params: {
             </>
           )}
 
-          {((reportSection === 'notes' || reportSection === 'all') && (
-          <section className="mt-12" aria-label={lang === 'ar' ? 'قسم الملاحظات' : 'Notes section'}>
+          {(reportSection === 'notes' || reportSection === 'all') && (
+            <section className="mt-12" aria-label={lang === 'ar' ? 'قسم الملاحظات' : 'Notes section'}>
               <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                 <Info className="w-5 h-5 text-info" />
                 {lang === 'ar' ? 'ملاحظات' : 'Notes'}
@@ -3428,7 +3428,7 @@ function displayFindingTitle(params: {
                   </div>
                 )}
               </div>
-          </section>
+            </section>
           )}
 
           {/* Report hints: not violations but notes for director (e.g. Islamic rules when filming) */}
