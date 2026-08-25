@@ -33,6 +33,7 @@ import {
   sanitizeFontStackForCss,
 } from '@/utils/pdfDisplayFont';
 import { getPublicAnalysisErrorMessage } from '@/utils/raawiAiError';
+import { resolvePolledReportId, validateSelectedReport } from '@/utils/workspaceReportContract';
 
 
 
@@ -1897,9 +1898,15 @@ export function ScriptWorkspace() {
           // Fetch the report id so "View Report" navigates correctly (by=id preferred)
           if (isSuccessfulJobStatus(job.status)) {
               reportsApi.getByJob(job.id).then((report) => {
-              if (!report?.id) throw new Error(`Report lookup returned no report for job ${job.id}`);
-              setReportIdWhenJobCompleted(report.id);
-            }).catch(() => {});
+                const reportId = resolvePolledReportId(report);
+                if (!reportId) {
+                  console.warn('[ScriptWorkspace] Report not available yet for completed job', { jobId: job.id });
+                  return;
+                }
+                setReportIdWhenJobCompleted(reportId);
+              }).catch((error) => {
+                console.warn('[ScriptWorkspace] Report lookup failed while polling', { jobId: job.id, error });
+              });
           }
         }
       } catch (err) {
@@ -3037,11 +3044,18 @@ export function ScriptWorkspace() {
   };
 
   const handleSelectReportForHighlights = useCallback(async (report: ReportListItem) => {
-    const reportId = report.id;
-    const jobId = report.jobId;
-    if (!jobId && !reportId) return;
+    let selectedReport: ReportListItem;
+    try {
+      selectedReport = validateSelectedReport(report);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(lang === 'ar' ? `تعذر اختيار التقرير: ${message}` : `Could not select report: ${message}`);
+      return;
+    }
+    const reportId = selectedReport.id;
+    const jobId = selectedReport.jobId;
     if (IS_DEV) console.log('[ScriptWorkspace] Highlight clicked:', { reportId, jobId });
-    setSelectedReportForHighlights(report);
+    setSelectedReportForHighlights(selectedReport);
     setPinnedHighlight(null);
     // setReportFindingsLoading(true);
     setSelectedFindingId(null);
