@@ -27,6 +27,7 @@ import { downloadQuickAnalysisPdf } from '@/components/reports/quick-analysis/do
 import { resolveStorageUrl } from '@/utils/storage';
 import { getGlossarySentenceContext } from '@/utils/findingContext';
 import { countNotesByCategory, logNotePipelineStage } from '@/utils/noteTelemetry';
+import { dedupeReportDisplayItems } from '@/utils/reportDisplayDedupe';
 import {
   ArrowLeft, CheckCircle, ShieldAlert,
   AlertTriangle, XCircle, ChevronDown, ChevronUp, Loader2,
@@ -1361,9 +1362,21 @@ export function Results() {
   const approvedFindings = hasRealFindings ? findings.filter(f => f.reviewStatus === 'approved') : [];
   const violationsDeduped = hasRealFindings ? dedupeRealFindings(violations) : [];
   const approvedFindingsDeduped = hasRealFindings ? dedupeRealFindings(approvedFindings) : [];
+  const dedupedNotesByCategory = Object.fromEntries(
+    NOTE_CATEGORY_ORDER.map((category) => [
+      category.key,
+      dedupeReportDisplayItems(
+        notesByCategory[category.key] ?? [],
+        () => 'note',
+        (note) => note.category,
+        (note) => (note as ReportNote & { page_number?: number | null }).page_number ?? null,
+        (note) => note.description,
+      ),
+    ])
+  ) as Record<NoteCategoryKey, ReportNote[]>;
   const noteCategoryCounts = NOTE_CATEGORY_ORDER.map((cat) => ({
     ...cat,
-    count: notesByCategory[cat.key]?.length ?? 0,
+    count: dedupedNotesByCategory[cat.key]?.length ?? 0,
   }));
   const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
   const informationalNoteCategories = noteCategoryCounts.filter((category) => !category.key.startsWith('article_'));
@@ -1389,8 +1402,8 @@ export function Results() {
       ? noteCategoryFilter
       : 'all';
   const selectedNotes = noteCategoryFilter === 'all'
-    ? activeNoteCategories.flatMap((category) => notesByCategory[category.key] ?? [])
-    : notesByCategory[noteCategoryFilter] ?? [];
+    ? activeNoteCategories.flatMap((category) => dedupedNotesByCategory[category.key] ?? [])
+    : dedupedNotesByCategory[noteCategoryFilter] ?? [];
   const selectedNoteCards = selectedNotes.map(noteCardFromReportNote);
   const hasViolationContent = hasRealFindings || hasReviewFindings || reportHints.length > 0;
 
@@ -1429,14 +1442,42 @@ export function Results() {
       ? canonicalSummaryFindings.length
       : fallbackSummaryCount;
 
+  const reportFamilyForReviewFinding = (finding: AnalysisReviewFinding) =>
+    finding.sourceKind === 'manual' ? 'manual' as const : finding.sourceKind === 'glossary' ? 'glossary' as const : 'violation' as const;
+  const reportFamilyForFinding = (finding: AnalysisFinding) =>
+    isGlossarySource(finding.source) ? 'glossary' as const : finding.source === 'manual' ? 'manual' as const : 'violation' as const;
+  const reportFamilyForCanonical = (finding: CanonicalSummaryFinding) =>
+    finding.source === 'lexicon_mandatory' ? 'glossary' as const : finding.source === 'manual' ? 'manual' as const : 'violation' as const;
+  const dedupedReviewViolationsForCounts = dedupeReportDisplayItems(
+    reviewViolations,
+    reportFamilyForReviewFinding,
+    (finding) => finding.sourceKind === 'glossary' ? finding.primaryAtomId ?? finding.primaryArticleId ?? finding.sourceKind : finding.primaryArticleId,
+    (finding) => finding.pageNumber ?? null,
+    (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
+  );
+  const dedupedRealFindingsForCounts = dedupeReportDisplayItems(
+    violations,
+    reportFamilyForFinding,
+    (finding) => isGlossarySource(finding.source) ? finding.atomId ?? finding.articleId : finding.articleId,
+    (finding) => finding.pageNumber ?? null,
+    (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
+  );
+  const dedupedCanonicalFindingsForCounts = dedupeReportDisplayItems(
+    canonicalSummaryFindings,
+    reportFamilyForCanonical,
+    (finding) => finding.primary_policy_atom_id ?? finding.primary_article_id,
+    (finding) => (finding as CanonicalSummaryFinding & { page_number?: number | null }).page_number ?? null,
+    (finding) => finding.rationale || finding.description_ar || '',
+  );
+
   const displayTotal = useReviewFindingsUi
-    ? reviewViolations.length
-    : canonicalSummaryFindings.length;
+    ? dedupedReviewViolationsForCounts.length
+    : dedupedCanonicalFindingsForCounts.length;
   const displayTypeCounts = useReviewFindingsUi
-    ? countReviewFindingKinds(reviewViolations)
+    ? countReviewFindingKinds(dedupedReviewViolationsForCounts)
     : useRealFindingsUi
-    ? countFindingKinds(displayViolations)
-    : countFindingKinds(canonicalSummaryFindings);
+    ? countFindingKinds(dedupedRealFindingsForCounts)
+    : countFindingKinds(dedupedCanonicalFindingsForCounts);
   const displayApproved = useReviewFindingsUi ? reviewApproved.length : (report.approvedCount ?? 0);
   const displaySpecialNotes = useReviewFindingsUi ? reviewSpecialNotes.length : reportHints.length;
   const matchesFindingFilter = (finding: Pick<AnalysisFinding, 'source'> | Pick<CanonicalSummaryFinding, 'source'>) => {
@@ -1467,6 +1508,27 @@ export function Results() {
     ? displayApprovedFindings.filter(() => findingFilter === 'approved' || findingFilter === 'all')
     : [];
   const filteredCanonicalSummaryFindings = canonicalSummaryFindings.filter((f) => matchesFindingFilter(f));
+  const dedupedFilteredReviewViolations = dedupeReportDisplayItems(
+    filteredReviewViolations,
+    reportFamilyForReviewFinding,
+    (finding) => finding.sourceKind === 'glossary' ? finding.primaryAtomId ?? finding.primaryArticleId ?? finding.sourceKind : finding.primaryArticleId,
+    (finding) => finding.pageNumber ?? null,
+    (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
+  );
+  const dedupedFilteredDisplayViolations = dedupeReportDisplayItems(
+    filteredDisplayViolations,
+    reportFamilyForFinding,
+    (finding) => isGlossarySource(finding.source) ? finding.atomId ?? finding.articleId : finding.articleId,
+    (finding) => finding.pageNumber ?? null,
+    (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
+  );
+  const dedupedFilteredCanonicalSummaryFindings = dedupeReportDisplayItems(
+    filteredCanonicalSummaryFindings,
+    reportFamilyForCanonical,
+    (finding) => finding.source === 'lexicon_mandatory' ? finding.primary_policy_atom_id ?? finding.primary_article_id : finding.primary_article_id,
+    (finding) => (finding as CanonicalSummaryFinding & { page_number?: number | null }).page_number ?? null,
+    (finding) => finding.rationale || finding.description_ar || '',
+  );
   const selectableReviewRawIds = filteredReviewViolations
     .map((f) => matchRawFindingForReview(f)?.id ?? null)
     .filter((id): id is string => Boolean(id));
@@ -1476,10 +1538,10 @@ export function Results() {
   const showOnlySpecialNotes = findingFilter === 'special';
   const showOnlyApproved = findingFilter === 'approved';
   const filteredViolationsCount = useReviewFindingsUi
-    ? (showOnlySpecialNotes ? filteredReviewSpecialNotes.length : showOnlyApproved ? filteredReviewApproved.length : filteredReviewViolations.length)
+    ? (showOnlySpecialNotes ? filteredReviewSpecialNotes.length : showOnlyApproved ? filteredReviewApproved.length : dedupedFilteredReviewViolations.length)
     : hasRealFindings
-    ? showOnlyApproved ? filteredDisplayApproved.length : filteredDisplayViolations.length
-    : filteredCanonicalSummaryFindings.length;
+    ? showOnlyApproved ? filteredDisplayApproved.length : dedupedFilteredDisplayViolations.length
+    : dedupedFilteredCanonicalSummaryFindings.length;
   const showEmptyFindingsState = useReviewFindingsUi
     ? (showOnlySpecialNotes ? filteredReviewSpecialNotes.length === 0 : showOnlyApproved ? filteredReviewApproved.length === 0 : filteredReviewViolations.length === 0)
     : showOnlySpecialNotes
@@ -2661,7 +2723,10 @@ function displayFindingTitle(params: {
   }
 
   // Render a findings section (either from real findings or from summary)
-  function renderFindingsFromSummary(listInput: CanonicalSummaryFinding[] = canonicalSummaryFindings) {
+  function renderFindingsFromSummary(
+    listInput: CanonicalSummaryFinding[] = canonicalSummaryFindings,
+    familyResolver: (finding: CanonicalSummaryFinding) => 'violation' | 'manual' | 'glossary' = () => 'violation',
+  ) {
     type Art = (typeof summary.findings_by_article)[number];
     type F = NonNullable<Art["top_findings"]>[number];
     const allowedEvidence = new Set(listInput.map((f) => (f.evidence_snippet ?? '').trim()).filter(Boolean));
@@ -2673,8 +2738,15 @@ function displayFindingTitle(params: {
         rows.push({ art, f, idx });
       });
     }
+    const dedupedRows = dedupeReportDisplayItems(
+      rows,
+      familyResolver,
+      (row) => family === 'glossary' ? row.f.primary_policy_atom_id ?? row.art.article_id : row.art.article_id,
+      (row) => (row.f as F & { page_number?: number | null }).page_number ?? null,
+      (row) => row.f.rationale_ar || row.f.description_ar || '',
+    );
     const byArticle = new Map<number, { art: Art; items: { f: F; idx: number }[] }>();
-    for (const row of rows) {
+    for (const row of dedupedRows) {
       if (!byArticle.has(row.art.article_id)) {
         byArticle.set(row.art.article_id, { art: row.art, items: [] });
       }
@@ -2749,9 +2821,19 @@ function displayFindingTitle(params: {
     });
   }
 
-  function renderFindingsFromCanonicalSummary(listInput: CanonicalSummaryFinding[] = canonicalSummaryFindings) {
+  function renderFindingsFromCanonicalSummary(
+    listInput: CanonicalSummaryFinding[] = canonicalSummaryFindings,
+    familyResolver: (finding: CanonicalSummaryFinding) => 'violation' | 'manual' | 'glossary' = () => 'violation',
+  ) {
+    const dedupedList = dedupeReportDisplayItems(
+      listInput,
+      familyResolver,
+      (finding) => familyResolver(finding) === 'glossary' ? finding.primary_policy_atom_id ?? finding.primary_article_id : finding.primary_article_id,
+      (finding) => (finding as CanonicalSummaryFinding & { page_number?: number | null }).page_number ?? null,
+      (finding) => finding.rationale || finding.description_ar || '',
+    );
     const byArticle = new Map<number, CanonicalSummaryFinding[]>();
-    for (const f of listInput) {
+    for (const f of dedupedList) {
       const articleId = Number.isFinite(f.primary_article_id) ? (f.primary_article_id as number) : 0;
       if (!byArticle.has(articleId)) byArticle.set(articleId, []);
       byArticle.get(articleId)!.push(f);
@@ -2886,9 +2968,19 @@ function displayFindingTitle(params: {
     });
   }
 
-  function renderFindingsFromReal(list: AnalysisFinding[]) {
+  function renderFindingsFromReal(
+    list: AnalysisFinding[],
+    familyResolver: (finding: AnalysisFinding) => 'violation' | 'manual' | 'glossary' = () => 'violation',
+  ) {
+    const dedupedList = dedupeReportDisplayItems(
+      list,
+      familyResolver,
+      (finding) => familyResolver(finding) === 'glossary' ? finding.atomId ?? finding.articleId : finding.articleId,
+      (finding) => finding.pageNumber ?? null,
+      (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
+    );
     const byArticle = new Map<number, AnalysisFinding[]>();
-    for (const f of list) {
+    for (const f of dedupedList) {
       const articleId = Number.isFinite(f.articleId) ? f.articleId : 0;
       if (!byArticle.has(articleId)) byArticle.set(articleId, []);
       byArticle.get(articleId)!.push(f);
@@ -2954,9 +3046,19 @@ function displayFindingTitle(params: {
     });
   }
 
-  function renderFindingsFromReview(list: AnalysisReviewFinding[]) {
+  function renderFindingsFromReview(
+    list: AnalysisReviewFinding[],
+    familyResolver: (finding: AnalysisReviewFinding) => 'violation' | 'manual' | 'glossary' = () => 'violation',
+  ) {
+    const dedupedList = dedupeReportDisplayItems(
+      list,
+      familyResolver,
+      (finding) => familyResolver(finding) === 'glossary' ? finding.primaryAtomId ?? finding.primaryArticleId ?? finding.sourceKind : finding.primaryArticleId,
+      (finding) => finding.pageNumber ?? null,
+      (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
+    );
     const byArticle = new Map<number, AnalysisReviewFinding[]>();
-    for (const f of list) {
+    for (const f of dedupedList) {
       const articleId = Number.isFinite(f.primaryArticleId) ? f.primaryArticleId : 0;
       if (!byArticle.has(articleId)) byArticle.set(articleId, []);
       byArticle.get(articleId)!.push(f);
@@ -3369,17 +3471,17 @@ function displayFindingTitle(params: {
             ? null
             : showOnlyApproved
               ? useReviewFindingsUi
-                ? renderFindingsFromReview(filteredReviewApproved)
-                : renderFindingsFromReal(filteredDisplayApproved)
+                ? renderFindingsFromReview(filteredReviewApproved, reportFamilyForReviewFinding)
+                : renderFindingsFromReal(filteredDisplayApproved, reportFamilyForFinding)
             : useReviewFindingsUi && filteredReviewViolations.length > 0
-            ? renderFindingsFromReview(filteredReviewViolations)
+            ? renderFindingsFromReview(filteredReviewViolations, reportFamilyForReviewFinding)
             : useRealFindingsUi && filteredDisplayViolations.length > 0
-            ? renderFindingsFromReal(filteredDisplayViolations)
+            ? renderFindingsFromReal(filteredDisplayViolations, reportFamilyForFinding)
             : filteredCanonicalSummaryFindings.length > 0
-              ? renderFindingsFromCanonicalSummary(filteredCanonicalSummaryFindings)
+              ? renderFindingsFromCanonicalSummary(filteredCanonicalSummaryFindings, reportFamilyForCanonical)
               : useRealFindingsUi
-                ? renderFindingsFromReal(filteredDisplayViolations)
-                : renderFindingsFromSummary(filteredCanonicalSummaryFindings)}
+                ? renderFindingsFromReal(filteredDisplayViolations, reportFamilyForFinding)
+                : renderFindingsFromSummary(filteredCanonicalSummaryFindings, reportFamilyForCanonical)}
 
             </>
           )}
@@ -3617,7 +3719,7 @@ function displayFindingTitle(params: {
                 {lang === 'ar' ? 'معتمد كآمن' : 'Approved as Safe'}
                 <Badge className="ms-2 text-[10px] bg-success/10 text-success border-success/20 border">{reviewApproved.length}</Badge>
               </h3>
-              {renderFindingsFromReview(reviewApproved)}
+              {renderFindingsFromReview(reviewApproved, reportFamilyForReviewFinding)}
             </>
           )}
           {false && ((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && !useReviewFindingsUi && useRealFindingsUi && displayApprovedFindings.length > 0) && (
@@ -3627,7 +3729,7 @@ function displayFindingTitle(params: {
                 {lang === 'ar' ? 'معتمد كآمن' : 'Approved as Safe'}
                 <Badge className="ms-2 text-[10px] bg-success/10 text-success border-success/20 border">{displayApprovedFindings.length}</Badge>
               </h3>
-              {renderFindingsFromReal(displayApprovedFindings)}
+              {renderFindingsFromReal(displayApprovedFindings, reportFamilyForFinding)}
             </>
           )}
 
@@ -3636,7 +3738,7 @@ function displayFindingTitle(params: {
               <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
                 {reportSection === 'manual' ? <FileText className="w-5 h-5 text-text-muted" /> : <Search className="w-5 h-5 text-primary" />}
                 {reportSection === 'manual' ? (lang === 'ar' ? 'يدوية' : 'Manual') : (lang === 'ar' ? 'قاموس' : 'Glossary')}
-                <Badge variant="outline" className="ms-2">{reportSection === 'manual' ? displayTypeCounts.manual : displayTypeCounts.glossary}</Badge>
+                <Badge variant="outline" className="ms-2">{filteredViolationsCount}</Badge>
               </h3>
               {showEmptyFindingsState ? (
                 <div className="text-center py-16 bg-surface border-2 border-dashed border-border rounded-2xl">
@@ -3648,12 +3750,12 @@ function displayFindingTitle(params: {
                   </h4>
                 </div>
               ) : useReviewFindingsUi
-                ? renderFindingsFromReview(filteredReviewViolations)
+                ? renderFindingsFromReview(filteredReviewViolations, reportFamilyForReviewFinding)
                 : useRealFindingsUi
-                  ? renderFindingsFromReal(filteredDisplayViolations)
+                  ? renderFindingsFromReal(filteredDisplayViolations, reportFamilyForFinding)
                   : filteredCanonicalSummaryFindings.length > 0
-                    ? renderFindingsFromCanonicalSummary(filteredCanonicalSummaryFindings)
-                    : renderFindingsFromSummary(filteredCanonicalSummaryFindings)}
+                    ? renderFindingsFromCanonicalSummary(filteredCanonicalSummaryFindings, reportFamilyForCanonical)
+                    : renderFindingsFromSummary(filteredCanonicalSummaryFindings, reportFamilyForCanonical)}
             </section>
           )}
         </div>
