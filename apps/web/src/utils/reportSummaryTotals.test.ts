@@ -43,4 +43,23 @@ assert.equal(canonicalOverride.violations, 1);
 assert.equal(canonicalOverride.notes, 3);
 assert.equal(canonicalOverride.all, 4);
 
+const bannerOverride = getCanonicalReportTotals({
+  totals: {
+    findings_count: 7,
+    type_counts: { ai: 4, manual: 0, glossary: 1, special: 0 },
+  },
+  context_metrics: {
+    violation_count: 1,
+  },
+  canonical_findings: [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }],
+  notes: {
+    article_05: Array.from({ length: 62 }, (_, index) => ({ id: `n${index}` })),
+  },
+}, { fallbackFindingsCount: 99, fallbackTypeCounts: { ai: 99, manual: 99, glossary: 99, special: 99 } });
+assert.equal(bannerOverride.violations, 1);
+assert.equal(bannerOverride.notes, 62);
+assert.equal(bannerOverride.manual, 0);
+assert.equal(bannerOverride.glossary, 1);
+assert.equal(bannerOverride.all, 63);
+
 console.log('✓ report summary totals contract uses canonical summary totals');
