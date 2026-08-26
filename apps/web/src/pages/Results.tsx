@@ -3401,7 +3401,7 @@ function displayFindingTitle(params: {
             </>
           )}
 
-          {false && ((reportSection === 'violations' || reportSection === 'all') && hasViolationContent) && (
+          {((reportSection === 'violations' || reportSection === 'all') && hasViolationContent) && (
             <>
           {/* Violations section */}
           <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
@@ -3419,14 +3419,14 @@ function displayFindingTitle(params: {
               : (lang === 'ar' ? 'المخالفات' : 'Violations')}
             <Badge variant="outline" className="ms-2">
               {findingFilter === 'all'
-                ? displayTotal
+                ? displaySectionCounts.violations
                 : findingFilter === 'special'
                   ? displaySpecialNotes
                 : findingFilter === 'approved'
                   ? `${filteredViolationsCount} / ${displayApproved}`
                 : findingFilter === 'manual'
-                  ? `${filteredViolationsCount} / ${displayTypeCounts.manual}`
-                  : `${filteredViolationsCount} / ${displayTotal}`}
+                  ? `${filteredViolationsCount} / ${displaySectionCounts.manual}`
+                  : `${filteredViolationsCount} / ${displaySectionCounts.violations}`}
             </Badge>
             {findingFilter !== 'all' && (
               <button
@@ -3519,12 +3519,9 @@ function displayFindingTitle(params: {
             </>
           )}
 
-          {(reportSection === 'violations' || reportSection === 'notes' || reportSection === 'all') && (
+          {(reportSection === 'notes' || reportSection === 'all') && (
             <>
-              {(reportSection === 'all'
-                ? (['article', 'informational'] as const)
-                : [reportSection === 'violations' ? 'article' : 'informational'] as const
-              ).map((section) => {
+              {(['article', 'informational'] as const).map((section) => {
                 const categories = section === 'article' ? articleNoteCategories : informationalNoteCategories;
                 const filterTabs = [
                   {
@@ -3543,11 +3540,11 @@ function displayFindingTitle(params: {
                   : notesByCategory[selectedCategory] ?? [];
 
                 return (
-                  <section key={section} className="mt-12" aria-label={section === 'article' ? (lang === 'ar' ? 'قسم المخالفات' : 'Violations section') : (lang === 'ar' ? 'قسم الملاحظات' : 'Notes section')}>
+                  <section key={section} className="mt-12" aria-label={section === 'article' ? (lang === 'ar' ? 'قسم ملاحظات المواد' : 'Article Notes section') : (lang === 'ar' ? 'قسم ملاحظات معلوماتية' : 'Informational Notes section')}>
                     <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                       <Info className="w-5 h-5 text-info" />
-                      {section === 'article' ? (lang === 'ar' ? 'المخالفات' : 'Violations') : (lang === 'ar' ? 'الملاحظات' : 'Notes')}
-                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{displaySectionCounts.notes}</Badge>
+                      {section === 'article' ? (lang === 'ar' ? 'ملاحظات المواد' : 'Article Notes') : (lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational Notes')}
+                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{section === 'article' ? articleNotesTotal : informationalNotesTotal}</Badge>
                     </h3>
                     {reportSection !== 'all' && (
                       <div className="mt-4 space-y-4">
@@ -3771,7 +3768,7 @@ function displayFindingTitle(params: {
               <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
                 {reportSection === 'manual' ? <FileText className="w-5 h-5 text-text-muted" /> : <Search className="w-5 h-5 text-primary" />}
                 {reportSection === 'manual' ? (lang === 'ar' ? 'يدوية' : 'Manual') : (lang === 'ar' ? 'قاموس' : 'Glossary')}
-                <Badge variant="outline" className="ms-2">{filteredViolationsCount}</Badge>
+                <Badge variant="outline" className="ms-2">{reportSection === 'manual' ? displaySectionCounts.manual : displaySectionCounts.glossary}</Badge>
               </h3>
               {showEmptyFindingsState ? (
                 <div className="text-center py-16 bg-surface border-2 border-dashed border-border rounded-2xl">
