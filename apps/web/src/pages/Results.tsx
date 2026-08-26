@@ -381,7 +381,7 @@ export function Results() {
     hasPermission('manage_script_status') ||
     hasPermission('can_accept_reject');
   const canUseSendReviewAction = canUseApproveRejectActions || hasPermission('can_send_for_review');
-  
+
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [findings, setFindings] = useState<AnalysisFinding[]>([]);
   const [reviewFindings, setReviewFindings] = useState<AnalysisReviewFinding[]>([]);
@@ -1533,10 +1533,10 @@ export function Results() {
   for (const f of displaySections.violations) {
     const articleId = getViolationArticleId(f);
     if (!violationArticlesMap.has(articleId)) {
-      violationArticlesMap.set(articleId, { 
-        id: articleId, 
-        title: articleLabel(articleId), 
-        count: 0 
+      violationArticlesMap.set(articleId, {
+        id: articleId,
+        title: articleLabel(articleId),
+        count: 0
       });
     }
     violationArticlesMap.get(articleId)!.count++;
@@ -1898,7 +1898,7 @@ export function Results() {
         html = html.split(key).join(val);
       });
 
-      // 4. render loops (Manual rudimentary implementation or use a lib if allowed. 
+      // 4. render loops (Manual rudimentary implementation or use a lib if allowed.
       // Since we don't have handlebars lib, we'll manual construct the findings HTML string and inject it)
       // Actually, to avoid complexity, let's just construct the 'groupedFindings' HTML section manually:
 
@@ -1941,7 +1941,7 @@ export function Results() {
                 <div class="evidence-box">"${escapeHtmlSafe(f.evidence)}"</div>
                 ${f.reviewStatus ? `
                 <div class="review-status">
-                    ${replacements['{{labels.status}}']}: 
+                    ${replacements['{{labels.status}}']}:
                     <span class="${f.isSafe ? 'status-safe' : 'status-violation'}">${escapeHtmlSafe(f.reviewStatusLabel)}</span>
                     ${f.reviewedAt ? `<span style="margin-inline-start: 10px;">(${escapeHtmlSafe(f.reviewedAt)})</span>` : ''}
                 </div>` : ''}
@@ -1954,7 +1954,7 @@ export function Results() {
       // We'll replace the entire block.
 
       // Let's rely on the template structure we just created.
-      // Better approach: Re-read the template and ensure there is a unique placeholder. 
+      // Better approach: Re-read the template and ensure there is a unique placeholder.
       // I will assume for now I can just replace the block.
       // actually, regex replacement of the block:
       const loopRegex = /{{#each groupedFindings}}([\s\S]*?){{\/each}}/m;
@@ -3603,10 +3603,10 @@ function displayFindingTitle(params: {
 
               <div className="mt-4 space-y-4">
                 {(() => {
-                  const selectedViolations = findingFilter === 'all' 
-                    ? displaySections.violations 
+                  const selectedViolations = findingFilter === 'all'
+                    ? displaySections.violations
                     : displaySections.violations.filter(f => String(getViolationArticleId(f)) === findingFilter);
-                  
+
                   if (selectedViolations.length === 0) {
                     return (
                       <div className="text-center py-16 bg-surface border-2 border-dashed border-warning/30 rounded-2xl">
@@ -3648,34 +3648,41 @@ function displayFindingTitle(params: {
                     </h4>
                   </div>
                 ) : (
-                  (['article', 'informational'] as const).map((section) => {
-                    const categories = section === 'article' ? articleNoteCategories : informationalNoteCategories;
+                  (() => {
+                    const availableCategoriesMap = new Map<string, number>();
+                    for (const n of displaySections.notes) {
+                      const cat = getNoteCategoryLabel(n);
+                      availableCategoriesMap.set(cat, (availableCategoriesMap.get(cat) ?? 0) + 1);
+                    }
+
+                    const availableCategories = Array.from(availableCategoriesMap.entries()).map(([key, count]) => ({
+                      key,
+                      labelAr: key,
+                      labelEn: key,
+                      count
+                    }));
+
                     const filterTabs = [
                       {
                         key: 'all' as const,
                         labelAr: 'الكل',
                         labelEn: 'All',
-                        count: categories.reduce((sum, category) => sum + category.count, 0),
+                        count: displaySections.notes.length,
                       },
-                      ...categories,
+                      ...availableCategories,
                     ];
-                    const selectedCategory = noteCategoryFilter === 'all' || !categories.some((category) => category.key === noteCategoryFilter)
+
+                    const selectedCategory = noteCategoryFilter === 'all' || !availableCategories.some((c) => c.key === noteCategoryFilter)
                       ? 'all'
                       : noteCategoryFilter;
-                    const cards = selectedCategory === 'all'
-                      ? categories.flatMap((category) => notesByCategory[category.key] ?? [])
-                      : notesByCategory[selectedCategory] ?? [];
 
-                    if (cards.length === 0 && categories.length === 0) return null;
+                    const cards = selectedCategory === 'all'
+                      ? displaySections.notes
+                      : displaySections.notes.filter((n) => getNoteCategoryLabel(n) === selectedCategory);
 
                     return (
-                      <div key={section} className="space-y-4">
-                        <div className={cn('text-xs font-semibold uppercase tracking-wider', section === 'article' ? 'text-error' : 'text-info')}>
-                          {section === 'article'
-                            ? (lang === 'ar' ? 'ملاحظات المواد' : 'Article-derived note categories')
-                            : (lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational note categories')}
-                        </div>
-                        {reportSection !== 'all' && (
+                      <div className="space-y-4">
+                        {reportSection !== 'all' && filterTabs.length > 1 && (
                           <div className="flex flex-wrap gap-2">
                             {filterTabs.map((cat) => {
                               const isActive = selectedCategory === cat.key;
@@ -3686,13 +3693,11 @@ function displayFindingTitle(params: {
                                   onClick={() => setNoteCategoryFilter(cat.key)}
                                   className={cn(
                                     'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
-                                    section === 'article'
-                                      ? (isActive ? 'border-error bg-error text-white' : 'border-error/30 bg-error/10 text-error hover:bg-error/20')
-                                      : (isActive ? 'border-info bg-info text-white' : 'border-info/30 bg-info/10 text-info hover:bg-info/20')
+                                    isActive ? 'border-info bg-info text-white font-medium shadow-sm' : 'border-info/30 bg-info/5 text-text-main hover:bg-info/10 hover:border-info/50'
                                   )}
                                 >
                                   <span>{lang === 'ar' ? cat.labelAr : cat.labelEn}</span>
-                                  <Badge variant="outline" className={cn('text-[10px]', isActive ? 'bg-white/20 text-white border-white/30' : section === 'article' ? 'text-error border-error/30' : 'text-info border-info/30')}>
+                                  <Badge variant="outline" className={cn('text-[10px]', isActive ? 'bg-white/20 text-white border-white/30' : 'text-info border-info/30')}>
                                     {cat.count}
                                   </Badge>
                                 </button>
@@ -3701,25 +3706,21 @@ function displayFindingTitle(params: {
                           </div>
                         )}
                         <div className="space-y-4">
-                          {cards.length > 0 ? cards.map((note) => (
+                          {cards.map((note) => (
                             <FindingCard
                               key={note.id}
                               mode="note"
-                              noteAccent={section === 'article' ? 'error' : 'info'}
+                              noteAccent="info"
                               note={noteCardFromReportNote(note)}
                               onToggleNoteReportVisibility={handleToggleNoteReportVisibility}
                               onMarkNoteReviewed={handleMarkNoteReviewed}
                               onEditNote={openNoteEditModal}
                             />
-                          )) : (
-                            <div className={cn('rounded-xl border border-dashed p-6 text-sm text-text-muted', section === 'article' ? 'border-error/30 bg-error/5' : 'border-info/30 bg-info/5')}>
-                              {lang === 'ar' ? 'لا توجد ملاحظات في هذا التصنيف.' : 'No notes are available in this category.'}
-                            </div>
-                          )}
+                          ))}
                         </div>
                       </div>
                     );
-                  })
+                  })()
                 )}
               </div>
             </section>
@@ -4565,7 +4566,7 @@ function displayFindingTitle(params: {
           <div className="p-3 bg-background rounded-md border border-border text-sm text-text-main font-medium" dir="rtl">
             {reviewModal?.titleAr}
           </div>
-          <Textarea 
+          <Textarea
             label={lang === 'ar' ? 'السبب (مطلوب)' : 'Reason (required)'}
             value={reviewReason}
             onChange={e => setReviewReason(e.target.value)}
