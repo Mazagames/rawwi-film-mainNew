@@ -1496,18 +1496,62 @@ export function Results() {
         manual: canonicalTotals.manual,
         glossary: canonicalTotals.glossary,
       };
+
+  const displayRealViolations = useReviewFindingsUi
+    ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'violation')
+    : useRealFindingsUi
+    ? dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'violation')
+    : dedupedCanonicalFindingsForCounts.filter((finding) => reportFamilyForCanonical(finding) === 'violation');
+
   const displayManualItems = useReviewFindingsUi
     ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'manual')
-    : dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'manual');
+    : useRealFindingsUi
+    ? dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'manual')
+    : dedupedCanonicalFindingsForCounts.filter((finding) => reportFamilyForCanonical(finding) === 'manual');
+
   const displayGlossaryItems = useReviewFindingsUi
     ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'glossary')
-    : dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'glossary');
+    : useRealFindingsUi
+    ? dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'glossary')
+    : dedupedCanonicalFindingsForCounts.filter((finding) => reportFamilyForCanonical(finding) === 'glossary');
+
   const displaySections = buildReportDisplaySections({
-    violations: displayViolations,
+    violations: displayRealViolations,
     notes: Object.values(dedupedNotesByCategory).flatMap((categoryNotes) => categoryNotes ?? []),
     manual: displayManualItems,
     glossary: displayGlossaryItems,
   });
+
+  const getViolationArticleId = (finding: any): number => {
+    if (finding && typeof finding.primaryArticleId === 'number') return finding.primaryArticleId;
+    if (finding && typeof finding.articleId === 'number') return finding.articleId;
+    if (finding && typeof finding.primary_article_id === 'number') return finding.primary_article_id;
+    return 0;
+  };
+
+  const violationArticlesMap = new Map<number, { id: number; title: string; count: number }>();
+  for (const f of displaySections.violations) {
+    const articleId = getViolationArticleId(f);
+    if (!violationArticlesMap.has(articleId)) {
+      violationArticlesMap.set(articleId, { 
+        id: articleId, 
+        title: articleLabel(articleId), 
+        count: 0 
+      });
+    }
+    violationArticlesMap.get(articleId)!.count++;
+  }
+  const violationArticleGroups = Array.from(violationArticlesMap.values()).sort((a, b) => a.id - b.id);
+  const activeViolationFilterTabs = [
+    { key: 'all', labelAr: 'الكل', labelEn: 'All', count: displaySections.violations.length },
+    ...violationArticleGroups.map(g => ({
+      key: String(g.id),
+      labelAr: g.title,
+      labelEn: g.title,
+      count: g.count,
+    }))
+  ];
+
   const displaySectionCounts = getReportDisplaySectionCounts(displaySections);
   const displayApproved = useReviewFindingsUi ? reviewApproved.length : (report.approvedCount ?? 0);
   const displaySpecialNotes = useReviewFindingsUi ? reviewSpecialNotes.length : reportHints.length;
@@ -3527,21 +3571,61 @@ function displayFindingTitle(params: {
                 {lang === 'ar' ? 'المخالفات' : 'Violations'}
                 <Badge variant="outline" className="ms-2 bg-warning/10 text-warning border-warning/30">{displaySections.violations.length}</Badge>
               </h3>
+
+              {reportSection !== 'all' && activeViolationFilterTabs.length > 1 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {activeViolationFilterTabs.map((tab) => {
+                    const isActive = findingFilter === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setFindingFilter(tab.key)}
+                        className={cn(
+                          'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                          isActive
+                            ? 'border-warning bg-warning text-white font-medium shadow-sm'
+                            : 'border-warning/30 bg-warning/5 text-text-main hover:bg-warning/10 hover:border-warning/50'
+                        )}
+                      >
+                        {lang === 'ar' ? tab.labelAr : tab.labelEn}
+                        <Badge variant="outline" className={cn(
+                          'ms-1 px-1.5 py-0 text-[10px] min-w-[20px] text-center border-none',
+                          isActive ? 'bg-white/20 text-white' : 'bg-warning/10 text-warning'
+                        )}>
+                          {tab.count}
+                        </Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="mt-4 space-y-4">
-                {displaySections.violations.length === 0 ? (
-                  <div className="text-center py-16 bg-surface border-2 border-dashed border-border rounded-2xl">
-                    <CheckCircle className="w-12 h-12 text-success mx-auto mb-4 opacity-50" />
-                    <h4 className="text-lg font-bold text-text-main">
-                      {lang === 'ar' ? 'لا توجد مخالفات' : 'No violations'}
-                    </h4>
-                  </div>
-                ) : useReviewFindingsUi ? (
-                  renderFindingsFromReview(displaySections.violations as any, reportFamilyForReviewFinding)
-                ) : useRealFindingsUi ? (
-                  renderFindingsFromReal(displaySections.violations as any, reportFamilyForFinding)
-                ) : (
-                  renderFindingsFromCanonicalSummary(displaySections.violations as any, reportFamilyForCanonical)
-                )}
+                {(() => {
+                  const selectedViolations = findingFilter === 'all' 
+                    ? displaySections.violations 
+                    : displaySections.violations.filter(f => String(getViolationArticleId(f)) === findingFilter);
+                  
+                  if (selectedViolations.length === 0) {
+                    return (
+                      <div className="text-center py-16 bg-surface border-2 border-dashed border-warning/30 rounded-2xl">
+                        <CheckCircle className="w-12 h-12 text-warning mx-auto mb-4 opacity-50" />
+                        <h4 className="text-lg font-bold text-text-main">
+                          {lang === 'ar' ? 'لا توجد مخالفات في هذه الفئة' : 'No violations in this category'}
+                        </h4>
+                      </div>
+                    );
+                  }
+
+                  return useReviewFindingsUi ? (
+                    renderFindingsFromReview(selectedViolations as any, reportFamilyForReviewFinding)
+                  ) : useRealFindingsUi ? (
+                    renderFindingsFromReal(selectedViolations as any, reportFamilyForFinding)
+                  ) : (
+                    renderFindingsFromCanonicalSummary(selectedViolations as any, reportFamilyForCanonical)
+                  );
+                })()}
               </div>
             </section>
           )}
@@ -3803,35 +3887,41 @@ function displayFindingTitle(params: {
             </>
           )}
 
-          {(reportSection === 'manual' || reportSection === 'dictionary') && (() => {
-            const isManual = reportSection === 'manual';
-            const findings = isManual ? displaySections.manual : displaySections.glossary;
-            const count = findings.length;
-
-            return (
-              <section className="mt-4" aria-label={isManual ? (lang === 'ar' ? 'قسم الملاحظات اليدوية' : 'Manual findings section') : (lang === 'ar' ? 'قسم القاموس' : 'Dictionary section')}>
-                <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
-                  {isManual ? <FileText className="w-5 h-5 text-text-muted" /> : <Search className="w-5 h-5 text-primary" />}
-                  {isManual ? (lang === 'ar' ? 'يدوية' : 'Manual') : (lang === 'ar' ? 'قاموس' : 'Glossary')}
-                  <Badge variant="outline" className="ms-2">{count}</Badge>
-                </h3>
-                {count === 0 ? (
-                  <div className="text-center py-16 bg-surface border-2 border-dashed border-border rounded-2xl">
-                    <CheckCircle className="w-12 h-12 text-success mx-auto mb-4 opacity-50" />
-                    <h4 className="text-lg font-bold text-text-main">
-                      {isManual
-                        ? (lang === 'ar' ? 'لا توجد ملاحظات يدوية' : 'No manual findings')
-                        : (lang === 'ar' ? 'لا توجد مطابقات قاموس' : 'No glossary findings')}
-                    </h4>
-                  </div>
-                ) : useReviewFindingsUi
-                  ? renderFindingsFromReview(findings as any, reportFamilyForReviewFinding)
+          {/* 3. MANUAL FINDINGS */}
+          {(reportSection === 'manual' || reportSection === 'all') && displaySections.manual.length > 0 && (
+            <section className="mt-12" aria-label={lang === 'ar' ? 'قسم المخالفات اليدوية' : 'Manual findings section'}>
+              <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-text-muted" />
+                {lang === 'ar' ? 'يدوية' : 'Manual'}
+                <Badge variant="outline" className="ms-2">{displaySections.manual.length}</Badge>
+              </h3>
+              <div className="mt-4 space-y-4">
+                {useReviewFindingsUi
+                  ? renderFindingsFromReview(displaySections.manual as any, reportFamilyForReviewFinding)
                   : useRealFindingsUi
-                    ? renderFindingsFromReal(findings as any, reportFamilyForFinding)
-                    : renderFindingsFromCanonicalSummary(findings as any, reportFamilyForCanonical)}
-              </section>
-            );
-          })()}
+                    ? renderFindingsFromReal(displaySections.manual as any, reportFamilyForFinding)
+                    : renderFindingsFromCanonicalSummary(displaySections.manual as any, reportFamilyForCanonical)}
+              </div>
+            </section>
+          )}
+
+          {/* 4. GLOSSARY FINDINGS */}
+          {(reportSection === 'dictionary' || reportSection === 'all') && displaySections.glossary.length > 0 && (
+            <section className="mt-12" aria-label={lang === 'ar' ? 'قسم القاموس' : 'Dictionary section'}>
+              <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
+                <Search className="w-5 h-5 text-primary" />
+                {lang === 'ar' ? 'قاموس' : 'Glossary'}
+                <Badge variant="outline" className="ms-2">{displaySections.glossary.length}</Badge>
+              </h3>
+              <div className="mt-4 space-y-4">
+                {useReviewFindingsUi
+                  ? renderFindingsFromReview(displaySections.glossary as any, reportFamilyForReviewFinding)
+                  : useRealFindingsUi
+                    ? renderFindingsFromReal(displaySections.glossary as any, reportFamilyForFinding)
+                    : renderFindingsFromCanonicalSummary(displaySections.glossary as any, reportFamilyForCanonical)}
+              </div>
+            </section>
+          )}
         </div>
 
       <Modal
