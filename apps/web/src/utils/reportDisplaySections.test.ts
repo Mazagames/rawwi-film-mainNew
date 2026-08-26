@@ -15,6 +15,19 @@ assert.equal(counts.manual, 0);
 assert.equal(counts.glossary, 1);
 assert.equal(counts.all, 64);
 
+const overlappingSections = buildReportDisplaySections({
+  violations: [{ id: 'shared' }, { id: 'v2' }],
+  notes: [{ id: 'shared' }, { id: 'note-1' }],
+  manual: [{ id: 'manual-1' }],
+  glossary: [{ id: 'shared' }],
+});
+const overlappingCounts = getReportDisplaySectionCounts(overlappingSections);
+assert.equal(overlappingCounts.all, 4);
+assert.equal(overlappingCounts.violations, 2);
+assert.equal(overlappingCounts.notes, 2);
+assert.equal(overlappingCounts.manual, 1);
+assert.equal(overlappingCounts.glossary, 1);
+
 const notesOnly = buildReportDisplaySections({
   violations: [{ id: 'v1' }],
   notes: [{ id: 'article-note' }, { id: 'informational-note' }],
