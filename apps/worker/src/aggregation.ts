@@ -1728,36 +1728,6 @@ export function buildSummaryJson(
   });
   const report_hints: SummaryJson["report_hints"] = [];
   const noteSummary = buildNoteSummary(jobId, notes);
-  const article14PresentationTitle = "المادة 14: الألفاظ النابية والشتائم والإهانات الشخصية";
-  const article14PresentationFindings = (noteSummary.notes.article_14 ?? [])
-    .filter((note) => note.included_in_report !== false)
-    .map((note, index) => ({
-      canonical_finding_id: `article14-note-${note.id ?? `${jobId}-${note.event_id}-${index}`}`,
-      finding_uuid: note.id,
-      title_ar: article14PresentationTitle,
-      evidence_snippet: note.snippet,
-      severity: "medium",
-      confidence: note.confidence,
-      final_ruling: null,
-      rationale: note.description || RATIONALE_FALLBACK,
-      pillar_id: null,
-      primary_article_id: 14,
-      related_article_ids: [],
-      policy_links: [{ article_id: 14, role: "primary" }],
-      start_offset_global: null,
-      end_offset_global: null,
-      start_line_chunk: null,
-      end_line_chunk: null,
-      page_number: null,
-      primary_policy_atom_id: null,
-      canonical_atom: null,
-      intensity: null,
-      context_impact: null,
-      legal_sensitivity: null,
-      audience_risk: null,
-      source: "ai",
-    }));
-  canonical_findings.push(...article14PresentationFindings);
   if (config.DEBUG_TRACE_FINDING_PIPELINE) {
     traceFindingPipelineStage({
       jobId,

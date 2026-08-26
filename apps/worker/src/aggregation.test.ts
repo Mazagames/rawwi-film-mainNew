@@ -29,10 +29,25 @@ type DbNote = {
   snippet: string;
   event_id: number;
   confidence: number;
-  status: string;
-  included_in_report: boolean;
+  status?: string;
+  included_in_report?: boolean;
   created_at?: string | null;
 };
+
+function buildNote(overrides: Partial<DbNote> = {}): DbNote {
+  return {
+    reviewer: "article_14_profanity_personal_insults",
+    category: "article_14",
+    title: "ملاحظة",
+    description: "ملاحظة ليست مخالفة",
+    snippet: "اقتباس",
+    event_id: 22,
+    confidence: 0.95,
+    status: "new",
+    included_in_report: true,
+    ...overrides,
+  };
+}
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -206,7 +221,7 @@ function testNotesAreGroupedSeparately() {
   assert(article05And12Summary.notes_summary?.some((group) => group.category === "article_12"), "notes_summary must include article_12");
 
   const article14Notes: DbNote[] = [
-    {
+    buildNote({
       reviewer: "article_14_profanity_personal_insults",
       category: "article_14",
       title: "إهانة شخصية",
@@ -216,14 +231,16 @@ function testNotesAreGroupedSeparately() {
       confidence: 0.95,
       status: "new",
       included_in_report: true,
-    },
+    }),
   ];
   const article14Summary = buildSummaryJson("job3", "script3", [], undefined, undefined, undefined, undefined, article14Notes);
   assert((article14Summary.notes?.article_14 ?? []).length === 1, "Article 14 must remain in analysis_notes summary output");
-  assert(article14Summary.canonical_findings?.length === 1, "Article 14 note should have one presentation finding");
-  assert(article14Summary.canonical_findings?.[0]?.primary_article_id === 14, "Article 14 presentation mapping must retain article ownership");
+  assert(article14Summary.canonical_findings?.length === 0, "Article 14 notes must not be promoted into canonical findings");
+  assert(article14Summary.totals.findings_count === 0, "Article 14 notes must not increase violation totals");
+  assert(article14Summary.findings_by_article.every((entry) => entry.article_id !== 14), "Article 14 notes must not appear in findings_by_article");
+  assert(article14Summary.notes_summary?.some((group) => group.category === "article_14"), "Article 14 notes must remain in notes_summary");
 
-  console.log("✓ Notes are grouped separately from violations, with Article 14 mapped only at presentation time");
+  console.log("✓ Notes are grouped separately from violations, with Article 14 remaining a note-only category");
 }
 
 function testUnknownNoteCategoryRejected() {
@@ -251,13 +268,67 @@ function testNotesRemainSeparateFromViolationTotals() {
     { article_id: 15, atom_id: "15-1", severity: "high", confidence: 0.95, title_ar: "مخالفة", description_ar: "", evidence_snippet: "مخالفة", start_offset_global: 0, end_offset_global: 1, start_line_chunk: null, end_line_chunk: null, location: {} },
   ];
   const notes: DbNote[] = [
-    { reviewer: "article_05_violence_torture", category: "article_05", title: "ملاحظة", description: "ملاحظة ليست مخالفة", snippet: "ملاحظة", event_id: 5, confidence: 0.8, status: "new", included_in_report: true },
+    buildNote({ reviewer: "article_05_violence_torture", category: "article_05", title: "ملاحظة", description: "ملاحظة ليست مخالفة", snippet: "ملاحظة", event_id: 5, confidence: 0.8 }),
   ];
   const summary = buildSummaryJson("job5", "script5", findings, undefined, undefined, undefined, undefined, notes);
   assert(summary.totals.findings_count === 1, "violations total should count only findings, not notes");
   assert((summary.notes?.article_05 ?? []).length === 1, "notes should remain grouped under notes");
   assert((summary.notes_summary ?? []).some((group) => group.category === "article_05"), "notes summary should include note categories");
+  assert(summary.canonical_findings?.length === 1, "real violations should still appear as canonical findings");
   console.log("✓ notes remain separate from violation totals");
+}
+
+function testArticleNotesStayOutOfCanonicalViolationsWhenOnlyNotesExist() {
+  const notes = Array.from({ length: 4 }, (_, index) => buildNote({
+    reviewer: `article_14_note_${index}`,
+    category: "article_14",
+    title: `ملاحظة ${index + 1}`,
+    description: "ملاحظة فقط",
+    snippet: `اقتباس ${index + 1}`,
+    event_id: 100 + index,
+    confidence: 0.9,
+    included_in_report: true,
+  }));
+  const summary = buildSummaryJson("job-note-only", "script-note-only", [], undefined, undefined, undefined, undefined, notes);
+  assert(summary.totals.findings_count === 0, "zero violations plus notes should produce zero findings");
+  assert(summary.canonical_findings?.length === 0, "notes must not be promoted to canonical findings");
+  assert((summary.notes?.article_14 ?? []).length === 4, "all article 14 notes should remain in notes");
+  assert((summary.notes_summary ?? []).some((group) => group.category === "article_14"), "article 14 note categories should remain in notes_summary");
+  assert(summary.findings_by_article.every((entry) => entry.article_id !== 14), "article 14 notes must not enter findings_by_article");
+  console.log("✓ article notes stay out of canonical violations when only notes are present");
+}
+
+function testArticleNotesStayOutOfCanonicalViolationsWhenMixedWithRealFindings() {
+  const realFinding: DbFinding = {
+    article_id: 15,
+    atom_id: "15-1",
+    severity: "high",
+    confidence: 0.95,
+    title_ar: "مخالفة حقيقية",
+    description_ar: "",
+    evidence_snippet: "مخالفة",
+    start_offset_global: 0,
+    end_offset_global: 1,
+    start_line_chunk: null,
+    end_line_chunk: null,
+    location: {},
+  };
+  const notes = Array.from({ length: 4 }, (_, index) => buildNote({
+    reviewer: `article_14_note_${index}`,
+    category: "article_14",
+    title: `ملاحظة ${index + 1}`,
+    description: "ملاحظة فقط",
+    snippet: `اقتباس ${index + 1}`,
+    event_id: 200 + index,
+    confidence: 0.9,
+    included_in_report: true,
+  }));
+  const summary = buildSummaryJson("job-mixed", "script-mixed", [realFinding], undefined, undefined, undefined, undefined, notes);
+  assert(summary.totals.findings_count === 1, "one real violation plus notes should yield one finding");
+  assert((summary.canonical_findings ?? []).length === 1, "only real findings should appear in canonical_findings");
+  assert((summary.notes?.article_14 ?? []).length === 4, "notes should remain separate from real findings");
+  assert(summary.findings_by_article.every((entry) => entry.article_id !== 14), "article 14 notes must not appear in findings_by_article even when mixed with real findings");
+  console.log("✓ article notes stay out of canonical violations when mixed with real findings");
 }
 
 function testArticleNoteCanonicalIdsAreBlockedFromReviewLayer() {
@@ -278,6 +349,8 @@ async function main() {
   testNotesAreGroupedSeparately();
   testUnknownNoteCategoryRejected();
   testNotesRemainSeparateFromViolationTotals();
+  testArticleNotesStayOutOfCanonicalViolationsWhenOnlyNotesExist();
+  testArticleNotesStayOutOfCanonicalViolationsWhenMixedWithRealFindings();
   testArticleNoteCanonicalIdsAreBlockedFromReviewLayer();
   console.log("\nAll aggregation tests passed.");
 }
