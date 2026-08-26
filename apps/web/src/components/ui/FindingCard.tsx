@@ -12,6 +12,7 @@ import { ShieldAlert, AlertTriangle, AlertCircle, Edit2, RotateCcw, MapPin, EyeO
 import { getViolationTypeIdFromLegacyPolicyArticle, resolveViolationTypeId, violationTypeLabel } from '@/data/violationTypes';
 import { displayPageForFinding } from '@/utils/viewerPageFromOffset';
 import { formatResolvedSceneLabel, resolveSceneLabelFromOffset } from '@/utils/sceneLabelFromOffset';
+import { getNoteCategoryLabel } from '@/utils/noteCategoryLabels';
 
 export interface NoteCardData {
   id: string;
@@ -172,7 +173,7 @@ export function FindingCard({
               {isNoteCard ? (
                 <>
                   <Badge variant="outline" className={cn('text-[10px]', noteAccent === 'error' ? 'bg-error/10 text-error border-error/30' : 'bg-info/10 text-info border-info/30')}>
-                    {note!.category}
+                    {getNoteCategoryLabel(note!.category, lang === 'ar' ? 'ar' : 'en') || note!.category}
                   </Badge>
                   <Badge variant="outline" className="text-[10px] text-text-muted border-border/60">
                     {note!.includedInReport === false ? (lang === 'ar' ? 'مستبعد' : 'Excluded') : (lang === 'ar' ? 'مضمن' : 'Included')}
@@ -329,11 +330,6 @@ export function FindingCard({
           <span className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1 block">
             {isNoteCard ? (lang === 'ar' ? 'الوصف' : 'Description') : t('findingDescription')}
           </span>
-          {isNoteCard && (
-            <div className={cn('mb-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold', noteAccent === 'error' ? 'border-error/30 bg-error/10 text-error' : 'border-info/30 bg-info/10 text-info')}>
-              {lang === 'ar' ? 'هذه ملاحظة. ليست مخالفة.' : 'This is a Note. Not a violation.'}
-            </div>
-          )}
           <p className="text-sm text-text-main leading-relaxed">
             {isNoteCard
               ? note!.description
