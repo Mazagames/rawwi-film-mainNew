@@ -34,6 +34,7 @@ import {
 } from '@/utils/pdfDisplayFont';
 import { getPublicAnalysisErrorMessage } from '@/utils/raawiAiError';
 import { resolvePolledReportId, validateSelectedReport } from '@/utils/workspaceReportContract';
+import { getCanonicalReportTotals } from '@/utils/reportSummaryTotals';
 
 
 
@@ -2593,17 +2594,18 @@ export function ScriptWorkspace() {
           const summary = fullReport.summaryJson as typeof fullReport.summaryJson & {
             notes?: Record<string, unknown[]>;
           };
-          const notesCount = Object.values(summary.notes ?? {}).reduce((sum, notes) => sum + notes.length, 0);
-          const findingTotals = summary.totals?.findings_count ?? 0;
-          const typeCounts = summary.totals?.type_counts ?? {};
+          const totals = getCanonicalReportTotals(summary, {
+            fallbackFindingsCount: item.findingsCount,
+            fallbackTypeCounts: item.typeCounts,
+          });
           return {
             ...item,
             reportTotals: {
-              all: findingTotals + notesCount,
-              violations: findingTotals,
-              notes: notesCount,
-              manual: typeCounts.manual ?? 0,
-              glossary: typeCounts.glossary ?? 0,
+              all: totals.all,
+              violations: totals.violations,
+              notes: totals.notes,
+              manual: totals.manual,
+              glossary: totals.glossary,
             },
           };
         } catch {

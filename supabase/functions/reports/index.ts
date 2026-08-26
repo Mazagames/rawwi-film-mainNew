@@ -32,12 +32,16 @@ const LIST_COLS = "id, job_id, script_id, version_id, findings_count, severity_c
 function camelReport(r: Record<string, unknown>, full = false) {
   const summaryJson = (r.summary_json as Record<string, unknown> | null | undefined) ?? {};
   const totals = (summaryJson.totals as Record<string, unknown> | null | undefined) ?? {};
+  const notes = (summaryJson.notes as Record<string, unknown[] | null | undefined> | null | undefined) ?? {};
+  const notesCount = Object.values(notes).reduce((sum, group) => sum + (Array.isArray(group) ? group.length : 0), 0);
+  const findingsCount = Number((totals.findings_count as number | null | undefined) ?? (r.findings_count as number | null | undefined) ?? 0) || 0;
   const out: Record<string, unknown> = {
     id: r.id,
     jobId: r.job_id,
     scriptId: r.script_id,
     versionId: r.version_id,
-    findingsCount: r.findings_count ?? 0,
+    findingsCount,
+    totalFindings: findingsCount + notesCount,
     severityCounts: r.severity_counts ?? { low: 0, medium: 0, high: 0, critical: 0 },
     typeCounts: totals.type_counts ?? undefined,
     approvedCount: r.approved_count ?? 0,

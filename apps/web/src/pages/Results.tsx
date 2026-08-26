@@ -28,6 +28,7 @@ import { resolveStorageUrl } from '@/utils/storage';
 import { getGlossarySentenceContext } from '@/utils/findingContext';
 import { countNotesByCategory, logNotePipelineStage } from '@/utils/noteTelemetry';
 import { dedupeReportDisplayItems } from '@/utils/reportDisplayDedupe';
+import { getCanonicalReportTotals } from '@/utils/reportSummaryTotals';
 import {
   ArrowLeft, CheckCircle, ShieldAlert,
   AlertTriangle, XCircle, ChevronDown, ChevronUp, Loader2,
@@ -1378,6 +1379,10 @@ export function Results() {
     ...cat,
     count: dedupedNotesByCategory[cat.key]?.length ?? 0,
   }));
+  const canonicalTotals = getCanonicalReportTotals(summary, {
+    fallbackFindingsCount: report.findingsCount,
+    fallbackTypeCounts: report.typeCounts,
+  });
   const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
   const informationalNoteCategories = noteCategoryCounts.filter((category) => !category.key.startsWith('article_'));
   const articleNoteCategories = noteCategoryCounts.filter((category) => category.key.startsWith('article_'));
@@ -1472,12 +1477,16 @@ export function Results() {
 
   const displayTotal = useReviewFindingsUi
     ? dedupedReviewViolationsForCounts.length
-    : dedupedCanonicalFindingsForCounts.length;
+    : canonicalTotals.violations;
   const displayTypeCounts = useReviewFindingsUi
     ? countReviewFindingKinds(dedupedReviewViolationsForCounts)
     : useRealFindingsUi
     ? countFindingKinds(dedupedRealFindingsForCounts)
-    : countFindingKinds(dedupedCanonicalFindingsForCounts);
+    : {
+        ai: canonicalTotals.ai,
+        manual: canonicalTotals.manual,
+        glossary: canonicalTotals.glossary,
+      };
   const displayApproved = useReviewFindingsUi ? reviewApproved.length : (report.approvedCount ?? 0);
   const displaySpecialNotes = useReviewFindingsUi ? reviewSpecialNotes.length : reportHints.length;
   const matchesFindingFilter = (finding: Pick<AnalysisFinding, 'source'> | Pick<CanonicalSummaryFinding, 'source'>) => {
@@ -1562,9 +1571,9 @@ export function Results() {
   };
   const DecisionIcon = decisionConfig[decision].icon;
   const primaryReportSections = [
-    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: notesTotalCount, tone: 'neutral' as const },
-    { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: articleNotesTotal, tone: 'warning' as const },
-    { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: informationalNotesTotal, tone: 'info' as const },
+    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: canonicalTotals.all, tone: 'neutral' as const },
+    { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: canonicalTotals.violations, tone: 'warning' as const },
+    { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: canonicalTotals.notes, tone: 'info' as const },
     { key: 'manual' as const, labelAr: 'يدوية', labelEn: 'Manual', value: displayTypeCounts.manual, tone: 'neutral' as const },
     { key: 'dictionary' as const, labelAr: 'قاموس', labelEn: 'Glossary', value: displayTypeCounts.glossary, tone: 'primary' as const },
   ];
