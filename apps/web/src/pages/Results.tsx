@@ -28,6 +28,7 @@ import { resolveStorageUrl } from '@/utils/storage';
 import { getGlossarySentenceContext } from '@/utils/findingContext';
 import { countNotesByCategory, logNotePipelineStage } from '@/utils/noteTelemetry';
 import { dedupeReportDisplayItems } from '@/utils/reportDisplayDedupe';
+import { buildReportDisplaySections, getReportDisplaySectionCounts } from '@/utils/reportDisplaySections';
 import { getCanonicalReportTotals, type CanonicalReportTotals } from '@/utils/reportSummaryTotals';
 import { NOTE_CATEGORY_ORDER, getNoteCategoryLabel } from '@/utils/noteCategoryLabels';
 import {
@@ -1495,6 +1496,19 @@ export function Results() {
         manual: canonicalTotals.manual,
         glossary: canonicalTotals.glossary,
       };
+  const displayManualItems = useReviewFindingsUi
+    ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'manual')
+    : dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'manual');
+  const displayGlossaryItems = useReviewFindingsUi
+    ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'glossary')
+    : dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'glossary');
+  const displaySections = buildReportDisplaySections({
+    violations: displayViolations,
+    notes: Object.values(dedupedNotesByCategory).flatMap((categoryNotes) => categoryNotes ?? []),
+    manual: displayManualItems,
+    glossary: displayGlossaryItems,
+  });
+  const displaySectionCounts = getReportDisplaySectionCounts(displaySections);
   const displayApproved = useReviewFindingsUi ? reviewApproved.length : (report.approvedCount ?? 0);
   const displaySpecialNotes = useReviewFindingsUi ? reviewSpecialNotes.length : reportHints.length;
   const matchesFindingFilter = (finding: Pick<AnalysisFinding, 'source'> | Pick<CanonicalSummaryFinding, 'source'>) => {
@@ -1578,14 +1592,14 @@ export function Results() {
     REVIEW_REQUIRED: { label: lang === 'ar' ? 'يتطلب مراجعة' : 'REVIEW REQUIRED', bg: 'bg-warning/5', text: 'text-warning', border: 'border-warning/30', icon: AlertTriangle },
   };
   const DecisionIcon = decisionConfig[decision].icon;
-  const bannerViolationsCount = displayViolationsCount;
-  const bannerNotesCount = notesTotalCount;
+  const bannerViolationsCount = displaySectionCounts.violations;
+  const bannerNotesCount = displaySectionCounts.notes;
   const primaryReportSections = [
-    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: bannerViolationsCount + bannerNotesCount, tone: 'neutral' as const },
+    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: displaySectionCounts.all, tone: 'neutral' as const },
     { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: bannerViolationsCount, tone: 'warning' as const },
     { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: bannerNotesCount, tone: 'info' as const },
-    { key: 'manual' as const, labelAr: 'يدوية', labelEn: 'Manual', value: displayTypeCounts.manual, tone: 'neutral' as const },
-    { key: 'dictionary' as const, labelAr: 'قاموس', labelEn: 'Glossary', value: displayTypeCounts.glossary, tone: 'primary' as const },
+    { key: 'manual' as const, labelAr: 'يدوية', labelEn: 'Manual', value: displaySectionCounts.manual, tone: 'neutral' as const },
+    { key: 'dictionary' as const, labelAr: 'قاموس', labelEn: 'Glossary', value: displaySectionCounts.glossary, tone: 'primary' as const },
   ];
   const violationFilterTabs: Array<{ key: FindingKindFilter; labelAr: string; labelEn: string }> = [
     { key: 'all', labelAr: 'الكل', labelEn: 'All' },
@@ -3533,7 +3547,7 @@ function displayFindingTitle(params: {
                     <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                       <Info className="w-5 h-5 text-info" />
                       {section === 'article' ? (lang === 'ar' ? 'المخالفات' : 'Violations') : (lang === 'ar' ? 'الملاحظات' : 'Notes')}
-                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{filterTabs[0].count}</Badge>
+                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{displaySectionCounts.notes}</Badge>
                     </h3>
                     {reportSection !== 'all' && (
                       <div className="mt-4 space-y-4">
