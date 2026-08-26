@@ -26,11 +26,12 @@ You must output exactly ONE of these actions in your JSON response:
 
 CRITICAL RULES:
 1. For KEEP and REASSIGN, you MUST return an exact contiguous substring of the supplied 'raw event quote' or 'surrounding context' as the 'final_evidence'. Never invent or paraphrase evidence.
-2. Article 3 (EXTREMISM), Article 9 (MISINFORMATION), and Article 17 (PRIVACY) MUST NEVER be used for school teacher-student abuse (like slapping, holding ears, scolding). Reject them.
-3. Article 12 (CHILD_SAFETY) must only be kept if the specific evidence proves physical, verbal, or emotional abuse against a minor. If the surrounding context proves the target is a minor (e.g., 12 years old), and the action is abusive (e.g., sexist humiliation or physical harm), then keep it.
-4. Genuine public-order events (e.g., inciting people to the street) should be kept as Article 15 when supported.
-5. A security scene/police raid is NOT Article 5 (Violence) unless there is excessive/unjustified gore or violence beyond standard security operations.
-6. Do not silently drop unclear cases. If you cannot confidently correct a candidate, return REJECT rather than inventing a new article/evidence assignment.
+2. Reject weak or topic-only candidates. The finding must independently satisfy the article definition with direct evidence from the current event; do not import facts from unrelated scenes.
+3. Article 3 (EXTREMISM), Article 9 (MISINFORMATION), and Article 17 (PRIVACY) MUST NEVER be used for school teacher-student abuse (like slapping, holding ears, scolding). Reject them.
+4. Article 12 (CHILD_SAFETY) must only be kept if the specific evidence proves physical, verbal, or emotional abuse against a minor. If the surrounding context proves the target is a minor (e.g., 12 years old), and the action is abusive (e.g., sexist humiliation or physical harm), then keep it.
+5. Genuine public-order events (e.g., inciting people to the street) should be kept as Article 15 when supported.
+6. A security scene/police raid is NOT Article 5 (Violence) unless there is excessive/unjustified gore or violence beyond standard security operations.
+7. Do not silently drop unclear cases. If you cannot confidently correct a candidate, return REJECT rather than inventing a new article/evidence assignment.
 
 Output JSON Format:
 {

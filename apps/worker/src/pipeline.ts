@@ -54,6 +54,7 @@ import { buildFindingUuid } from "./findingIdentity.js";
 import { canonicalStringify } from "./canonicalJson.js";
 import { enforceDeterministicOwnership } from "./deterministicOwnership.js";
 import { runEventCandidateRunner, type EventCandidateRunnerResult } from "./eventCandidateRunner.js";
+import { dedupeFindingsByEventIdentity } from "./eventIdentityDedup.js";
 
 export type FindingWithGlobal = JudgeFinding & {
   source?: "ai" | "lexicon_mandatory" | "manual";
@@ -2866,6 +2867,7 @@ export async function processChunkJudge(
     // 5) Dedupe + overlap
     const beforeDedupeCount = allFindings.length;
     const beforeCanonicalization = [...allFindings];
+    allFindings = dedupeFindingsByEventIdentity(allFindings);
     allFindings = dedupeByHash(allFindings);
     const afterDedupeCount = allFindings.length;
     allFindings = overlapCollapse(allFindings);
