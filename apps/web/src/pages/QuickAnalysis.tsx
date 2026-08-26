@@ -15,7 +15,6 @@ import { PDF_EXTRACTION_INTERVAL_MS, PDF_EXTRACTION_TIMEOUT_MS, waitForVersionEx
 import { DocumentImportModal } from '@/components/import/DocumentImportModal';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import {
   createImportAbortError,
   formatExtractionProgressMessage,
@@ -539,11 +538,11 @@ export function QuickAnalysis() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <Badge variant={latestReport ? 'warning' : 'outline'} className="text-[10px]">
-                      {latestReport
-                        ? `${latestReport.findingsCount ?? 0} ${isAr ? 'ملاحظة' : 'findings'}`
-                        : (isAr ? 'بدون تقرير' : 'No report')}
-                    </Badge>
+                    {!latestReport && (
+                      <span className="text-[10px] text-text-muted">
+                        {isAr ? 'بدون تقرير' : 'No report'}
+                      </span>
+                    )}
                     <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate(`/workspace/${script.id}?quick=1`)}>
                       <PlayCircle className="w-3.5 h-3.5" />
                       {isAr ? 'فتح مساحة العمل' : 'Open Workspace'}
