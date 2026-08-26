@@ -18,7 +18,12 @@ export interface ReportSummaryLike {
       special?: number | null;
     } | null;
   } | null;
+  canonical_findings?: Array<Record<string, unknown>> | null;
   notes?: Record<string, unknown[] | null | undefined> | null;
+}
+
+export interface CanonicalReportTotalsOptions {
+  canonicalFindingCount?: number | null;
 }
 
 export function countNotesInSummary(notes?: ReportSummaryLike['notes']): number {
@@ -28,13 +33,19 @@ export function countNotesInSummary(notes?: ReportSummaryLike['notes']): number 
 
 export function getCanonicalReportTotals(
   summary?: ReportSummaryLike | null,
-  fallback?: { fallbackFindingsCount?: number | null; fallbackTypeCounts?: { ai?: number | null; manual?: number | null; glossary?: number | null; special?: number | null } | null }
+  fallback?: { fallbackFindingsCount?: number | null; fallbackTypeCounts?: { ai?: number | null; manual?: number | null; glossary?: number | null; special?: number | null } | null },
+  options?: CanonicalReportTotalsOptions
 ): CanonicalReportTotals {
   const totals = summary?.totals;
   const notesCount = countNotesInSummary(summary?.notes);
   const fallbackFindingsCount = Number(fallback?.fallbackFindingsCount ?? 0) || 0;
   const fallbackTypeCounts = fallback?.fallbackTypeCounts ?? {};
-  const findingsCount = Number(totals?.findings_count ?? fallbackFindingsCount) || 0;
+  const summaryCanonicalFindingCount = Array.isArray(summary?.canonical_findings) ? summary.canonical_findings.length : undefined;
+  const findingsCount = typeof options?.canonicalFindingCount === 'number'
+    ? options.canonicalFindingCount
+    : typeof summaryCanonicalFindingCount === 'number'
+      ? summaryCanonicalFindingCount
+      : Number(totals?.findings_count ?? fallbackFindingsCount) || 0;
   const typeCounts = totals?.type_counts ?? {};
   return {
     all: findingsCount + notesCount,

@@ -6671,7 +6671,7 @@ export function ScriptWorkspace() {
                     options={[
                       { label: lang === 'ar' ? 'اختر...' : 'Select...', value: '' },
                       ...reportHistory.map(r => ({
-                        label: `${formatOptionalReportDate(r.createdAt)} - ${r.findingsCount} findings`,
+                        label: `${formatOptionalReportDate(r.createdAt)} - ${(r.reportTotals?.violations ?? r.findingsCount ?? 0)} findings`,
                         value: r.id
                       }))
                     ]}
@@ -7417,7 +7417,7 @@ export function ScriptWorkspace() {
             value={formData.reportId}
             onChange={(e) => setFormData({ ...formData, reportId: e.target.value })}
             options={reportHistory.map((r) => ({
-              label: `${formatOptionalReportDate(r.createdAt)} — ${r.findingsCount ?? 0} findings`,
+              label: `${formatOptionalReportDate(r.createdAt)} — ${(r.reportTotals?.violations ?? r.findingsCount ?? 0)} findings`,
               value: r.id,
             }))}
           />
@@ -7636,7 +7636,7 @@ export function ScriptWorkspace() {
                           {' • '}
                           {(lang === 'ar' ? 'الحالة' : 'Status')}: {report.reviewStatus}
                           {' • '}
-                          {(lang === 'ar' ? 'المخالفات' : 'Findings')}: {report.findingsCount}
+                          {(lang === 'ar' ? 'المخالفات' : 'Findings')}: {(report.reportTotals?.violations ?? report.findingsCount ?? 0)}
                         </span>
                       </label>
                     ))
@@ -7745,7 +7745,7 @@ export function ScriptWorkspace() {
                         {' • '}
                         {(lang === 'ar' ? 'الحالة' : 'Status')}: {report.reviewStatus}
                         {' • '}
-                        {(lang === 'ar' ? 'المخالفات' : 'Findings')}: {report.findingsCount}
+                        {(lang === 'ar' ? 'المخالفات' : 'Findings')}: {(report.reportTotals?.violations ?? report.findingsCount ?? 0)}
                       </span>
                     </label>
                   ))

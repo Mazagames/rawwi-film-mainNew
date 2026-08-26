@@ -30,4 +30,17 @@ assert.equal(fallback.glossary, 7);
 assert.equal(fallback.special, 8);
 assert.equal(fallback.ai, 5);
 
+const canonicalOverride = getCanonicalReportTotals({
+  totals: {
+    findings_count: 10,
+    type_counts: { ai: 4, manual: 1, glossary: 2, special: 3 },
+  },
+  notes: {
+    article_05: [{ id: 'n1' }, { id: 'n2' }, { id: 'n3' }],
+  },
+}, { fallbackFindingsCount: 99, fallbackTypeCounts: { ai: 99, manual: 99, glossary: 99, special: 99 } }, { canonicalFindingCount: 1 });
+assert.equal(canonicalOverride.violations, 1);
+assert.equal(canonicalOverride.notes, 3);
+assert.equal(canonicalOverride.all, 4);
+
 console.log('✓ report summary totals contract uses canonical summary totals');

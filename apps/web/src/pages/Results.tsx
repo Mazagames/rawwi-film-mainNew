@@ -28,7 +28,7 @@ import { resolveStorageUrl } from '@/utils/storage';
 import { getGlossarySentenceContext } from '@/utils/findingContext';
 import { countNotesByCategory, logNotePipelineStage } from '@/utils/noteTelemetry';
 import { dedupeReportDisplayItems } from '@/utils/reportDisplayDedupe';
-import { getCanonicalReportTotals } from '@/utils/reportSummaryTotals';
+import { getCanonicalReportTotals, type CanonicalReportTotals } from '@/utils/reportSummaryTotals';
 import {
   ArrowLeft, CheckCircle, ShieldAlert,
   AlertTriangle, XCircle, ChevronDown, ChevronUp, Loader2,
@@ -62,6 +62,8 @@ const policyArticlesForForm = getActionablePolicyArticles();
 const DEFAULT_ACTIONABLE_ARTICLE_ID = policyArticlesForForm[0]?.articleId ?? 4;
 const VIOLATION_TYPES_OPTIONS = violationTypesForChecklist();
 const DEFAULT_VIOLATION_TYPE_ID = VIOLATION_TYPES_OPTIONS[0]?.id ?? 'other';
+type ResultReportListItem = ReportListItem & { reportTotals?: CanonicalReportTotals };
+
 const NOTE_CATEGORY_ORDER: Array<{ key: NoteCategoryKey; labelAr: string; labelEn: string }> = [
   { key: 'article_01', labelAr: 'الإساءة إلى الذات والدين', labelEn: 'Article 01' },
   { key: 'article_02', labelAr: 'القيادة السياسية ورموز الدولة', labelEn: 'Article 02' },
@@ -112,6 +114,14 @@ const EMPTY_NOTES_BY_CATEGORY: Record<NoteCategoryKey, ReportNote[]> = {
   article_15: [], article_16: [], article_17: [], article_18: [], article_19: [],
   article_20: [], article_21: [], article_22: [], article_23: [], article_24: [],
 };
+
+function getResultReportListTotals(item: ResultReportListItem): CanonicalReportTotals {
+  if (item.reportTotals) return item.reportTotals;
+  return getCanonicalReportTotals(null, {
+    fallbackFindingsCount: item.findingsCount,
+    fallbackTypeCounts: item.typeCounts,
+  });
+}
 
 function formatAtomDisplayR(articleId: number, atomId: string | null): string {
   if (!atomId?.trim()) return String(articleId);
@@ -478,7 +488,7 @@ export function Results() {
   const [rejectDecisionClientComment, setRejectDecisionClientComment] = useState('');
   const [rejectDecisionShareReports, setRejectDecisionShareReports] = useState(true);
   const [rejectDecisionShareFormats, setRejectDecisionShareFormats] = useState<Array<'pdf' | 'docx'>>(['pdf', 'docx']);
-  const [rejectDecisionAvailableReports, setRejectDecisionAvailableReports] = useState<ReportListItem[]>([]);
+  const [rejectDecisionAvailableReports, setRejectDecisionAvailableReports] = useState<ResultReportListItem[]>([]);
   const [rejectDecisionSelectedReportIds, setRejectDecisionSelectedReportIds] = useState<string[]>([]);
   const [rejectDecisionLoadingReports, setRejectDecisionLoadingReports] = useState(false);
   const [sendReviewDecisionModalOpen, setSendReviewDecisionModalOpen] = useState(false);
@@ -486,7 +496,7 @@ export function Results() {
   const [sendReviewDecisionClientComment, setSendReviewDecisionClientComment] = useState('');
   const [sendReviewDecisionShareReports, setSendReviewDecisionShareReports] = useState(true);
   const [sendReviewDecisionShareFormats, setSendReviewDecisionShareFormats] = useState<Array<'pdf' | 'docx'>>(['pdf', 'docx']);
-  const [sendReviewDecisionAvailableReports, setSendReviewDecisionAvailableReports] = useState<ReportListItem[]>([]);
+  const [sendReviewDecisionAvailableReports, setSendReviewDecisionAvailableReports] = useState<ResultReportListItem[]>([]);
   const [sendReviewDecisionSelectedReportIds, setSendReviewDecisionSelectedReportIds] = useState<string[]>([]);
   const [sendReviewDecisionLoadingReports, setSendReviewDecisionLoadingReports] = useState(false);
   const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
@@ -586,11 +596,26 @@ export function Results() {
 
     try {
       const reports = await reportsApi.listByScript(report.scriptId);
-      setRejectDecisionAvailableReports(reports);
+      const enriched = await Promise.all(reports.map(async (item) => {
+        try {
+          const fullReport = await reportsApi.getById(item.id);
+          const summary = fullReport.summaryJson as typeof fullReport.summaryJson & { notes?: Record<string, unknown[]> };
+          return {
+            ...item,
+            reportTotals: getCanonicalReportTotals(summary, {
+              fallbackFindingsCount: item.findingsCount,
+              fallbackTypeCounts: item.typeCounts,
+            }),
+          } satisfies ResultReportListItem;
+        } catch {
+          return item as ResultReportListItem;
+        }
+      }));
+      setRejectDecisionAvailableReports(enriched);
       const defaultReportId =
-        (report.id && reports.some((item) => item.id === report.id))
+        (report.id && enriched.some((item) => item.id === report.id))
           ? report.id
-          : (reports[0]?.id ?? null);
+          : (enriched[0]?.id ?? null);
       setRejectDecisionSelectedReportIds(defaultReportId ? [defaultReportId] : []);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر تحميل التقارير المتاحة' : 'Failed to load available reports'));
@@ -618,11 +643,26 @@ export function Results() {
 
     try {
       const reports = await reportsApi.listByScript(report.scriptId);
-      setSendReviewDecisionAvailableReports(reports);
+      const enriched = await Promise.all(reports.map(async (item) => {
+        try {
+          const fullReport = await reportsApi.getById(item.id);
+          const summary = fullReport.summaryJson as typeof fullReport.summaryJson & { notes?: Record<string, unknown[]> };
+          return {
+            ...item,
+            reportTotals: getCanonicalReportTotals(summary, {
+              fallbackFindingsCount: item.findingsCount,
+              fallbackTypeCounts: item.typeCounts,
+            }),
+          } satisfies ResultReportListItem;
+        } catch {
+          return item as ResultReportListItem;
+        }
+      }));
+      setSendReviewDecisionAvailableReports(enriched);
       const defaultReportId =
-        (report.id && reports.some((item) => item.id === report.id))
+        (report.id && enriched.some((item) => item.id === report.id))
           ? report.id
-          : (reports[0]?.id ?? null);
+          : (enriched[0]?.id ?? null);
       setSendReviewDecisionSelectedReportIds(defaultReportId ? [defaultReportId] : []);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : (lang === 'ar' ? 'تعذر تحميل التقارير المتاحة' : 'Failed to load available reports'));
@@ -4061,21 +4101,24 @@ function displayFindingTitle(params: {
                 ) : rejectDecisionAvailableReports.length === 0 ? (
                   <p className="text-xs text-text-muted">{lang === 'ar' ? 'لا توجد تقارير متاحة لهذا النص حالياً.' : 'No reports available for this script yet.'}</p>
                 ) : (
-                  rejectDecisionAvailableReports.map((item) => (
-                    <label key={item.id} className="flex items-start gap-2 text-sm text-text-main rounded border border-border bg-surface p-2">
-                      <input
-                        type="checkbox"
-                        checked={rejectDecisionSelectedReportIds.includes(item.id)}
-                        onChange={() => toggleRejectDecisionReport(item.id)}
-                      />
-                      <span>
-                        {(lang === 'ar' ? 'تقرير' : 'Report')} #{item.id.slice(0, 8)} {' • '}
-                        {formatDateTimeValue(item.createdAt, { lang })} {' • '}
-                        {(lang === 'ar' ? 'الحالة' : 'Status')}: {item.reviewStatus} {' • '}
-                        {(lang === 'ar' ? 'المخالفات' : 'Findings')}: {item.findingsCount}
-                      </span>
-                    </label>
-                  ))
+                  rejectDecisionAvailableReports.map((item) => {
+                    const totals = getResultReportListTotals(item);
+                    return (
+                      <label key={item.id} className="flex items-start gap-2 text-sm text-text-main rounded border border-border bg-surface p-2">
+                        <input
+                          type="checkbox"
+                          checked={rejectDecisionSelectedReportIds.includes(item.id)}
+                          onChange={() => toggleRejectDecisionReport(item.id)}
+                        />
+                        <span>
+                          {(lang === 'ar' ? 'تقرير' : 'Report')} #{item.id.slice(0, 8)} {' • '}
+                          {formatDateTimeValue(item.createdAt, { lang })} {' • '}
+                          {(lang === 'ar' ? 'الحالة' : 'Status')}: {item.reviewStatus} {' • '}
+                          {(lang === 'ar' ? 'المخالفات' : 'Findings')}: {totals.violations}
+                        </span>
+                      </label>
+                    );
+                  })
                 )}
               </div>
               </div>
@@ -4182,21 +4225,24 @@ function displayFindingTitle(params: {
                 ) : sendReviewDecisionAvailableReports.length === 0 ? (
                   <p className="text-xs text-text-muted">{lang === 'ar' ? 'لا توجد تقارير متاحة لهذا النص حالياً.' : 'No reports available for this script yet.'}</p>
                 ) : (
-                  sendReviewDecisionAvailableReports.map((item) => (
-                    <label key={item.id} className="flex items-start gap-2 text-sm text-text-main rounded border border-border bg-surface p-2">
-                      <input
-                        type="checkbox"
-                        checked={sendReviewDecisionSelectedReportIds.includes(item.id)}
-                        onChange={() => toggleSendReviewDecisionReport(item.id)}
-                      />
-                      <span>
-                        {(lang === 'ar' ? 'تقرير' : 'Report')} #{item.id.slice(0, 8)} {' • '}
-                        {formatDateTimeValue(item.createdAt, { lang })} {' • '}
-                        {(lang === 'ar' ? 'الحالة' : 'Status')}: {item.reviewStatus} {' • '}
-                        {(lang === 'ar' ? 'المخالفات' : 'Findings')}: {item.findingsCount}
-                      </span>
-                    </label>
-                  ))
+                  sendReviewDecisionAvailableReports.map((item) => {
+                    const totals = getResultReportListTotals(item);
+                    return (
+                      <label key={item.id} className="flex items-start gap-2 text-sm text-text-main rounded border border-border bg-surface p-2">
+                        <input
+                          type="checkbox"
+                          checked={sendReviewDecisionSelectedReportIds.includes(item.id)}
+                          onChange={() => toggleSendReviewDecisionReport(item.id)}
+                        />
+                        <span>
+                          {(lang === 'ar' ? 'تقرير' : 'Report')} #{item.id.slice(0, 8)} {' • '}
+                          {formatDateTimeValue(item.createdAt, { lang })} {' • '}
+                          {(lang === 'ar' ? 'الحالة' : 'Status')}: {item.reviewStatus} {' • '}
+                          {(lang === 'ar' ? 'المخالفات' : 'Findings')}: {totals.violations}
+                        </span>
+                      </label>
+                    );
+                  })
                 )}
                 </div>
               </div>
