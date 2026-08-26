@@ -1578,10 +1578,12 @@ export function Results() {
     REVIEW_REQUIRED: { label: lang === 'ar' ? 'يتطلب مراجعة' : 'REVIEW REQUIRED', bg: 'bg-warning/5', text: 'text-warning', border: 'border-warning/30', icon: AlertTriangle },
   };
   const DecisionIcon = decisionConfig[decision].icon;
+  const bannerViolationsCount = displayViolationsCount;
+  const bannerNotesCount = notesTotalCount;
   const primaryReportSections = [
-    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: canonicalTotals.all, tone: 'neutral' as const },
-    { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: canonicalTotals.violations, tone: 'warning' as const },
-    { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: canonicalTotals.notes, tone: 'info' as const },
+    { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: bannerViolationsCount + bannerNotesCount, tone: 'neutral' as const },
+    { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: bannerViolationsCount, tone: 'warning' as const },
+    { key: 'notes' as const, labelAr: 'الملاحظات', labelEn: 'Notes', value: bannerNotesCount, tone: 'info' as const },
     { key: 'manual' as const, labelAr: 'يدوية', labelEn: 'Manual', value: displayTypeCounts.manual, tone: 'neutral' as const },
     { key: 'dictionary' as const, labelAr: 'قاموس', labelEn: 'Glossary', value: displayTypeCounts.glossary, tone: 'primary' as const },
   ];

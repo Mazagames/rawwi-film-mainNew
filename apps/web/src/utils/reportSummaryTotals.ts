@@ -52,7 +52,7 @@ export function getCanonicalReportTotals(
   const summaryCanonicalFindingCount = Array.isArray(summary?.canonical_findings) ? summary.canonical_findings.length : undefined;
   const explicitViolationCount = typeof options?.canonicalFindingCount === 'number'
     ? options.canonicalFindingCount
-    : typeof summary?.context_metrics?.violation_count === 'number'
+    : typeof summary?.context_metrics?.violation_count === 'number' && summary.context_metrics.violation_count > 0
       ? summary.context_metrics.violation_count
       : typeof summaryCanonicalFindingCount === 'number'
         ? summaryCanonicalFindingCount

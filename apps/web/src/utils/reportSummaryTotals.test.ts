@@ -62,4 +62,21 @@ assert.equal(bannerOverride.manual, 0);
 assert.equal(bannerOverride.glossary, 1);
 assert.equal(bannerOverride.all, 63);
 
+const zeroedViolationContext = getCanonicalReportTotals({
+  totals: {
+    findings_count: 7,
+    type_counts: { ai: 4, manual: 0, glossary: 1, special: 0 },
+  },
+  context_metrics: {
+    violation_count: 0,
+  },
+  canonical_findings: Array.from({ length: 40 }, (_, index) => ({ id: `c${index}` })),
+  notes: {
+    article_05: Array.from({ length: 62 }, (_, index) => ({ id: `n${index}` })),
+  },
+}, { fallbackFindingsCount: 99, fallbackTypeCounts: { ai: 99, manual: 99, glossary: 99, special: 99 } });
+assert.equal(zeroedViolationContext.violations, 40);
+assert.equal(zeroedViolationContext.notes, 62);
+assert.equal(zeroedViolationContext.all, 102);
+
 console.log('✓ report summary totals contract uses canonical summary totals');
