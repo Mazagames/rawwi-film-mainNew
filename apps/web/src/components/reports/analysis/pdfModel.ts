@@ -250,20 +250,24 @@ function buildFindingBasedCards(params: BuildPdfReportCollectionsParams): PdfRep
 }
 
 /**
- * Determine if the `findings` arrays have any usable content for violation/glossary/manual.
- * When true, these arrays are the authoritative source for those classifications.
- * When false, we fall back to the article_* note categories for violations.
+ * Determine if the `findings` (raw AI findings) array has usable content.
+ * When true, `params.findings` is the authoritative source for violations.
+ * When false, we use `params.notes[article_*]` for violations — which is
+ * the correct source for Quick Analysis and modern reports.
  *
- * NOTE: `canonicalFindings` is deliberately excluded here. For Quick Analysis reports,
- * `canonicalFindings` is present but its content is already represented in `params.notes`
- * (keyed by category). Including it here would cause double-counting.
- * The canonical array is only used inside `buildFindingBasedCards` as a fallback
- * when real findings are absent.
+ * IMPORTANT: `reviewFindings` are deliberately NOT checked here.
+ * Review findings (including violation-type) are always merged on top
+ * via the review-override step below, regardless of which path is chosen.
+ * Including them in this check would wrongly force the FINDINGS PATH when
+ * only glossary/manual/violation review items exist but params.findings is
+ * empty — causing all 65 article-note violations to be discarded.
+ *
+ * `canonicalFindings` is also excluded — it is already represented in
+ * `params.notes` for modern reports and only used as a last-resort fallback
+ * inside `buildFindingBasedCards`.
  */
 function hasFindingsPayload(params: BuildPdfReportCollectionsParams): boolean {
-  const realFindings = (params.findings ?? []).length > 0;
-  const reviewFindings = (params.reviewFindings ?? []).filter(r => !r.isHidden && r.sourceKind !== "glossary" && r.sourceKind !== "manual").length > 0;
-  return realFindings || reviewFindings;
+  return (params.findings ?? []).length > 0;
 }
 
 export function buildPdfReportCollections(params: BuildPdfReportCollectionsParams): PdfReportCollections {
