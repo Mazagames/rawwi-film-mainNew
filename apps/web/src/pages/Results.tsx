@@ -3651,16 +3651,24 @@ function displayFindingTitle(params: {
                   (() => {
                     const availableCategoriesMap = new Map<string, number>();
                     for (const n of displaySections.notes) {
-                      const cat = getNoteCategoryLabel(n);
+                      const cat = n.category;
                       availableCategoriesMap.set(cat, (availableCategoriesMap.get(cat) ?? 0) + 1);
                     }
 
-                    const availableCategories = Array.from(availableCategoriesMap.entries()).map(([key, count]) => ({
-                      key,
-                      labelAr: key,
-                      labelEn: key,
-                      count
-                    }));
+                    const availableCategories = Array.from(availableCategoriesMap.entries())
+                      .sort(([keyA], [keyB]) => {
+                        const idxA = NOTE_CATEGORY_ORDER.findIndex(x => x.key === keyA);
+                        const idxB = NOTE_CATEGORY_ORDER.findIndex(x => x.key === keyB);
+                        const a = idxA === -1 ? 999 : idxA;
+                        const b = idxB === -1 ? 999 : idxB;
+                        return a - b;
+                      })
+                      .map(([key, count]) => ({
+                        key,
+                        labelAr: getNoteCategoryLabel(key, 'ar'),
+                        labelEn: getNoteCategoryLabel(key, 'en'),
+                        count
+                      }));
 
                     const filterTabs = [
                       {
@@ -3678,7 +3686,7 @@ function displayFindingTitle(params: {
 
                     const cards = selectedCategory === 'all'
                       ? displaySections.notes
-                      : displaySections.notes.filter((n) => getNoteCategoryLabel(n) === selectedCategory);
+                      : displaySections.notes.filter((n) => n.category === selectedCategory);
 
                     return (
                       <div className="space-y-4">
