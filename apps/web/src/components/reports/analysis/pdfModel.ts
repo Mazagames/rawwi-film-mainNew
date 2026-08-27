@@ -96,9 +96,78 @@ function articleReference(articleId: number | null | undefined, lang: "ar" | "en
   return `Article ${articleId}`;
 }
 
-function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCard[] {
+/**
+ * Classification for a note record based on its category key.
+ *
+ * The web Analysis Report uses two semantic buckets from `notesState`:
+ *   - `article_*` categories  → Violations tab  (`bannerViolationsCount`)
+ *   - non-article categories  → Notes tab        (`bannerNotesCount`)
+ *
+ * The PDF must mirror this exact split so that PDF statistics match
+ * the web banner without relying on `severity`/`source` fields that
+ * are absent from the `ReportNote` model.
+ */
+function noteCategoryClassification(category: string): "violation" | "note" {
+  return category.startsWith("article_") ? "violation" : "note";
+}
+
+/**
+ * Build a deduplicated list of PdfReportCards from `params.notes`.
+ * Each record's classification is determined by its category key:
+ *   - article_* → violation
+ *   - everything else → note
+ *
+ * Records with `included_in_report === false` are excluded.
+ */
+function buildNoteBasedCards(params: BuildPdfReportCollectionsParams): PdfReportCard[] {
+  const notesByCategory = params.notes ?? {};
+  const cards: PdfReportCard[] = [];
+  let originalIndex = 0;
+
+  for (const category of NOTE_CATEGORY_ORDER) {
+    const deduped = dedupeReportDisplayItems(
+      notesByCategory[category.key] ?? [],
+      () => "note",
+      (note) => note.category,
+      () => null,
+      (note) => note.description,
+    );
+    for (const note of deduped) {
+      if (note.included_in_report === false) continue;
+      const cls = noteCategoryClassification(category.key);
+      cards.push({
+        id: note.id,
+        title: note.title || "-",
+        classification: cls,
+        reference: getNoteCategoryLabel(category.key, params.lang) || category.key,
+        pageNumber: null,
+        position: note.event_id || null,
+        evidence: note.snippet || "",
+        description: note.description || note.reviewer_comment || note.comment || null,
+        confidence: note.confidence ?? null,
+        originalIndex: originalIndex++,
+      });
+    }
+  }
+  return cards;
+}
+
+/**
+ * Build PdfReportCards from raw findings arrays (findings / reviewFindings /
+ * canonicalFindings / findingsByArticle).
+ *
+ * Used as a fallback when `params.notes` is empty — i.e., for reports where
+ * the findings come directly through the findings arrays and NOT through the
+ * notes-payload path (e.g. older report formats or direct AI findings).
+ *
+ * NOTE: A review finding only overrides the canonical item that it explicitly
+ * references via `canonicalFindingId`.  A single review item MUST NOT suppress
+ * the entire canonical collection.
+ */
+function buildFindingBasedCards(params: BuildPdfReportCollectionsParams): PdfReportCard[] {
   const visibleReviewRows = (params.reviewFindings ?? []).filter((row) => !row.isHidden);
-  
+
+  // Build a set of canonical IDs that have been overridden by a review finding.
   const overriddenIds = new Set<string>();
   visibleReviewRows.forEach(row => {
     if (row.canonicalFindingId) overriddenIds.add(row.canonicalFindingId);
@@ -120,7 +189,7 @@ function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCa
     }));
 
   const reportHintIds = new Set((params.reportHints ?? []).map((hint) => hint.canonical_finding_id).filter((id): id is string => Boolean(id)));
-  
+
   const realRows = (params.findings ?? [])
     .filter((row) => {
       const v3 = (row.location?.v3 as Record<string, unknown> | undefined) ?? {};
@@ -179,68 +248,103 @@ function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCa
   if (merged.length > 0) return merged;
   return summaryRows;
 }
-function buildNoteCards(params: BuildPdfReportCollectionsParams): PdfReportCard[] {
-  const notesByCategory = params.notes ?? {};
-  const cards: PdfReportCard[] = [];
-  let originalIndex = 0;
-  for (const category of NOTE_CATEGORY_ORDER) {
-    const deduped = dedupeReportDisplayItems(
-      notesByCategory[category.key] ?? [],
-      () => "note",
-      (note) => note.category,
-      () => null,
-      (note) => note.description,
-    );
-    for (const note of deduped) {
-      if (note.included_in_report === false) continue;
-      const cls = sourceClassification({ category: note.category, severity: note.severity, source: note.source });
-      cards.push({
-        id: note.id,
-        title: note.title || "-",
-        classification: cls,
-        reference: getNoteCategoryLabel(note.category, params.lang) || note.category,
-        pageNumber: null,
-        position: note.event_id || null,
-        evidence: note.snippet || "",
-        description: note.description || note.reviewer_comment || note.comment || null,
-        confidence: note.confidence ?? null,
-        originalIndex: originalIndex++,
-      });
-    }
-  }
-  return cards;
+
+/**
+ * Determine if the `findings` arrays have any usable content for violation/glossary/manual.
+ * When true, these arrays are the authoritative source for those classifications.
+ * When false, we fall back to the article_* note categories for violations.
+ *
+ * NOTE: `canonicalFindings` is deliberately excluded here. For Quick Analysis reports,
+ * `canonicalFindings` is present but its content is already represented in `params.notes`
+ * (keyed by category). Including it here would cause double-counting.
+ * The canonical array is only used inside `buildFindingBasedCards` as a fallback
+ * when real findings are absent.
+ */
+function hasFindingsPayload(params: BuildPdfReportCollectionsParams): boolean {
+  const realFindings = (params.findings ?? []).length > 0;
+  const reviewFindings = (params.reviewFindings ?? []).filter(r => !r.isHidden && r.sourceKind !== "glossary" && r.sourceKind !== "manual").length > 0;
+  return realFindings || reviewFindings;
 }
 
 export function buildPdfReportCollections(params: BuildPdfReportCollectionsParams): PdfReportCollections {
-  const findingCards = buildFindingCards(params);
-  const dedupedFindings = new Map<string, PdfReportCard>();
-  for (const card of findingCards) {
-    const key = `${card.classification}\u001f${card.id || `${card.reference}\u001f${card.evidence}`}`;
-    if (!dedupedFindings.has(key)) dedupedFindings.set(key, card);
+  const allCards = new Map<string, PdfReportCard>();
+
+  if (hasFindingsPayload(params)) {
+    // FINDINGS PATH: violations, glossary, manual come from findings arrays.
+    // Notes always come from params.notes (non-article categories only).
+    const findingCards = buildFindingBasedCards(params);
+    for (const card of findingCards) {
+      const key = card.id || `${card.reference}\u001f${card.evidence}`;
+      if (!allCards.has(key)) allCards.set(key, card);
+    }
+    // Add notes from non-article note categories.
+    const noteCards = buildNoteBasedCards(params).filter(c => c.classification === "note");
+    for (const card of noteCards) {
+      if (!allCards.has(card.id)) allCards.set(card.id, card);
+    }
+  } else {
+    // NOTES PATH (Quick Analysis / modern reports): no raw findings.
+    // The notes payload contains ALL report items keyed by semantic category:
+    //   article_* categories → violations (matches web bannerViolationsCount)
+    //   non-article categories → notes (matches web bannerNotesCount)
+    // Review findings for glossary/manual are merged on top.
+    const noteCards = buildNoteBasedCards(params);
+    for (const card of noteCards) {
+      const key = card.id || `${card.reference}\u001f${card.evidence}`;
+      if (!allCards.has(key)) allCards.set(key, card);
+    }
   }
-  const notes = buildNoteCards(params);
-  const dedupedNotes = new Map<string, PdfReportCard>();
-  for (const card of notes) {
-    if (!dedupedNotes.has(card.id)) dedupedNotes.set(card.id, card);
+
+  // Always merge review glossary/manual override cards on top of either path.
+  const seenIds = new Set(allCards.keys());
+  const visibleReviewRows = (params.reviewFindings ?? []).filter((row) => !row.isHidden);
+  visibleReviewRows
+    .filter((row) => row.includeInReport !== false && row.reviewStatus !== "approved")
+    .forEach((row, originalIndex) => {
+      const cls = sourceClassification(row);
+      if (cls !== "glossary" && cls !== "manual") return;
+      const id = row.canonicalFindingId?.trim() || row.id;
+      if (seenIds.has(id)) return;
+      seenIds.add(id);
+      allCards.set(id, {
+        id,
+        title: row.titleAr || "-",
+        classification: cls,
+        reference: articleReference(row.primaryArticleId, params.lang),
+        pageNumber: row.pageNumber ?? null,
+        position: row.startOffsetGlobal ?? null,
+        evidence: row.evidenceSnippet || "",
+        description: row.rationaleAr || row.descriptionAr || row.manualComment || null,
+        confidence: row.anchorConfidence ?? null,
+        originalIndex,
+      });
+    });
+
+  // Classify into four mutually exclusive buckets.
+  const violations: PdfReportCard[] = [];
+  const notes: PdfReportCard[] = [];
+  const manual: PdfReportCard[] = [];
+  const glossary: PdfReportCard[] = [];
+
+  for (const card of allCards.values()) {
+    if (card.classification === "violation") violations.push(card);
+    else if (card.classification === "note") notes.push(card);
+    else if (card.classification === "manual") manual.push(card);
+    else if (card.classification === "glossary") glossary.push(card);
   }
-  const classified = Array.from(dedupedFindings.values()).reduce(
-    (sections, card) => {
-      if (card.classification === "violation") sections.violations.push(card);
-      else sections[card.classification].push(card);
-      return sections;
-    },
-    { violations: [] as PdfReportCard[], notes: Array.from(dedupedNotes.values()), manual: [] as PdfReportCard[], glossary: [] as PdfReportCard[] }
-  );
-  const violations = classified.violations.sort(cardOrder);
-  const manual = classified.manual.sort(cardOrder);
-  const glossary = classified.glossary.sort(cardOrder);
-  const sortedNotes = classified.notes.sort(cardOrder);
+
+  violations.sort(cardOrder);
+  notes.sort(cardOrder);
+  manual.sort(cardOrder);
+  glossary.sort(cardOrder);
+
   const totals = {
     violations: violations.length,
-    notes: sortedNotes.length,
+    notes: notes.length,
     manual: manual.length,
     glossary: glossary.length,
-    all: violations.length + sortedNotes.length + manual.length + glossary.length,
+    all: violations.length + notes.length + manual.length + glossary.length,
   };
-  return { violations, notes: sortedNotes, manual, glossary, totals };
+
+  return { violations, notes, manual, glossary, totals };
 }
