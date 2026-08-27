@@ -1497,10 +1497,10 @@ export function Results() {
     ? dedupedFilteredDisplayViolations.length
     : dedupedFilteredCanonicalSummaryFindings.length;
   const filteredViolationsCount = useReviewFindingsUi
-    ? (showOnlySpecialNotes ? filteredReviewSpecialNotes.length : showOnlyApproved ? filteredReviewApproved.length : dedupedFilteredReviewViolations.length)
+    ? (showOnlySpecialNotes ? filteredReviewSpecialNotes.length : showOnlyApproved ? filteredReviewApproved.length : findingFilter === 'all' ? violationAllCount : dedupedFilteredReviewViolations.length)
     : hasRealFindings
-    ? showOnlyApproved ? filteredDisplayApproved.length : dedupedFilteredDisplayViolations.length
-    : dedupedFilteredCanonicalSummaryFindings.length;
+    ? (showOnlyApproved ? filteredDisplayApproved.length : findingFilter === 'all' ? violationAllCount : dedupedFilteredDisplayViolations.length)
+    : (findingFilter === 'all' ? violationAllCount : dedupedFilteredCanonicalSummaryFindings.length);
   const showEmptyFindingsState = useReviewFindingsUi
     ? (showOnlySpecialNotes ? filteredReviewSpecialNotes.length === 0 : showOnlyApproved ? filteredReviewApproved.length === 0 : filteredReviewViolations.length === 0)
     : showOnlySpecialNotes
@@ -3337,7 +3337,7 @@ function displayFindingTitle(params: {
               : (lang === 'ar' ? 'المخالفات' : 'Violations')}
             <Badge variant="outline" className="ms-2">
               {findingFilter === 'all'
-                ? displayTotal
+                ? violationAllCount
                 : findingFilter === 'special'
                   ? displaySpecialNotes
                 : findingFilter === 'approved'
