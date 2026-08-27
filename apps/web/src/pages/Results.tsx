@@ -1491,6 +1491,11 @@ export function Results() {
   const actionableVisibleFindingIds = useReviewFindingsUi ? selectableReviewRawIds : selectableRawFindingIds;
   const showOnlySpecialNotes = findingFilter === 'special';
   const showOnlyApproved = findingFilter === 'approved';
+  const violationAllCount = useReviewFindingsUi
+    ? dedupedFilteredReviewViolations.length
+    : hasRealFindings
+    ? dedupedFilteredDisplayViolations.length
+    : dedupedFilteredCanonicalSummaryFindings.length;
   const filteredViolationsCount = useReviewFindingsUi
     ? (showOnlySpecialNotes ? filteredReviewSpecialNotes.length : showOnlyApproved ? filteredReviewApproved.length : dedupedFilteredReviewViolations.length)
     : hasRealFindings
@@ -1506,7 +1511,7 @@ export function Results() {
         ? filteredDisplayViolations.length === 0
         : filteredCanonicalSummaryFindings.length === 0;
 
-  const bannerViolationsCount = displaySectionCounts.violations;
+  const bannerViolationsCount = violationAllCount;
   const bannerNotesCount = displaySectionCounts.notes;
   const primaryReportSections = [
     { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: displaySectionCounts.all, tone: 'neutral' as const },
@@ -3339,7 +3344,7 @@ function displayFindingTitle(params: {
                   ? `${filteredViolationsCount} / ${displayApproved}`
                 : findingFilter === 'manual'
                   ? `${filteredViolationsCount} / ${displayTypeCounts.manual}`
-                  : `${filteredViolationsCount} / ${displayTotal}`}
+                  : `${filteredViolationsCount} / ${violationAllCount}`}
             </Badge>
             {findingFilter !== 'all' && (
               <button
