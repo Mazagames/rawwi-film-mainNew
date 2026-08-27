@@ -1,11 +1,11 @@
 import React from "react";
 import { pdf } from "@react-pdf/renderer";
 import { AnalysisSectionPdf } from "./Pdf";
-import { mapAnalysisFindingsForPdf, splitAnalysisReviewFindingsForPdf } from "./mapper";
 import type { AnalysisFinding, AnalysisReviewFinding } from "@/api";
 import type { NoteCategoryKey, ReportNote } from "@/api/models";
 import type { ViewerPageSlice } from "@/utils/findingContext";
 import { countNotesByCategory, logNotePipelineStage } from "@/utils/noteTelemetry";
+import { buildPdfReportCollections } from "./pdfModel";
 
 async function toDataUrl(url: string): Promise<string | null> {
   try {
@@ -84,31 +84,15 @@ export async function downloadAnalysisPdf(params: DownloadAnalysisPdfParams): Pr
     jobId: params.jobId ?? null,
     source: "analysis-pdf",
   });
-  const hasReviewLayer = (params.reviewFindings?.length ?? 0) > 0;
-  const reviewLayer = splitAnalysisReviewFindingsForPdf(params.reviewFindings);
-  const safeReportHints = Array.isArray(params.reportHints)
-    ? params.reportHints.filter((hint): hint is NonNullable<typeof hint> => Boolean(hint))
-    : [];
-  const findings = hasReviewLayer
-    ? reviewLayer.findings
-    : mapAnalysisFindingsForPdf(params.findings, params.findingsByArticle, params.canonicalFindings);
-  const reportHintsMapped = hasReviewLayer
-    ? reviewLayer.reportHints
-    : safeReportHints.map((f, idx) => ({
-        id: f.canonical_finding_id ?? `hint-${idx}`,
-        articleId: Number.isFinite(f.primary_article_id) ? (f.primary_article_id as number) : 0,
-        titleAr: f.title_ar ?? "—",
-        severity: "info" as const,
-        confidence: f.confidence ?? 0,
-        evidenceSnippet: f.evidence_snippet ?? "",
-        source: "ai" as const,
-        primaryArticleId: Number.isFinite(f.primary_article_id) ? (f.primary_article_id as number) : 0,
-        relatedArticleIds: f.related_article_ids ?? [],
-        rationale: f.rationale ?? null,
-        pillarId: f.pillar_id ?? null,
-        startLineChunk: f.start_line_chunk ?? undefined,
-        endLineChunk: f.end_line_chunk ?? undefined,
-      }));
+  const collections = buildPdfReportCollections({
+    findings: params.findings,
+    reviewFindings: params.reviewFindings,
+    findingsByArticle: params.findingsByArticle,
+    canonicalFindings: params.canonicalFindings,
+    reportHints: params.reportHints,
+    notes: params.notes,
+    lang: params.lang,
+  });
   const [, logoDataUrl] = await Promise.all([
     Promise.resolve<string | null>(null),
     toDataUrl(`${origin}/fclogo.png`),
@@ -118,12 +102,8 @@ export async function downloadAnalysisPdf(params: DownloadAnalysisPdfParams): Pr
       scriptTitle: params.scriptTitle,
       clientName: params.clientName,
       createdAt: params.createdAt,
-      findings,
-      reportHints: reportHintsMapped,
-      notes: params.notes ?? undefined,
+      collections,
       scriptSummary: params.scriptSummary ?? undefined,
-      wordsToRevisit: params.wordsToRevisit ?? undefined,
-      viewerPages: params.viewerPages ?? undefined,
       lang: params.lang,
     },
     dateFormat: params.dateFormat,
