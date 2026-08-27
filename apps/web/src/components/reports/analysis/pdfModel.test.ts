@@ -274,3 +274,87 @@ assert.ok(qaResult.totals.all === 63, "Single review glossary must NOT suppress 
 console.log(`✓ Quick Analysis regression: violations=${qaResult.totals.violations}, notes=${qaResult.totals.notes}, manual=${qaResult.totals.manual}, glossary=${qaResult.totals.glossary}, all=${qaResult.totals.all}`);
 console.log("✓ Classification integrity verified: no cross-contamination between buckets");
 console.log("✓ 1 review glossary finding did not suppress 62 canonical findings");
+
+
+// ---------------------------------------------------------------------------
+// REGRESSION TEST - Quick Analysis: Review Violation merging
+// This reproduces the exact production failure case where a review violation
+// was silently dropped because of the NOTES PATH filtering.
+// ---------------------------------------------------------------------------
+
+const dropQaReviewFindings = [
+  {
+    id: "review-violation-1",
+    canonicalFindingId: null,
+    sourceKind: "ai" as const, // Or null/undefined, will classify as "violation"
+    titleAr: "مخالفة يدوية",
+    descriptionAr: "شرح المخالفة",
+    rationaleAr: null,
+    manualComment: null,
+    evidenceSnippet: "دليل",
+    primaryArticleId: null,
+    pageNumber: null,
+    startOffsetGlobal: null,
+    anchorConfidence: null,
+    includeInReport: true,
+    isHidden: false,
+    reviewStatus: "violation" as const,
+    reviewReason: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    reviewedRole: null,
+    atomId: null,
+    primaryAtomId: null,
+  },
+  {
+    id: "review-glossary-2",
+    canonicalFindingId: null,
+    sourceKind: "glossary" as const,
+    titleAr: "مصطلح",
+    descriptionAr: "شرح المصطلح",
+    rationaleAr: null,
+    manualComment: null,
+    evidenceSnippet: "دليل",
+    primaryArticleId: null,
+    pageNumber: null,
+    startOffsetGlobal: null,
+    anchorConfidence: null,
+    includeInReport: true,
+    isHidden: false,
+    reviewStatus: "violation" as const,
+    reviewReason: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    reviewedRole: null,
+    atomId: null,
+    primaryAtomId: null,
+  },
+];
+
+const dropQaResult = buildPdfReportCollections({
+  findings: [], // findings = 0 triggers NOTES PATH
+  reviewFindings: dropQaReviewFindings as unknown as Parameters<typeof buildPdfReportCollections>[0]["reviewFindings"],
+  canonicalFindings: [],
+  notes: {
+    "article_01": [
+      { id: "note-article-1", reviewer: null, category: "article_01", title: "ملاحظة مادة 1", description: "شرح", snippet: "دليل", event_id: 1, confidence: 0.9, status: "new", included_in_report: true }
+    ],
+    "security_scenes": [
+      { id: "note-info-1", reviewer: null, category: "security_scenes", title: "ملاحظة أمنية", description: "شرح", snippet: "دليل", event_id: 2, confidence: 0.9, status: "new", included_in_report: true }
+    ]
+  } as unknown as Parameters<typeof buildPdfReportCollections>[0]["notes"],
+  isQuickAnalysis: true, // Quick Analysis ensures all notes remain notes
+  lang: "ar",
+});
+
+assert.equal(dropQaResult.totals.violations, 1, `Expected 1 review violation, got ${dropQaResult.totals.violations}`);
+assert.equal(dropQaResult.totals.notes, 2, `Expected 2 notes (1 article + 1 info), got ${dropQaResult.totals.notes}`);
+assert.equal(dropQaResult.totals.glossary, 1, `Expected 1 review glossary, got ${dropQaResult.totals.glossary}`);
+assert.equal(dropQaResult.totals.all, 4, `Expected 4 total cards, got ${dropQaResult.totals.all}`);
+
+assert.ok(dropQaResult.violations.every(c => c.classification === "violation"));
+assert.ok(dropQaResult.notes.every(c => c.classification === "note"));
+assert.ok(dropQaResult.glossary.every(c => c.classification === "glossary"));
+assert.equal(dropQaResult.violations[0]?.id, "review-violation-1");
+
+console.log("✅ Quick Analysis Review Violation regression test passed (no longer silently dropped)");

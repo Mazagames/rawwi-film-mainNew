@@ -307,7 +307,7 @@ export function buildPdfReportCollections(params: BuildPdfReportCollectionsParam
     .filter((row) => row.includeInReport !== false && row.reviewStatus !== "approved")
     .forEach((row, originalIndex) => {
       const cls = sourceClassification(row);
-      if (cls !== "glossary" && cls !== "manual") return;
+      if (cls === "note") return; // Notes are already handled by note pipeline (except special which are excluded above)
       const id = row.canonicalFindingId?.trim() || row.id;
       if (seenIds.has(id)) return;
       seenIds.add(id);
