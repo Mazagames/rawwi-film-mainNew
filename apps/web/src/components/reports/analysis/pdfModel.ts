@@ -107,7 +107,8 @@ function articleReference(articleId: number | null | undefined, lang: "ar" | "en
  * the web banner without relying on `severity`/`source` fields that
  * are absent from the `ReportNote` model.
  */
-function noteCategoryClassification(category: string): "violation" | "note" {
+function noteCategoryClassification(category: string, isQuickAnalysis?: boolean): "violation" | "note" {
+  if (isQuickAnalysis) return "note";
   return category.startsWith("article_") ? "violation" : "note";
 }
 
@@ -134,9 +135,9 @@ function buildNoteBasedCards(params: BuildPdfReportCollectionsParams): PdfReport
     );
     for (const note of deduped) {
       if (note.included_in_report === false) continue;
-      const cls = noteCategoryClassification(category.key);
+      const cls = noteCategoryClassification(category.key, params.isQuickAnalysis);
       cards.push({
-        id: note.id,
+        id: note?.id || `note-${originalIndex}`,
         title: note.title || "-",
         classification: cls,
         reference: getNoteCategoryLabel(category.key, params.lang) || category.key,
@@ -176,7 +177,7 @@ function buildFindingBasedCards(params: BuildPdfReportCollectionsParams): PdfRep
   const reviewRows = visibleReviewRows
     .filter((row) => row.includeInReport !== false && row.reviewStatus !== "approved" && row.sourceKind !== "special")
     .map((row, originalIndex) => ({
-      id: row.canonicalFindingId?.trim() || row.id,
+      id: row?.canonicalFindingId?.trim() || row?.id || `review-${originalIndex}`,
       title: row.titleAr || "-",
       classification: sourceClassification(row),
       reference: articleReference(row.primaryArticleId, params.lang),
@@ -197,7 +198,7 @@ function buildFindingBasedCards(params: BuildPdfReportCollectionsParams): PdfRep
       return row.reviewStatus !== "approved" && (!canonicalId || !reportHintIds.has(canonicalId)) && (!canonicalId || !overriddenIds.has(canonicalId));
     })
     .map((row, originalIndex) => ({
-      id: row.id,
+      id: row?.id || `real-${originalIndex}`,
       title: row.titleAr || "-",
       classification: sourceClassification(row),
       reference: articleReference(row.articleId, params.lang),
@@ -215,7 +216,7 @@ function buildFindingBasedCards(params: BuildPdfReportCollectionsParams): PdfRep
       return !id || !overriddenIds.has(id);
     })
     .map((row, originalIndex) => ({
-      id: row.canonical_finding_id || `canonical-${originalIndex}`,
+      id: row?.canonical_finding_id || `canonical-${originalIndex}`,
       title: row.title_ar || "-",
       classification: sourceClassification(row),
       reference: articleReference(row.primary_article_id, params.lang),

@@ -1488,7 +1488,7 @@ export function Results() {
   const selectableReviewRawIds = filteredReviewViolations
     .map((f) => matchRawFindingForReview(f)?.id ?? null)
     .filter((id): id is string => Boolean(id));
-  const selectableRawFindingIds = filteredDisplayViolations.map((f) => f.id);
+  const selectableRawFindingIds = filteredDisplayViolations.map((f) => f?.id).filter(Boolean) as string[];
   const actionableVisibleFindingIds = useReviewFindingsUi ? selectableReviewRawIds : selectableRawFindingIds;
   const showOnlySpecialNotes = findingFilter === 'special';
   const showOnlyApproved = findingFilter === 'approved';
@@ -1887,6 +1887,7 @@ export function Results() {
       const safeReportHintsForPdf = (summary?.report_hints || []).filter((hint): hint is CanonicalSummaryFinding => Boolean(hint));
       const basePayload = {
         reportId: report.id,
+        isQuickAnalysis: isQuickAnalysisReport,
         jobId: report.jobId,
         scriptTitle: report.scriptTitle || (isAr ? 'تحليل النص' : 'Script Analysis'),
         clientName: report.clientName || (isAr ? 'مستفيد' : 'Beneficiary'),

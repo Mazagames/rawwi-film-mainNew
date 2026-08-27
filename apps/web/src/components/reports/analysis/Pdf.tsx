@@ -75,7 +75,7 @@ function ReportSection({ section, cards, isAr }: { section: SectionKey; cards: P
         <Text style={[s.sectionTitle, { color: style.accent }, isAr ? s.rtl : {}]}>{sectionCopy(section, isAr)}</Text>
         <Text style={[s.sectionCount, { color: style.accent, borderColor: style.borderColor }]}>{cards.length}</Text>
       </View>
-      {cards.length > 0 ? cards.map((card) => <FindingCard key={`${section}-${card.id}`} card={card} isAr={isAr} />) : (
+      {cards.length > 0 ? cards.map((card, idx) => card ? <FindingCard key={`${section}-${card.id || idx}`} card={card} isAr={isAr} /> : null) : (
         <Text style={[s.emptySection, isAr ? s.rtl : {}]}>{isAr ? "لا توجد عناصر في هذا القسم." : "No items in this section."}</Text>
       )}
     </Page>

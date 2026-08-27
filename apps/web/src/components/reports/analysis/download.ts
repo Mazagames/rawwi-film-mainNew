@@ -24,6 +24,7 @@ async function toDataUrl(url: string): Promise<string | null> {
 }
 
 export interface DownloadAnalysisPdfParams {
+  isQuickAnalysis?: boolean;
   reportId?: string | null;
   jobId?: string | null;
   scriptTitle: string;
@@ -90,6 +91,7 @@ export async function downloadAnalysisPdf(params: DownloadAnalysisPdfParams): Pr
     findingsByArticle: params.findingsByArticle,
     canonicalFindings: params.canonicalFindings,
     reportHints: params.reportHints,
+    isQuickAnalysis: params.isQuickAnalysis,
     notes: params.notes,
     lang: params.lang,
   });
