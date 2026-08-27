@@ -5,9 +5,8 @@ import { useLangStore } from '@/store/langStore';
 import { useAuthStore } from '@/store/authStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeValue } from '@/utils/dateFormat';
-import { type AnalysisReport } from '@/services/reportService';
 import { reportsApi, findingsApi, scriptsApi, type AnalysisFinding, type AnalysisReviewFinding } from '@/api';
-import type { NoteCategoryKey, ReportListItem, ReportNote, ReviewStatus, Script } from '@/api/models';
+import type { NoteCategoryKey, ReportListItem, ReportNote, ReviewStatus, Script, Report as AnalysisReport } from '@/api/models';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -17,7 +16,6 @@ import { Select } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
 import { Textarea } from '@/components/ui/Textarea';
 import { FindingCard, type NoteCardData } from '@/components/ui/FindingCard';
-import { AnalysisReportView } from '@/components/reports/AnalysisReportView';
 import { cn } from '@/utils/cn';
 import { escapeHtmlSafe } from '@/utils/escapeHtml';
 import { logFindingFlightRecorderStage } from '@/utils/findingFlightRecorder';
@@ -34,7 +32,7 @@ import { getCanonicalReportTotals, type CanonicalReportTotals } from '@/utils/re
 import { NOTE_CATEGORY_ORDER, getNoteCategoryLabel } from '@/utils/noteCategoryLabels';
 import {
   ArrowLeft, CheckCircle, ShieldAlert,
-  AlertTriangle, XCircle, ChevronDown, ChevronUp, Loader2,
+  XCircle, ChevronDown, ChevronUp, Loader2,
   CheckCircle2, Shield, FileDown, Info, Search, List, MoreVertical, FileText,
 } from 'lucide-react';
 
@@ -46,9 +44,7 @@ import {
 } from '@/data/policyMap';
 import {
   resolveViolationTypeId,
-  getViolationTypeIdFromLegacyPolicyArticle,
   getLegacyPolicyArticleIdForViolationTypeId,
-  violationTypeLabel,
   violationTypesForChecklist,
   type ViolationTypeId,
 } from '@/data/violationTypes';
@@ -150,60 +146,6 @@ function stripArticleAtomReferences(value: string | null | undefined): string {
     .trim();
 }
 
-function getViolationTypeIdFromFinding(
-  finding: Pick<AnalysisFinding, 'titleAr' | 'descriptionAr' | 'source'> & {
-    title_ar?: string | null;
-    description_ar?: string | null;
-    articleId?: number | null;
-    atomId?: string | null;
-    primaryArticleId?: number | null;
-    primaryAtomId?: string | null;
-    location?: Record<string, unknown> | null;
-  }
-): ViolationTypeId | null {
-  const v3 = ((finding.location as Record<string, unknown> | undefined)?.v3 as Record<string, unknown> | undefined) ?? {};
-  const candidates = [
-    finding.titleAr,
-    finding.title_ar,
-    finding.descriptionAr,
-    finding.description_ar,
-    typeof v3.title_ar === 'string' ? v3.title_ar : null,
-    typeof v3.title === 'string' ? v3.title : null,
-  ];
-  for (const candidate of candidates) {
-    const resolved = resolveViolationTypeId(candidate);
-    if (resolved) return resolved;
-  }
-  const articleId = Number(finding.articleId ?? finding.primaryArticleId ?? v3.primary_article_id);
-  const atomId =
-    finding.atomId ??
-    finding.primaryAtomId ??
-    (typeof v3.primary_policy_atom_id === 'string'
-      ? v3.primary_policy_atom_id
-      : typeof v3.atom_id === 'string'
-        ? v3.atom_id
-        : null);
-  const legacyResolved = getViolationTypeIdFromLegacyPolicyArticle(
-    Number.isFinite(articleId) ? articleId : null,
-    atomId,
-  );
-  if (legacyResolved) return legacyResolved;
-  return null;
-}
-
-function getViolationTypeIdFromReviewFinding(finding: AnalysisReviewFinding): ViolationTypeId | null {
-  return getViolationTypeIdFromFinding({
-    titleAr: finding.titleAr,
-    descriptionAr: finding.descriptionAr,
-    source: finding.sourceKind,
-    articleId: finding.primaryArticleId,
-    atomId: finding.primaryAtomId ?? null,
-    primaryArticleId: finding.primaryArticleId,
-    primaryAtomId: finding.primaryAtomId ?? null,
-    location: (finding as { location?: Record<string, unknown> | null }).location ?? null,
-  });
-}
-
 const RATIONALE_SAYS_NOT_VIOLATION = [
   "لا يعد مخالفة",
   "لا توجد مخالفة",
@@ -264,6 +206,7 @@ function shouldTreatFindingAsSpecialNote(
 type CanonicalSummaryFinding = {
   canonical_finding_id: string;
   title_ar: string;
+  description_ar?: string | null;
   evidence_snippet: string;
   severity: string;
   confidence: number;
@@ -274,22 +217,26 @@ type CanonicalSummaryFinding = {
   primary_policy_atom_id?: string | null;
   related_article_ids?: number[];
   policy_links?: Array<{ article_id: number; atom_concept_id?: string | null; role?: string | null }>;
+  start_offset_global?: number | null;
+  end_offset_global?: number | null;
   start_line_chunk?: number | null;
   end_line_chunk?: number | null;
+  page_number?: number | null;
   /** lexicon_mandatory only for true DB glossary rows; omit/ai otherwise */
   source?: 'ai' | 'lexicon_mandatory' | 'manual';
 };
 
 type FindingKindFilter = 'all' | 'ai' | 'manual' | 'glossary' | 'special' | 'approved';
+type FindingKindValue = 'ai' | 'manual' | 'glossary';
 
-function findingKindFromSource(source: string | null | undefined): Exclude<FindingKindFilter, 'all' | 'special'> {
+function findingKindFromSource(source: string | null | undefined): FindingKindValue {
   if (source === 'manual') return 'manual';
   if (source === 'lexicon_mandatory') return 'glossary';
   return 'ai';
 }
 
 function countFindingKinds<T extends { source?: string | null }>(list: T[]) {
-  const counts = { ai: 0, manual: 0, glossary: 0 };
+  const counts: Record<FindingKindValue, number> = { ai: 0, manual: 0, glossary: 0 };
   for (const finding of list) {
     counts[findingKindFromSource(finding.source)]++;
   }
@@ -322,7 +269,7 @@ function findingSourcePriority(source: string | null | undefined): number {
       : 1;
 }
 
-function findingKindFromReviewSource(sourceKind: AnalysisReviewFinding['sourceKind'] | null | undefined): Exclude<FindingKindFilter, 'all' | 'special'> {
+function findingKindFromReviewSource(sourceKind: AnalysisReviewFinding['sourceKind'] | null | undefined): FindingKindValue {
   if (sourceKind === 'manual') return 'manual';
   if (sourceKind === 'glossary') return 'glossary';
   return 'ai';
@@ -333,7 +280,7 @@ function compactWhitespace(value: string | null | undefined): string {
 }
 
 function countReviewFindingKinds(list: AnalysisReviewFinding[]) {
-  const counts = { ai: 0, manual: 0, glossary: 0 };
+  const counts: Record<FindingKindValue, number> = { ai: 0, manual: 0, glossary: 0 };
   for (const finding of list) {
     counts[findingKindFromReviewSource(finding.sourceKind)]++;
   }
@@ -382,7 +329,7 @@ export function Results() {
     hasPermission('manage_script_status') ||
     hasPermission('can_accept_reject');
   const canUseSendReviewAction = canUseApproveRejectActions || hasPermission('can_send_for_review');
-
+  
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [findings, setFindings] = useState<AnalysisFinding[]>([]);
   const [reviewFindings, setReviewFindings] = useState<AnalysisReviewFinding[]>([]);
@@ -390,12 +337,12 @@ export function Results() {
   const [error, setError] = useState<string | null>(null);
   const [expandedArticles, setExpandedArticles] = useState<Record<string, boolean>>({});
   const [reviewing, setReviewing] = useState(false);
-  const [updateScriptStatus, setUpdateScriptStatus] = useState(false);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-  const [isDownloadingWord, setIsDownloadingWord] = useState(false);
+  const [, setUpdateScriptStatus] = useState(false);
+  const [, setIsDownloadingPdf] = useState(false);
+  const [, setIsDownloadingWord] = useState(false);
   const [isQuickAnalysisReport, setIsQuickAnalysisReport] = useState(quickFromQuery);
   const [reportScriptMeta, setReportScriptMeta] = useState<Script | null>(null);
-  const [groupFindingsByAtom, setGroupFindingsByAtom] = useState(false);
+  const [groupFindingsByAtom] = useState(false);
   /** false = deduped list (default); true = every DB row (duplicates visible). */
   const [showAllFindingRows, setShowAllFindingRows] = useState(false);
   const [reportSection, setReportSection] = useState<'all' | 'violations' | 'notes' | 'manual' | 'dictionary'>('notes');
@@ -443,7 +390,7 @@ export function Results() {
     reviewedAt?: string | null;
     reviewedBy?: string | null;
     createdAt?: string | null;
-    analysisMeta?: NonNullable<Report['summaryJson']['analysis_meta']>;
+    analysisMeta?: AnalysisReport['summaryJson']['analysis_meta'];
   } | null>(null);
   const [bulkReviewModal, setBulkReviewModal] = useState<{ findingIds: string[]; toStatus: 'approved' | 'violation' } | null>(null);
   const [bulkReviewReason, setBulkReviewReason] = useState('');
@@ -817,9 +764,11 @@ export function Results() {
         toast.success(lang === 'ar' ? 'تم قبول التقرير وإصدار الشهادة' : 'Report approved and certificate issued');
       } else {
         toast.success(
-          status === 'approved' ? (lang === 'ar' ? 'تم قبول التقرير' : 'Report approved') :
-            status === 'rejected' ? (lang === 'ar' ? 'تم رفض التقرير' : 'Report rejected') :
-              (lang === 'ar' ? 'تمت إعادة التقرير للمراجعة' : 'Report sent back for review')
+          status === 'approved'
+            ? (lang === 'ar' ? 'تم قبول التقرير' : 'Report approved')
+            : status === 'under_review'
+              ? (lang === 'ar' ? 'تمت إعادة التقرير للمراجعة' : 'Report sent back for review')
+              : (lang === 'ar' ? 'تم رفض التقرير' : 'Report rejected')
         );
       }
       if (status === 'under_review') {
@@ -855,13 +804,13 @@ export function Results() {
     } catch { /* findings endpoint may not exist yet, rely on summary */ }
   }, []);
 
-  const loadReviewFindings = useCallback(async (reportId: string, requestToken: number) => {
+  const loadReviewFindings = useCallback(async (reportId: string, requestToken?: number) => {
     try {
       const rows = await findingsApi.getReviewByReport(reportId);
-      if (reportLoadTokenRef.current !== requestToken) return;
+      if (requestToken != null && reportLoadTokenRef.current !== requestToken) return;
       setReviewFindings(rows);
     } catch {
-      if (reportLoadTokenRef.current === requestToken) setReviewFindings([]);
+      if (requestToken == null || reportLoadTokenRef.current === requestToken) setReviewFindings([]);
     }
   }, []);
 
@@ -1347,8 +1296,6 @@ export function Results() {
 
   const summary = report.summaryJson;
   const analysisMeta = summary.analysis_meta;
-  const partialReportMeta = summary.partial_report;
-  const manualReviewContextMeta = summary.manual_review_context;
   const notesByCategory = notesState;
   const canonicalSummaryFindings: CanonicalSummaryFinding[] = (summary.canonical_findings || []).filter(Boolean);
   const reportHints: CanonicalSummaryFinding[] = (summary.report_hints || []).filter(Boolean);
@@ -1396,8 +1343,6 @@ export function Results() {
   const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
   const informationalNoteCategories = noteCategoryCounts.filter((category) => !category.key.startsWith('article_'));
   const articleNoteCategories = noteCategoryCounts.filter((category) => category.key.startsWith('article_'));
-  const articleNotesTotal = articleNoteCategories.reduce((sum, category) => sum + category.count, 0);
-  const informationalNotesTotal = informationalNoteCategories.reduce((sum, category) => sum + category.count, 0);
   const activeNoteCategories = noteSubSection === 'article' ? articleNoteCategories : informationalNoteCategories;
   const activeNoteFilterTabs = [
     {
@@ -1411,11 +1356,6 @@ export function Results() {
       key: category.key,
     })),
   ];
-  const activeNoteCategoryKey = noteCategoryFilter === 'all'
-    ? 'all'
-    : activeNoteCategories.some((category) => category.key === noteCategoryFilter)
-      ? noteCategoryFilter
-      : 'all';
   const selectedNotes = noteCategoryFilter === 'all'
     ? activeNoteCategories.flatMap((category) => dedupedNotesByCategory[category.key] ?? [])
     : dedupedNotesByCategory[noteCategoryFilter] ?? [];
@@ -1448,15 +1388,6 @@ export function Results() {
       : approvedFindingsDeduped
     : [];
   const rawViolationRowsCount = hasRealFindings ? violations.length : 0;
-  const fallbackSummaryCount = canonicalSummaryFindings.length > 0
-    ? canonicalSummaryFindings.length
-    : summary.findings_by_article.reduce((acc, a) => acc + (a.top_findings?.length ?? 0), 0);
-  const displayViolationsCount = hasRealFindings
-    ? displayViolations.length
-    : canonicalSummaryFindings.length > 0
-      ? canonicalSummaryFindings.length
-      : fallbackSummaryCount;
-
   const reportFamilyForReviewFinding = (finding: AnalysisReviewFinding) =>
     finding.sourceKind === 'manual' ? 'manual' as const : finding.sourceKind === 'glossary' ? 'glossary' as const : 'violation' as const;
   const reportFamilyForFinding = (finding: AnalysisFinding) =>
@@ -1477,14 +1408,6 @@ export function Results() {
     (finding) => finding.pageNumber ?? null,
     (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
   );
-  const dedupedCanonicalFindingsForCounts = dedupeReportDisplayItems(
-    canonicalSummaryFindings,
-    reportFamilyForCanonical,
-    (finding) => finding.primary_policy_atom_id ?? finding.primary_article_id,
-    (finding) => (finding as CanonicalSummaryFinding & { page_number?: number | null }).page_number ?? null,
-    (finding) => finding.rationale || finding.description_ar || '',
-  );
-
   const displayTotal = useReviewFindingsUi
     ? dedupedReviewViolationsForCounts.length
     : canonicalTotals.violations;
@@ -1497,62 +1420,18 @@ export function Results() {
         manual: canonicalTotals.manual,
         glossary: canonicalTotals.glossary,
       };
-
-  const displayRealViolations = useReviewFindingsUi
-    ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'violation')
-    : useRealFindingsUi
-    ? dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'violation')
-    : dedupedCanonicalFindingsForCounts.filter((finding) => reportFamilyForCanonical(finding) === 'violation');
-
   const displayManualItems = useReviewFindingsUi
     ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'manual')
-    : useRealFindingsUi
-    ? dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'manual')
-    : dedupedCanonicalFindingsForCounts.filter((finding) => reportFamilyForCanonical(finding) === 'manual');
-
+    : dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'manual');
   const displayGlossaryItems = useReviewFindingsUi
     ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'glossary')
-    : useRealFindingsUi
-    ? dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'glossary')
-    : dedupedCanonicalFindingsForCounts.filter((finding) => reportFamilyForCanonical(finding) === 'glossary');
-
-  const displaySections = buildReportDisplaySections({
-    violations: displayRealViolations,
+    : dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'glossary');
+  const displaySections = buildReportDisplaySections<unknown>({
+    violations: displayViolations,
     notes: Object.values(dedupedNotesByCategory).flatMap((categoryNotes) => categoryNotes ?? []),
     manual: displayManualItems,
     glossary: displayGlossaryItems,
   });
-
-  const getViolationArticleId = (finding: any): number => {
-    if (finding && typeof finding.primaryArticleId === 'number') return finding.primaryArticleId;
-    if (finding && typeof finding.articleId === 'number') return finding.articleId;
-    if (finding && typeof finding.primary_article_id === 'number') return finding.primary_article_id;
-    return 0;
-  };
-
-  const violationArticlesMap = new Map<number, { id: number; title: string; count: number }>();
-  for (const f of displaySections.violations) {
-    const articleId = getViolationArticleId(f);
-    if (!violationArticlesMap.has(articleId)) {
-      violationArticlesMap.set(articleId, {
-        id: articleId,
-        title: articleLabel(articleId),
-        count: 0
-      });
-    }
-    violationArticlesMap.get(articleId)!.count++;
-  }
-  const violationArticleGroups = Array.from(violationArticlesMap.values()).sort((a, b) => a.id - b.id);
-  const activeViolationFilterTabs = [
-    { key: 'all', labelAr: 'الكل', labelEn: 'All', count: displaySections.violations.length },
-    ...violationArticleGroups.map(g => ({
-      key: String(g.id),
-      labelAr: g.title,
-      labelEn: g.title,
-      count: g.count,
-    }))
-  ];
-
   const displaySectionCounts = getReportDisplaySectionCounts(displaySections);
   const displayApproved = useReviewFindingsUi ? reviewApproved.length : (report.approvedCount ?? 0);
   const displaySpecialNotes = useReviewFindingsUi ? reviewSpecialNotes.length : reportHints.length;
@@ -1610,7 +1489,6 @@ export function Results() {
     .filter((id): id is string => Boolean(id));
   const selectableRawFindingIds = filteredDisplayViolations.map((f) => f.id);
   const actionableVisibleFindingIds = useReviewFindingsUi ? selectableReviewRawIds : selectableRawFindingIds;
-  const selectedVisibleFindingCount = selectedFindingIds.filter((id) => actionableVisibleFindingIds.includes(id)).length;
   const showOnlySpecialNotes = findingFilter === 'special';
   const showOnlyApproved = findingFilter === 'approved';
   const filteredViolationsCount = useReviewFindingsUi
@@ -1628,15 +1506,6 @@ export function Results() {
         ? filteredDisplayViolations.length === 0
         : filteredCanonicalSummaryFindings.length === 0;
 
-  const decision: 'PASS' | 'REJECT' | 'REVIEW_REQUIRED' =
-    (useReviewFindingsUi ? reviewViolations.length : displayViolationsCount) > 0 ? 'REVIEW_REQUIRED' : 'PASS';
-
-  const decisionConfig = {
-    PASS: { label: lang === 'ar' ? 'مفسوح' : 'PASS', bg: 'bg-success/5', text: 'text-success', border: 'border-success/30', icon: CheckCircle },
-    REJECT: { label: lang === 'ar' ? 'مرفوض' : 'REJECT', bg: 'bg-error/5', text: 'text-error', border: 'border-error/30', icon: XCircle },
-    REVIEW_REQUIRED: { label: lang === 'ar' ? 'يتطلب مراجعة' : 'REVIEW REQUIRED', bg: 'bg-warning/5', text: 'text-warning', border: 'border-warning/30', icon: AlertTriangle },
-  };
-  const DecisionIcon = decisionConfig[decision].icon;
   const bannerViolationsCount = displaySectionCounts.violations;
   const bannerNotesCount = displaySectionCounts.notes;
   const primaryReportSections = [
@@ -1735,7 +1604,7 @@ export function Results() {
 
   // Prepare findings for PDF: use real findings if available, otherwise fallback to summary
 
-  const generateHtmlPrint = async () => {
+  void (async function generateHtmlPrint() {
     try {
       // 1. Fetch template
       const templateUrl = '/templates/report-template.html';
@@ -1899,7 +1768,7 @@ export function Results() {
         html = html.split(key).join(val);
       });
 
-      // 4. render loops (Manual rudimentary implementation or use a lib if allowed.
+      // 4. render loops (Manual rudimentary implementation or use a lib if allowed. 
       // Since we don't have handlebars lib, we'll manual construct the findings HTML string and inject it)
       // Actually, to avoid complexity, let's just construct the 'groupedFindings' HTML section manually:
 
@@ -1942,7 +1811,7 @@ export function Results() {
                 <div class="evidence-box">"${escapeHtmlSafe(f.evidence)}"</div>
                 ${f.reviewStatus ? `
                 <div class="review-status">
-                    ${replacements['{{labels.status}}']}:
+                    ${replacements['{{labels.status}}']}: 
                     <span class="${f.isSafe ? 'status-safe' : 'status-violation'}">${escapeHtmlSafe(f.reviewStatusLabel)}</span>
                     ${f.reviewedAt ? `<span style="margin-inline-start: 10px;">(${escapeHtmlSafe(f.reviewedAt)})</span>` : ''}
                 </div>` : ''}
@@ -1955,7 +1824,7 @@ export function Results() {
       // We'll replace the entire block.
 
       // Let's rely on the template structure we just created.
-      // Better approach: Re-read the template and ensure there is a unique placeholder.
+      // Better approach: Re-read the template and ensure there is a unique placeholder. 
       // I will assume for now I can just replace the block.
       // actually, regex replacement of the block:
       const loopRegex = /{{#each groupedFindings}}([\s\S]*?){{\/each}}/m;
@@ -1983,7 +1852,7 @@ export function Results() {
       console.error(e);
       toast.error(lang === 'ar' ? 'فشل إنشاء التقرير' : 'Failed to generate report');
     }
-  };
+  })();
 
   const handleDownloadPdf = async () => {
     if (!report) return;
@@ -2206,6 +2075,7 @@ export function Results() {
           // Keep current in-memory review findings as fallback.
         }
       }
+      const reportLang: 'ar' | 'en' = isAr ? 'ar' : 'en';
       const basePayload = {
         scriptTitle: report.scriptTitle || (isAr ? 'تحليل النص' : 'Script Analysis'),
         clientName: report.clientName || (isAr ? 'مستفيد' : 'Beneficiary'),
@@ -2225,7 +2095,7 @@ export function Results() {
         reportHints: summary.report_hints ?? undefined,
         notes: notesState,
         scriptSummary: summary.script_summary ?? undefined,
-        lang: isAr ? 'ar' : 'en' as const,
+        lang: reportLang,
       };
       await downloadAnalysisWord(basePayload);
       toast.success(isAr ? 'تم تنزيل ملف Word' : 'Word document downloaded');
@@ -2314,7 +2184,6 @@ function displayFindingTitle(params: {
     const v3 = ((f.location as Record<string, unknown> | undefined)?.v3 as Record<string, unknown> | undefined) ?? {};
     const primaryArticleId = Number(v3.primary_article_id);
     const primaryArticle = Number.isFinite(primaryArticleId) ? primaryArticleId : f.articleId;
-    const relatedArticles = ((v3.related_article_ids as number[] | undefined) ?? []).filter((id) => id !== primaryArticle);
     const rationale = pickFindingRationale(f);
     const showRationale = !!rationale && !isWeakRationaleText(rationale) && rationale !== (f.evidenceSnippet ?? '').trim();
     const manualComment = (f.manualComment ?? '').trim();
@@ -2805,6 +2674,7 @@ function displayFindingTitle(params: {
     listInput: CanonicalSummaryFinding[] = canonicalSummaryFindings,
     familyResolver: (finding: CanonicalSummaryFinding) => 'violation' | 'manual' | 'glossary' = () => 'violation',
   ) {
+    void familyResolver;
     type Art = (typeof summary.findings_by_article)[number];
     type F = NonNullable<Art["top_findings"]>[number];
     const allowedEvidence = new Set(listInput.map((f) => (f.evidence_snippet ?? '').trim()).filter(Boolean));
@@ -2816,13 +2686,10 @@ function displayFindingTitle(params: {
         rows.push({ art, f, idx });
       });
     }
-    const dedupedRows = dedupeReportDisplayItems(
-      rows,
-      familyResolver,
-      (row) => family === 'glossary' ? row.f.primary_policy_atom_id ?? row.art.article_id : row.art.article_id,
-      (row) => (row.f as F & { page_number?: number | null }).page_number ?? null,
-      (row) => row.f.rationale_ar || row.f.description_ar || '',
-    );
+    const dedupedRows = rows.filter((row, index, sourceRows) => {
+      const key = `${row.art.article_id}\u001f${(row.f.evidence_snippet ?? '').trim()}\u001f${row.f.start_offset_global ?? 'null'}\u001f${(row.f.title_ar ?? '').trim()}`;
+      return sourceRows.findIndex((candidate) => `${candidate.art.article_id}\u001f${(candidate.f.evidence_snippet ?? '').trim()}\u001f${candidate.f.start_offset_global ?? 'null'}\u001f${(candidate.f.title_ar ?? '').trim()}` === key) === index;
+    });
     const byArticle = new Map<number, { art: Art; items: { f: F; idx: number }[] }>();
     for (const row of dedupedRows) {
       if (!byArticle.has(row.art.article_id)) {
@@ -2866,11 +2733,11 @@ function displayFindingTitle(params: {
                           <span className="font-semibold text-text-main text-sm">
                             {displayFindingTitle({
                               title: f.title_ar,
-                              description: f.description_ar ?? null,
-                              source: f.source ?? 'ai',
+                              description: null,
+                              source: 'ai',
                               evidenceSnippet: f.evidence_snippet,
                               articleId: art.article_id,
-                              atomId: f.primary_policy_atom_id ?? null,
+                              atomId: null,
                             })}
                           </span>
                           <div className="flex items-center gap-2">
@@ -2891,6 +2758,284 @@ function displayFindingTitle(params: {
                     );
                   })()
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    });
+  }
+
+  function renderFindingsFromCanonicalSummary(
+    listInput: CanonicalSummaryFinding[] = canonicalSummaryFindings,
+    familyResolver: (finding: CanonicalSummaryFinding) => 'violation' | 'manual' | 'glossary' = () => 'violation',
+  ) {
+    void familyResolver;
+    const dedupedList = dedupeReportDisplayItems(
+      listInput,
+      familyResolver,
+      (finding) => familyResolver(finding) === 'glossary' ? finding.primary_policy_atom_id ?? finding.primary_article_id : finding.primary_article_id,
+      (finding) => (finding as CanonicalSummaryFinding & { page_number?: number | null }).page_number ?? null,
+      (finding) => finding.rationale || finding.description_ar || '',
+    );
+    const byArticle = new Map<number, CanonicalSummaryFinding[]>();
+    for (const f of dedupedList) {
+      const articleId = Number.isFinite(f.primary_article_id) ? (f.primary_article_id as number) : 0;
+      if (!byArticle.has(articleId)) byArticle.set(articleId, []);
+      byArticle.get(articleId)!.push(f);
+    }
+    return Array.from(byArticle.entries()).map(([articleId, artFindings]) => {
+      const key = `sc-canon-${articleId}`;
+      const isExpanded = expandedArticles[key] ?? true;
+      const groupTitle = artFindings[0]?.title_ar?.trim() || articleLabel(articleId);
+      return (
+        <div key={articleId} className="mb-8">
+          <div className="border border-border rounded-xl bg-surface/50 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleArticle(key)}
+              className="w-full flex items-center justify-between p-4 bg-surface hover:bg-background transition-colors border-b border-border"
+            >
+              <div className="flex items-center gap-3">
+                <span className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
+                  {articleId}
+                </span>
+                <span className="font-bold text-text-main text-start">{groupTitle}</span>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <Badge variant="outline">{artFindings.length}</Badge>
+                {isExpanded ? <ChevronUp className="w-4 h-4 text-text-muted" /> : <ChevronDown className="w-4 h-4 text-text-muted" />}
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="p-4 space-y-3">
+                {artFindings.map((f, idx) => {
+                  const articleId = Number.isFinite(f.primary_article_id) ? (f.primary_article_id as number) : 0;
+                  const cardRationale = isWeakRationaleText(f.rationale) ? null : stripArticleAtomReferences(f.rationale);
+                  const sceneLabel = formatResolvedSceneLabel(
+                    resolveSceneLabelFromOffset(f.start_offset_global ?? null, reportViewerPages),
+                    lang
+                  );
+                  return (
+                        <div key={`${f.canonical_finding_id}-${idx}`} className="bg-surface border border-border rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-text-main text-sm">
+                              {displayFindingTitle({
+                                title: f.title_ar,
+                                description: f.description_ar ?? null,
+                                source: f.source ?? 'ai',
+                                evidenceSnippet: f.evidence_snippet,
+                                articleId,
+                                atomId: f.primary_policy_atom_id ?? null,
+                              })}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-text-muted">{lang === 'ar' ? 'ثقة' : 'conf'} {Math.round((f.confidence ?? 0) * 100)}%</span>
+                            </div>
+                          </div>
+                          {sceneLabel && (
+                            <div className="text-[10px] text-text-muted font-medium mb-1">
+                              {sceneLabel}
+                            </div>
+                          )}
+                          <div className="bg-background/50 p-3 rounded-md border border-border/50 text-sm text-text-main italic" dir="rtl">"{f.evidence_snippet}"</div>
+                          <div className="mt-2 text-xs text-text-muted space-y-1">
+                            <div>
+                              {lang === 'ar' ? 'النوع:' : 'Type:'}{' '}
+                              <span className="text-text-main">
+                                {findingSourceLabel(f.source ?? 'ai')}
+                              </span>
+                            </div>
+                            {f.pillar_id && <div>{lang === 'ar' ? 'المحور:' : 'Pillar:'} <span className="text-text-main">{f.pillar_id}</span></div>}
+                            {cardRationale && (
+                              <div>{lang === 'ar' ? 'ملاحظة تفسيرية:' : 'Reviewer note:'} <span className="text-text-main">{cardRationale}</span></div>
+                            )}
+                          </div>
+                          {(() => {
+                            const mf = matchFindingForCanonical(f);
+                            if (!mf) {
+                              return (
+                                <p className="text-[10px] text-text-muted mt-2 print:hidden">
+                                  {lang === 'ar'
+                                    ? 'إذا لم يظهر زر الاعتماد، حدّث الصفحة بعد اكتمال التحليل.'
+                                    : 'If no action appears, refresh the page after analysis finishes.'}
+                                </p>
+                              );
+                            }
+                            const isApproved = mf.reviewStatus === 'approved';
+                            return (
+                              <div className="mt-2 space-y-2 print:hidden">
+                                {isApproved && mf.reviewReason && (
+                                  <div className="p-2 bg-success/5 border border-success/10 rounded text-xs text-success">
+                                    <span className="font-semibold">{lang === 'ar' ? 'السبب:' : 'Reason:'}</span> {mf.reviewReason}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2">
+                                  {!isApproved && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-[11px] gap-1 text-success border-success/30 hover:bg-success/10"
+                                      onClick={() => {
+                                        setReviewModal({ findingId: mf.id, toStatus: 'approved', titleAr: f.title_ar });
+                                        setReviewReason('');
+                                      }}
+                                    >
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      {lang === 'ar' ? 'اعتماد كآمن' : 'Mark Safe'}
+                                    </Button>
+                                  )}
+                                  {isApproved && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-[11px] gap-1 text-error border-error/30 hover:bg-error/10"
+                                      onClick={() => {
+                                        setReviewModal({ findingId: mf.id, toStatus: 'violation', titleAr: f.title_ar });
+                                        setReviewReason('');
+                                      }}
+                                    >
+                                      <ShieldAlert className="w-3 h-3" />
+                                      {lang === 'ar' ? 'إعادة كمخالفة' : 'Revert to Violation'}
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    });
+  }
+
+  function renderFindingsFromReal(
+    list: AnalysisFinding[],
+    familyResolver: (finding: AnalysisFinding) => 'violation' | 'manual' | 'glossary' = () => 'violation',
+  ) {
+    const dedupedList = dedupeReportDisplayItems(
+      list,
+      familyResolver,
+      (finding) => familyResolver(finding) === 'glossary' ? finding.atomId ?? finding.articleId : finding.articleId,
+      (finding) => finding.pageNumber ?? null,
+      (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
+    );
+    const byArticle = new Map<number, AnalysisFinding[]>();
+    for (const f of dedupedList) {
+      const articleId = Number.isFinite(f.articleId) ? f.articleId : 0;
+      if (!byArticle.has(articleId)) byArticle.set(articleId, []);
+      byArticle.get(articleId)!.push(f);
+    }
+
+    return Array.from(byArticle.entries()).map(([articleId, artFindings]) => {
+      const key = `sc-real-${articleId}`;
+      const isExpanded = expandedArticles[key] ?? true;
+      const groupTitle = artFindings[0]?.titleAr?.trim() || articleLabel(articleId);
+      return (
+        <div key={articleId} className="mb-8">
+          <div className="border border-border rounded-xl bg-surface/50 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleArticle(key)}
+              className="w-full flex items-center justify-between p-4 bg-surface hover:bg-background transition-colors border-b border-border"
+            >
+              <div className="flex items-center gap-3">
+                <span className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
+                  {articleId}
+                </span>
+                <span className="font-bold text-text-main text-start">{groupTitle}</span>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <Badge variant="outline">{artFindings.length}</Badge>
+                {isExpanded ? <ChevronUp className="w-4 h-4 text-text-muted" /> : <ChevronDown className="w-4 h-4 text-text-muted" />}
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="p-4 space-y-3">
+                {groupFindingsByAtom ? (
+                  (() => {
+                    const byAtom = new Map<string, AnalysisFinding[]>();
+                    for (const f of artFindings) {
+                      const k = normalizeAtomId(f.atomId, f.articleId) || `a${f.articleId}`;
+                      if (!byAtom.has(k)) byAtom.set(k, []);
+                      byAtom.get(k)!.push(f);
+                    }
+                    const entries = Array.from(byAtom.entries()).sort(
+                      ([a], [b]) => atomIdNumeric(a) - atomIdNumeric(b)
+                    );
+                    return entries.map(([atomKey, fl]) => {
+                      const aid = fl[0]?.articleId ?? 0;
+                      return (
+                        <div key={atomKey} className="border border-border/60 rounded-lg p-3 bg-background/30">
+                          <div className="text-xs font-semibold text-text-muted mb-2">
+                            {lang === "ar" ? "مرجع السياسة: " : "Policy ref: "}
+                            {formatAtomDisplayR(aid, atomKey.startsWith("a") ? null : atomKey)}
+                          </div>
+                          <div className="space-y-3">{fl.map((f) => renderFindingCard(f))}</div>
+                        </div>
+                      );
+                    });
+                  })()
+                ) : (
+                  artFindings.map((f) => renderFindingCard(f))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    });
+  }
+
+  function renderFindingsFromReview(
+    list: AnalysisReviewFinding[],
+    familyResolver: (finding: AnalysisReviewFinding) => 'violation' | 'manual' | 'glossary' = () => 'violation',
+  ) {
+    const dedupedList = dedupeReportDisplayItems(
+      list,
+      familyResolver,
+      (finding) => familyResolver(finding) === 'glossary' ? finding.primaryAtomId ?? finding.primaryArticleId ?? finding.sourceKind : finding.primaryArticleId,
+      (finding) => finding.pageNumber ?? null,
+      (finding) => finding.rationaleAr || finding.descriptionAr || finding.manualComment || '',
+    );
+    const byArticle = new Map<number, AnalysisReviewFinding[]>();
+    for (const f of dedupedList) {
+      const articleId = Number.isFinite(f.primaryArticleId) ? f.primaryArticleId : 0;
+      if (!byArticle.has(articleId)) byArticle.set(articleId, []);
+      byArticle.get(articleId)!.push(f);
+    }
+
+    return Array.from(byArticle.entries()).map(([articleId, artFindings]) => {
+      const key = `sc-review-${articleId}`;
+      const isExpanded = expandedArticles[key] ?? true;
+      const groupTitle = artFindings[0]?.titleAr?.trim() || articleLabel(articleId);
+      return (
+        <div key={articleId} className="mb-8">
+          <div className="border border-border rounded-xl bg-surface/50 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleArticle(key)}
+              className="w-full flex items-center justify-between p-4 bg-surface hover:bg-background transition-colors border-b border-border"
+            >
+              <div className="flex items-center gap-3">
+                <span className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
+                  {articleId}
+                </span>
+                <span className="font-bold text-text-main text-start">{groupTitle}</span>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <Badge variant="outline">{artFindings.length}</Badge>
+                {isExpanded ? <ChevronUp className="w-4 h-4 text-text-muted" /> : <ChevronDown className="w-4 h-4 text-text-muted" />}
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="p-4 space-y-3">
+                {artFindings.map((f) => renderReviewFindingCard(f))}
               </div>
             )}
           </div>
@@ -2981,7 +3126,7 @@ function displayFindingTitle(params: {
               type="button"
               onClick={() => setChecklistModalOpen(true)}
               className="h-11 w-11 rounded-xl border border-border bg-background/80 text-text-main hover:bg-background hover:border-primary/30 transition-colors flex items-center justify-center"
-              aria-label={lang === 'ar' ? 'عرض قائمة التحقق' : 'Open checklist'}
+              aria-label={lang === 'ar' ? 'فتح قائمة التحقق' : 'Open checklist'}
             >
               <List className="w-5 h-5" />
             </button>
@@ -2989,76 +3134,577 @@ function displayFindingTitle(params: {
               type="button"
               onClick={() => setSummaryModalOpen(true)}
               className="h-11 w-11 rounded-xl border border-border bg-background/80 text-text-main hover:bg-background hover:border-primary/30 transition-colors flex items-center justify-center"
-              aria-label={lang === 'ar' ? 'عرض ملخص النص' : 'Open script summary'}
+              aria-label={lang === 'ar' ? 'فتح ملخص النص' : 'Open script summary'}
             >
               <Info className="w-5 h-5" />
             </button>
           </div>
+          <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+            {primaryReportSections.map((section) => (
+              <button
+                key={section.key}
+                type="button"
+                aria-pressed={reportSection === section.key}
+                onClick={() => {
+                  setReportSection(section.key);
+                  if (section.key === 'notes') {
+                    setNoteSubSection('informational');
+                    setFindingFilter('all');
+                    setNoteCategoryFilter('all');
+                  } else if (section.key === 'violations') {
+                    setNoteSubSection('article');
+                    setFindingFilter('all');
+                    setNoteCategoryFilter('all');
+                  } else if (section.key === 'all') {
+                    setFindingFilter('all');
+                    setNoteSubSection('article');
+                    setNoteCategoryFilter('all');
+                  } else {
+                    setFindingFilter(section.key === 'manual' ? 'manual' : 'glossary');
+                  }
+                }}
+                className={cn(
+                  "rounded-xl border px-3 py-2 text-start transition-colors bg-background/70 hover:bg-background",
+                  section.tone === 'warning' && (reportSection === section.key ? 'border-warning bg-warning/10' : 'border-warning/20'),
+                  section.tone === 'primary' && (reportSection === section.key ? 'border-primary bg-primary/10' : 'border-primary/20'),
+                  section.tone === 'info' && (reportSection === section.key ? 'border-info bg-info/10' : 'border-info/20'),
+                  section.tone === 'neutral' && (reportSection === section.key ? 'border-text-muted bg-background' : 'border-border')
+                )}
+              >
+                <div className="text-[11px] text-text-muted mb-1">{lang === 'ar' ? section.labelAr : section.labelEn}</div>
+                <div className="text-lg font-bold text-text-main leading-none">{section.value}</div>
+              </button>
+            ))}
+          </div>
+          {(canUseApproveRejectActions || canUseSendReviewAction) && (
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+              {canUseApproveRejectActions && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-10 text-xs gap-1 text-success border-success/30 hover:bg-success/10"
+                    onClick={() => setApproveDecisionModalOpen(true)}
+                    disabled={reviewing || report.reviewStatus === 'approved'}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {lang === 'ar' ? 'قبول' : 'Approve'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-10 text-xs gap-1 text-error border-error/30 hover:bg-error/10"
+                    onClick={() => void handleReportReview('rejected')}
+                    disabled={reviewing || report.reviewStatus === 'approved' || report.reviewStatus === 'rejected'}
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    {lang === 'ar' ? 'رفض' : 'Reject'}
+                  </Button>
+                </>
+              )}
+              {canUseSendReviewAction && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-10 text-xs text-warning"
+                  onClick={() => void openSendReviewDecisionModal()}
+                  disabled={reviewing || report.reviewStatus === 'approved' || report.reviewStatus === 'rejected'}
+                >
+                  {lang === 'ar' ? 'إرسال للمراجعة' : 'Send for Review'}
+                </Button>
+              )}
+              {report.reviewStatus !== 'under_review' && (
+                <Button size="sm" variant="ghost" className="h-10 text-xs" onClick={openReportReReviewModal} disabled={reviewing}>
+                  {lang === 'ar' ? 'إعادة للمراجعة' : 'Re-review'}
+                </Button>
+              )}
+            </div>
+          )}
+          <div className="relative flex items-center gap-2 shrink-0" ref={reportActionsMenuRef}>
+            <button
+              type="button"
+              onClick={() => setReportActionsMenuOpen((v) => !v)}
+              className="h-11 w-11 rounded-xl border border-border bg-background/80 text-text-main hover:bg-background hover:border-primary/30 transition-colors flex items-center justify-center"
+              aria-label={lang === 'ar' ? 'فتح قائمة الإجراءات' : 'Open actions menu'}
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
+            {reportActionsMenuOpen && (
+              <div className="absolute z-20 top-full mt-3 end-0 w-64 rounded-2xl border border-border bg-surface shadow-xl p-2">
+                <button
+                  type="button"
+                  onClick={() => { setReportActionsMenuOpen(false); void handleDownloadPdf(); }}
+                  className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-main hover:bg-background"
+                >
+                  <FileDown className="w-4 h-4" />
+                  {lang === 'ar' ? 'تنزيل PDF' : 'Download PDF'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setReportActionsMenuOpen(false); void handleDownloadWord(); }}
+                  className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-main hover:bg-background"
+                >
+                  <FileText className="w-4 h-4" />
+                  {lang === 'ar' ? 'تنزيل Word' : 'Download Word'}
+                </button>
+                <div className="my-2 border-t border-border" />
+                <button
+                  type="button"
+                  onClick={() => { setReportActionsMenuOpen(false); setSelectedFindingIds(actionableVisibleFindingIds); }}
+                  className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-main hover:bg-background disabled:opacity-50"
+                  disabled={actionableVisibleFindingIds.length === 0}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  {lang === 'ar' ? 'تحديد الكل' : 'Select all'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setReportActionsMenuOpen(false); setSelectedFindingIds([]); }}
+                  className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-main hover:bg-background disabled:opacity-50"
+                  disabled={selectedFindingIds.length === 0}
+                >
+                  <XCircle className="w-4 h-4" />
+                  {lang === 'ar' ? 'إلغاء التحديد' : 'Clear selection'}
+                </button>
+                <div className="my-2 border-t border-border" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedFindingIds.length === 0) return;
+                    setReportActionsMenuOpen(false);
+                    setBulkReviewModal({ findingIds: selectedFindingIds, toStatus: 'approved' });
+                    setBulkReviewReason('');
+                  }}
+                  className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-main hover:bg-background disabled:opacity-50"
+                  disabled={selectedFindingIds.length === 0}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  {lang === 'ar' ? 'اعتماد المحدد كآمن' : 'Mark selected as safe'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedFindingIds.length === 0) return;
+                    setReportActionsMenuOpen(false);
+                    setBulkReviewModal({ findingIds: selectedFindingIds, toStatus: 'violation' });
+                    setBulkReviewReason('');
+                  }}
+                  className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-main hover:bg-background disabled:opacity-50"
+                  disabled={selectedFindingIds.length === 0}
+                >
+                  <ShieldAlert className="w-4 h-4" />
+                  {lang === 'ar' ? 'إعادة المحدد كمخالفة' : 'Revert selected to violations'}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {(() => {
-        const handleGetArticleId = (finding: any) => {
-          if (finding && typeof finding.primaryArticleId === 'number') return finding.primaryArticleId;
-          if (finding && typeof finding.articleId === 'number') return finding.articleId;
-          if (finding && typeof finding.primary_article_id === 'number') return finding.primary_article_id;
-          return 0;
-        };
-        const handleGetNoteCategory = (n: any) => n.category;
-        const handleGetItemIdentity = (item: any) => item?.id ? String(item.id) : JSON.stringify(item);
-        const handleRenderViolation = (f: any) => (
-          <FindingCard
-            key={f.id}
-            finding={f}
-            onOverrideClick={undefined}
-            onRestoreClick={undefined}
-            scriptViewerPages={reportViewerPages ?? []}
-          />
-        );
-        const handleRenderNote = (n: any) => (
-          <FindingCard
-            key={n.id}
-            mode="note"
-            noteAccent="info"
-            note={noteCardFromReportNote(n)}
-            onToggleNoteReportVisibility={handleToggleNoteReportVisibility}
-            onMarkNoteReviewed={handleMarkNoteReviewed}
-            onEditNote={openNoteEditModal}
-          />
-        );
-        const handleRenderManual = (f: any) => (
-          <FindingCard
-            key={f.id}
-            finding={f}
-            onOverrideClick={undefined}
-            onRestoreClick={undefined}
-            scriptViewerPages={reportViewerPages ?? []}
-          />
-        );
-        const handleRenderGlossary = (f: any) => (
-          <FindingCard
-            key={f.id}
-            finding={f}
-            onOverrideClick={undefined}
-            onRestoreClick={undefined}
-            scriptViewerPages={reportViewerPages ?? []}
-          />
-        );
-        return (
-          <AnalysisReportView
-            sections={displaySections}
-            lang={lang}
-            getArticleId={handleGetArticleId}
-            getNoteCategory={handleGetNoteCategory}
-            getItemIdentity={handleGetItemIdentity}
-            renderViolation={handleRenderViolation}
-            renderNote={handleRenderNote}
-            renderManual={handleRenderManual}
-            renderGlossary={handleRenderGlossary}
-          />
-        );
-      })()}
-      
+      {/* Main findings */}
+        <div className="space-y-8">
+          {reportSection === 'all' && (
+            <>
+            <div className="space-y-8">
+              <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
+                <Info className="w-5 h-5 text-info" />
+                {lang === 'ar' ? 'الكل' : 'All'}
+              </h3>
+            </div>
+            </>
+          )}
+
+          {false && ((reportSection === 'violations' || reportSection === 'all') && hasViolationContent) && (
+            <>
+          {/* Violations section */}
+          <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
+            {showOnlySpecialNotes ? (
+              <Info className="w-5 h-5 text-info" />
+            ) : showOnlyApproved ? (
+              <Shield className="w-5 h-5 text-success" />
+            ) : (
+              <ShieldAlert className="w-5 h-5 text-primary" />
+            )}
+            {showOnlySpecialNotes
+              ? (lang === 'ar' ? 'ملاحظات خاصة' : 'Special notes')
+              : showOnlyApproved
+                ? (lang === 'ar' ? 'معتمد كآمن' : 'Marked safe')
+              : (lang === 'ar' ? 'المخالفات' : 'Violations')}
+            <Badge variant="outline" className="ms-2">
+              {findingFilter === 'all'
+                ? displayTotal
+                : findingFilter === 'special'
+                  ? displaySpecialNotes
+                : findingFilter === 'approved'
+                  ? `${filteredViolationsCount} / ${displayApproved}`
+                : findingFilter === 'manual'
+                  ? `${filteredViolationsCount} / ${displayTypeCounts.manual}`
+                  : `${filteredViolationsCount} / ${displayTotal}`}
+            </Badge>
+            {findingFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setFindingFilter('all')}
+                className="text-xs text-primary hover:underline"
+              >
+                {lang === 'ar' ? 'إلغاء التصفية' : 'Clear filter'}
+              </button>
+            )}
+          </h3>
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label={lang === 'ar' ? 'تصنيفات المخالفات' : 'Violation categories'}>
+            {violationFilterTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={findingFilter === tab.key}
+                onClick={() => setFindingFilter(tab.key)}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                  findingFilter === tab.key
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-primary/30 bg-primary/5 text-primary hover:bg-primary/10'
+                )}
+              >
+                {lang === 'ar' ? tab.labelAr : tab.labelEn}
+              </button>
+            ))}
+          </div>
+
+          {showEmptyFindingsState ? (
+            <div className="text-center py-16 bg-surface border-2 border-dashed border-border rounded-2xl">
+              <CheckCircle className="w-12 h-12 text-success mx-auto mb-4 opacity-50" />
+              <h4 className="text-lg font-bold text-text-main">
+                {findingFilter === 'all'
+                  ? (lang === 'ar' ? 'النص سليم' : 'Script Is Compliant')
+                  : findingFilter === 'special'
+                    ? (lang === 'ar' ? 'لا توجد ملاحظات خاصة' : 'No special notes')
+                  : findingFilter === 'approved'
+                    ? (lang === 'ar' ? 'لا توجد ملاحظات معتمدة كآمنة' : 'No marked-safe findings')
+                  : findingFilter === 'manual'
+                    ? (lang === 'ar' ? 'لا توجد ملاحظات يدوية' : 'No manual findings')
+                    : findingFilter === 'glossary'
+                      ? (lang === 'ar' ? 'لا توجد مطابقات قاموس' : 'No glossary findings')
+                      : (lang === 'ar' ? 'لا توجد ملاحظات آلية' : 'No AI findings')}
+              </h4>
+              <p className="text-text-muted mt-2">
+                {findingFilter === 'all'
+                  ? (lang === 'ar'
+                    ? 'لم يتم رصد أي مخالفات في هذا النص وفق قواعد التحليل الحالية.'
+                    : 'No violations were detected in this script under the current analysis policy.')
+                  : findingFilter === 'special'
+                    ? (lang === 'ar'
+                      ? 'لا توجد ملاحظات خاصة في هذا التقرير.'
+                      : 'There are no special notes in this report.')
+                  : findingFilter === 'approved'
+                    ? (lang === 'ar'
+                      ? 'لا توجد ملاحظات تم اعتمادها كآمنة في هذا التقرير بعد.'
+                      : 'There are no marked-safe findings in this report yet.')
+                  : findingFilter === 'manual'
+                    ? (lang === 'ar'
+                      ? 'لا توجد ملاحظات يدوية في هذا التقرير، أو أنها غير ضمن النتائج المعروضة حالياً.'
+                      : 'There are no manual findings in this report, or none match the current result set.')
+                  : findingFilter === 'glossary'
+                    ? (lang === 'ar'
+                      ? 'لا توجد مطابقات من قاموس المصطلحات في النتائج الحالية.'
+                      : 'There are no glossary findings in the current result set.')
+                    : (lang === 'ar'
+                      ? 'لا توجد ملاحظات آلية ضمن النتائج الحالية.'
+                      : 'There are no AI findings in the current result set.')}
+              </p>
+            </div>
+          ) : showOnlySpecialNotes
+            ? null
+            : showOnlyApproved
+              ? useReviewFindingsUi
+                ? renderFindingsFromReview(filteredReviewApproved, reportFamilyForReviewFinding)
+                : renderFindingsFromReal(filteredDisplayApproved, reportFamilyForFinding)
+            : useReviewFindingsUi && filteredReviewViolations.length > 0
+            ? renderFindingsFromReview(filteredReviewViolations, reportFamilyForReviewFinding)
+            : useRealFindingsUi && filteredDisplayViolations.length > 0
+            ? renderFindingsFromReal(filteredDisplayViolations, reportFamilyForFinding)
+            : filteredCanonicalSummaryFindings.length > 0
+              ? renderFindingsFromCanonicalSummary(filteredCanonicalSummaryFindings, reportFamilyForCanonical)
+              : useRealFindingsUi
+                ? renderFindingsFromReal(filteredDisplayViolations, reportFamilyForFinding)
+                : renderFindingsFromSummary(filteredCanonicalSummaryFindings, reportFamilyForCanonical)}
+
+            </>
+          )}
+
+          {(reportSection === 'violations' || reportSection === 'notes' || reportSection === 'all') && (
+            <>
+              {(reportSection === 'all'
+                ? (['article', 'informational'] as const)
+                : [reportSection === 'violations' ? 'article' : 'informational'] as const
+              ).map((section) => {
+                const categories = section === 'article' ? articleNoteCategories : informationalNoteCategories;
+                const filterTabs = [
+                  {
+                    key: 'all' as const,
+                    labelAr: 'الكل',
+                    labelEn: 'All',
+                    count: categories.reduce((sum, category) => sum + category.count, 0),
+                  },
+                  ...categories,
+                ];
+                const selectedCategory = noteCategoryFilter === 'all' || !categories.some((category) => category.key === noteCategoryFilter)
+                  ? 'all'
+                  : noteCategoryFilter;
+                const cards = selectedCategory === 'all'
+                  ? categories.flatMap((category) => notesByCategory[category.key] ?? [])
+                  : notesByCategory[selectedCategory] ?? [];
+
+                return (
+                  <section key={section} className="mt-12" aria-label={section === 'article' ? (lang === 'ar' ? 'قسم المخالفات' : 'Violations section') : (lang === 'ar' ? 'قسم الملاحظات' : 'Notes section')}>
+                    <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
+                      <Info className="w-5 h-5 text-info" />
+                      {section === 'article' ? (lang === 'ar' ? 'المخالفات' : 'Violations') : (lang === 'ar' ? 'الملاحظات' : 'Notes')}
+                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{displaySectionCounts.notes}</Badge>
+                    </h3>
+                    {reportSection !== 'all' && (
+                      <div className="mt-4 space-y-4">
+                      <div className={cn('mb-2 text-xs font-semibold uppercase tracking-wider', section === 'article' ? 'text-error' : 'text-info')}>
+                        {section === 'article'
+                          ? (lang === 'ar' ? 'ملاحظات المواد' : 'Article-derived note categories')
+                          : (lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational note categories')}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {filterTabs.map((cat) => {
+                          const isActive = selectedCategory === cat.key;
+                          return (
+                            <button
+                              key={cat.key}
+                              type="button"
+                              onClick={() => setNoteCategoryFilter(cat.key)}
+                              className={cn(
+                                'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                                section === 'article'
+                                  ? (isActive ? 'border-error bg-error text-white' : 'border-error/30 bg-error/10 text-error hover:bg-error/20')
+                                  : (isActive ? 'border-info bg-info text-white' : 'border-info/30 bg-info/10 text-info hover:bg-info/20')
+                              )}
+                            >
+                              <span>{lang === 'ar' ? cat.labelAr : cat.labelEn}</span>
+                              <Badge variant="outline" className={cn('text-[10px]', isActive ? 'bg-white/20 text-white border-white/30' : section === 'article' ? 'text-error border-error/30' : 'text-info border-info/30')}>
+                                {cat.count}
+                              </Badge>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      </div>
+                    )}
+                    <div className="mt-4 space-y-4">
+                      {cards.length > 0 ? cards.map((note) => (
+                        <FindingCard
+                          key={note.id}
+                          mode="note"
+                          noteAccent={section === 'article' ? 'error' : 'info'}
+                          note={noteCardFromReportNote(note)}
+                          onToggleNoteReportVisibility={handleToggleNoteReportVisibility}
+                          onMarkNoteReviewed={handleMarkNoteReviewed}
+                          onEditNote={openNoteEditModal}
+                        />
+                      )) : (
+                        <div className={cn('rounded-xl border border-dashed p-6 text-sm text-text-muted', section === 'article' ? 'border-error/30 bg-error/5' : 'border-info/30 bg-info/5')}>
+                          {lang === 'ar' ? 'لا توجد ملاحظات في هذا التصنيف.' : 'No notes are available in this category.'}
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </>
+          )}
+
+          {false && (reportSection === 'notes' || reportSection === 'all') && (
+            <section className="mt-12" aria-label={lang === 'ar' ? 'قسم الملاحظات' : 'Notes section'}>
+              <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
+                <Info className="w-5 h-5 text-info" />
+                {lang === 'ar' ? 'ملاحظات' : 'Notes'}
+                <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{notesTotalCount}</Badge>
+              </h3>
+              <p className="text-text-muted text-sm mt-1">
+                {lang === 'ar'
+                  ? 'هذه ملاحظات للمراجعة البشرية، وتبقى داخل نموذج الملاحظات ولا تُعامل كمخالفات.'
+                  : 'These are review notes that remain within the note model and are not treated as violations.'}
+              </p>
+              <div className="mt-4 space-y-4">
+                <div role="group" aria-label={noteSubSection === 'article' ? (lang === 'ar' ? 'ملاحظات المواد' : 'Article-derived note categories') : (lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational note categories')}>
+                  <div className={cn(
+                    'mb-2 text-xs font-semibold uppercase tracking-wider',
+                    noteSubSection === 'article' ? 'text-error' : 'text-info'
+                  )}>
+                    {noteSubSection === 'article'
+                      ? (lang === 'ar' ? 'ملاحظات المواد' : 'Article-derived note categories')
+                      : (lang === 'ar' ? 'ملاحظات معلوماتية' : 'Informational note categories')}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {activeNoteFilterTabs.map((cat) => {
+                      const isActive = noteCategoryFilter === cat.key;
+                      return (
+                        <button
+                          key={cat.key}
+                          type="button"
+                          onClick={() => setNoteCategoryFilter(cat.key)}
+                          className={cn(
+                            'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                            noteSubSection === 'article'
+                              ? (isActive
+                                ? 'border-error bg-error text-white'
+                                : 'border-error/30 bg-error/10 text-error hover:bg-error/20')
+                              : (isActive
+                                ? 'border-info bg-info text-white'
+                                : 'border-info/30 bg-info/10 text-info hover:bg-info/20')
+                          )}
+                        >
+                          <span>{lang === 'ar' ? cat.labelAr : cat.labelEn}</span>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'text-[10px]',
+                              isActive
+                                ? 'bg-white/20 text-white border-white/30'
+                                : noteSubSection === 'article'
+                                  ? 'text-error border-error/30'
+                                  : 'text-info border-info/30'
+                            )}
+                          >
+                            {cat.count}
+                          </Badge>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 space-y-4">
+                {selectedNoteCards.length > 0 ? (
+                  selectedNoteCards.map((note) => (
+                    <FindingCard
+                      key={note.id}
+                      mode="note"
+                      note={note}
+                      onToggleNoteReportVisibility={handleToggleNoteReportVisibility}
+                      onMarkNoteReviewed={handleMarkNoteReviewed}
+                      onEditNote={openNoteEditModal}
+                    />
+                  ))
+                ) : (
+                  <div className={cn(
+                    'rounded-xl border border-dashed p-6 text-sm text-text-muted',
+                    noteSubSection === 'article' ? 'border-error/30 bg-error/5' : 'border-info/30 bg-info/5'
+                  )}>
+                    {lang === 'ar'
+                      ? 'لا توجد ملاحظات في هذا التصنيف.'
+                      : 'No notes are available in this category.'}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Report hints: not violations but notes for director (e.g. Islamic rules when filming) */}
+          {false && ((reportSection === 'violations' || reportSection === 'all') && !showOnlyApproved && (((useReviewFindingsUi && filteredReviewSpecialNotes.length > 0) || (!useReviewFindingsUi && reportHints.length > 0)))) && (
+            <>
+              <h3 className={cn(
+                "font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2",
+                showOnlySpecialNotes ? '' : 'mt-12'
+              )}>
+                <Info className="w-5 h-5 text-info" />
+                {lang === 'ar' ? 'ملاحظات خاصة' : 'Special notes'}
+                <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{useReviewFindingsUi ? filteredReviewSpecialNotes.length : reportHints.length}</Badge>
+              </h3>
+              <p className="text-text-muted text-sm mt-1 mb-4">
+                {lang === 'ar'
+                  ? 'هذه النقاط ليست مخالفات؛ يُنصح بمراعاتها عند التصوير (مثلاً ضوابط المظهر العام والقيم الإسلامية).'
+                  : 'These are not violations; consider them when filming (e.g. modesty and Islamic guidelines).'}
+              </p>
+              <div className="space-y-4">
+                {useReviewFindingsUi ? (
+                  filteredReviewSpecialNotes.map((f) => (
+                    <div key={`hint-review-${f.id}`} className="bg-info/5 border border-info/30 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-semibold text-text-main text-sm">{lang === 'ar' ? 'ملاحظة' : 'Note'}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">{lang === 'ar' ? 'ملاحظة' : 'Note'}</Badge>
+                        </div>
+                      </div>
+                      <div className="bg-background/50 p-3 rounded-md border border-info/20 text-sm text-text-main italic" dir="rtl">"{f.evidenceSnippet}"</div>
+                      <div className="mt-2 text-xs text-text-muted space-y-1">
+                        <div>{lang === 'ar' ? 'لماذا ليست مخالفة:' : 'Why not a violation:'} <span className="text-text-main">{stripArticleAtomReferences(f.rationaleAr) || '—'}</span></div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  reportHints.map((f, idx) => (
+                    <div key={`hint-${f.canonical_finding_id}-${idx}`} className="bg-info/5 border border-info/30 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-semibold text-text-main text-sm">{lang === 'ar' ? 'ملاحظة' : 'Note'}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">{lang === 'ar' ? 'ملاحظة' : 'Note'}</Badge>
+                          <span className="text-[10px] text-text-muted">{lang === 'ar' ? 'ثقة' : 'conf'} {Math.round((f.confidence ?? 0) * 100)}%</span>
+                        </div>
+                      </div>
+                      <div className="bg-background/50 p-3 rounded-md border border-info/20 text-sm text-text-main italic" dir="rtl">"{f.evidence_snippet}"</div>
+                      <div className="mt-2 text-xs text-text-muted space-y-1">
+                        <div>{lang === 'ar' ? 'لماذا ليست مخالفة:' : 'Why not a violation:'} <span className="text-text-main">{stripArticleAtomReferences(f.rationale) || '—'}</span></div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Approved section */}
+          {false && ((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && useReviewFindingsUi && reviewApproved.length > 0) && (
+            <>
+              <h3 className="font-bold text-xl text-text-main border-b border-success/30 pb-2 flex items-center gap-2 mt-12">
+                <Shield className="w-5 h-5 text-success" />
+                {lang === 'ar' ? 'معتمد كآمن' : 'Approved as Safe'}
+                <Badge className="ms-2 text-[10px] bg-success/10 text-success border-success/20 border">{reviewApproved.length}</Badge>
+              </h3>
+              {renderFindingsFromReview(reviewApproved, reportFamilyForReviewFinding)}
+            </>
+          )}
+          {false && ((reportSection === 'violations' || reportSection === 'all') && !showOnlySpecialNotes && !showOnlyApproved && !useReviewFindingsUi && useRealFindingsUi && displayApprovedFindings.length > 0) && (
+            <>
+              <h3 className="font-bold text-xl text-text-main border-b border-success/30 pb-2 flex items-center gap-2 mt-12">
+                <Shield className="w-5 h-5 text-success" />
+                {lang === 'ar' ? 'معتمد كآمن' : 'Approved as Safe'}
+                <Badge className="ms-2 text-[10px] bg-success/10 text-success border-success/20 border">{displayApprovedFindings.length}</Badge>
+              </h3>
+              {renderFindingsFromReal(displayApprovedFindings, reportFamilyForFinding)}
+            </>
+          )}
+
+          {(reportSection === 'manual' || reportSection === 'dictionary') && (
+            <section className="mt-4" aria-label={reportSection === 'manual' ? (lang === 'ar' ? 'قسم الملاحظات اليدوية' : 'Manual findings section') : (lang === 'ar' ? 'قسم القاموس' : 'Dictionary section')}>
+              <h3 className="font-bold text-xl text-text-main border-b border-border pb-2 flex items-center gap-2">
+                {reportSection === 'manual' ? <FileText className="w-5 h-5 text-text-muted" /> : <Search className="w-5 h-5 text-primary" />}
+                {reportSection === 'manual' ? (lang === 'ar' ? 'يدوية' : 'Manual') : (lang === 'ar' ? 'قاموس' : 'Glossary')}
+                <Badge variant="outline" className="ms-2">{filteredViolationsCount}</Badge>
+              </h3>
+              {showEmptyFindingsState ? (
+                <div className="text-center py-16 bg-surface border-2 border-dashed border-border rounded-2xl">
+                  <CheckCircle className="w-12 h-12 text-success mx-auto mb-4 opacity-50" />
+                  <h4 className="text-lg font-bold text-text-main">
+                    {reportSection === 'manual'
+                      ? (lang === 'ar' ? 'لا توجد ملاحظات يدوية' : 'No manual findings')
+                      : (lang === 'ar' ? 'لا توجد مطابقات قاموس' : 'No glossary findings')}
+                  </h4>
+                </div>
+              ) : useReviewFindingsUi
+                ? renderFindingsFromReview(filteredReviewViolations, reportFamilyForReviewFinding)
+                : useRealFindingsUi
+                  ? renderFindingsFromReal(filteredDisplayViolations, reportFamilyForFinding)
+                  : filteredCanonicalSummaryFindings.length > 0
+                    ? renderFindingsFromCanonicalSummary(filteredCanonicalSummaryFindings, reportFamilyForCanonical)
+                    : renderFindingsFromSummary(filteredCanonicalSummaryFindings, reportFamilyForCanonical)}
+            </section>
+          )}
+        </div>
 
       <Modal
         isOpen={!!noteEditModal}
@@ -3701,7 +4347,7 @@ function displayFindingTitle(params: {
           <div className="p-3 bg-background rounded-md border border-border text-sm text-text-main font-medium" dir="rtl">
             {reviewModal?.titleAr}
           </div>
-          <Textarea
+          <Textarea 
             label={lang === 'ar' ? 'السبب (مطلوب)' : 'Reason (required)'}
             value={reviewReason}
             onChange={e => setReviewReason(e.target.value)}

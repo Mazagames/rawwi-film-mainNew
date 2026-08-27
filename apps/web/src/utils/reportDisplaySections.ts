@@ -1,4 +1,4 @@
-export interface ReportDisplaySectionCollections<T> {
+export interface ReportDisplaySectionCollections<T = unknown> {
   violations: T[];
   notes: T[];
   manual: T[];
@@ -13,7 +13,7 @@ export interface ReportDisplaySectionCounts {
   glossary: number;
 }
 
-export function buildReportDisplaySections<T>(sections: ReportDisplaySectionCollections<T>): ReportDisplaySectionCollections<T> {
+export function buildReportDisplaySections<T = unknown>(sections: ReportDisplaySectionCollections<T>): ReportDisplaySectionCollections<T> {
   return {
     violations: [...(sections.violations ?? [])],
     notes: [...(sections.notes ?? [])],
@@ -32,7 +32,7 @@ function getItemIdentity<T>(item: T): string {
   return JSON.stringify(item);
 }
 
-export function getReportDisplaySectionCounts<T>(sections: ReportDisplaySectionCollections<T>): ReportDisplaySectionCounts {
+export function getReportDisplaySectionCounts<T = unknown>(sections: ReportDisplaySectionCollections<T>): ReportDisplaySectionCounts {
   const violations = sections.violations?.length ?? 0;
   const notes = sections.notes?.length ?? 0;
   const manual = sections.manual?.length ?? 0;

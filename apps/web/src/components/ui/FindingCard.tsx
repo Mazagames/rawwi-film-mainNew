@@ -103,12 +103,11 @@ export function FindingCard({
   const showHiddenFromOwner = isHiddenFromOwner && enableHiddenOverrides;
 
   // Strip Color Logic
-  const sevConfig = !isNoteCard && finding?.severity ? (severityConfig[finding.severity] || severityConfig['Medium']) : severityConfig['Medium'];
-  let stripColor = isNoteCard ? (noteAccent === 'error' ? 'bg-error' : 'bg-info') : sevConfig.strip;
+  let stripColor = isNoteCard ? (noteAccent === 'error' ? 'bg-error' : 'bg-info') : severityConfig[finding!.severity].strip;
   if (isOverriddenNotViolation) stripColor = 'bg-success';
   if (showHiddenFromOwner) stripColor = 'bg-text-muted';
 
-  const SevIcon = isNoteCard ? AlertCircle : sevConfig.icon;
+  const SevIcon = isNoteCard ? AlertCircle : severityConfig[finding!.severity].icon;
 
   const displayPage = !isNoteCard
     ? displayPageForFinding(
@@ -118,7 +117,10 @@ export function FindingCard({
       )
     : null;
   const resolvedViolationType = !isNoteCard
-    ? getViolationTypeIdFromLegacyPolicyArticle(finding!.articleId, finding!.subAtomId ?? null)
+    ? getViolationTypeIdFromLegacyPolicyArticle(
+        Number.isFinite(Number(finding!.articleId)) ? Number(finding!.articleId) : null,
+        finding!.subAtomId ?? null,
+      )
       ?? resolveViolationTypeId(finding!.titleAr)
       ?? resolveViolationTypeId(finding!.descriptionAr)
       ?? resolveViolationTypeId(finding!.evidenceSnippet)
@@ -205,8 +207,8 @@ export function FindingCard({
                   {/* Severity Badge */}
                   <div className={cn(
                     "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold border",
-                    sevConfig.bg,
-                    sevConfig.color,
+                    severityConfig[finding!.severity].bg,
+                    severityConfig[finding!.severity].color,
                     "border-current/20",
                     isOverriddenNotViolation && "opacity-60"
                   )}>

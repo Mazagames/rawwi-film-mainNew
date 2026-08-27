@@ -467,17 +467,7 @@ export interface Report {
       page_numbers?: number[];
     }>;
     notes_summary?: ReportNotesSummaryGroup[];
-    notes?: {
-      article_05: ReportNote[];
-      article_12: ReportNote[];
-      article_14: ReportNote[];
-      media_credibility: ReportNote[];
-      medical_notes: ReportNote[];
-      classified_documents: ReportNote[];
-      security_scenes: ReportNote[];
-      saudi_names: ReportNote[];
-      commercial_entities: ReportNote[];
-    };
+    notes?: Partial<Record<NoteCategoryKey, ReportNote[]>>;
     /** Words/phrases from glossary that appeared in script — for "كلمات/عبارات للمراجعة" only. */
     words_to_revisit?: Array<{
       term: string;
