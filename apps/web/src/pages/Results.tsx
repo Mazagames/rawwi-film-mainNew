@@ -1604,7 +1604,7 @@ export function Results() {
 
   // Prepare findings for PDF: use real findings if available, otherwise fallback to summary
 
-  void (async function generateHtmlPrint() {
+  async function generateHtmlPrint() {
     try {
       // 1. Fetch template
       const templateUrl = '/templates/report-template.html';
@@ -1852,7 +1852,7 @@ export function Results() {
       console.error(e);
       toast.error(lang === 'ar' ? 'فشل إنشاء التقرير' : 'Failed to generate report');
     }
-  })();
+  }
 
   const handleDownloadPdf = async () => {
     if (!report) return;
