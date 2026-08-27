@@ -1341,6 +1341,7 @@ export function Results() {
     fallbackTypeCounts: report.typeCounts,
   });
   const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
+  const notesAllCount = notesTotalCount;
   const informationalNoteCategories = noteCategoryCounts.filter((category) => !category.key.startsWith('article_'));
   const articleNoteCategories = noteCategoryCounts.filter((category) => category.key.startsWith('article_'));
   const activeNoteCategories = noteSubSection === 'article' ? articleNoteCategories : informationalNoteCategories;
@@ -1512,7 +1513,7 @@ export function Results() {
         : filteredCanonicalSummaryFindings.length === 0;
 
   const bannerViolationsCount = violationAllCount;
-  const bannerNotesCount = displaySectionCounts.notes;
+  const bannerNotesCount = notesAllCount;
   const primaryReportSections = [
     { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: displaySectionCounts.all, tone: 'neutral' as const },
     { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: bannerViolationsCount, tone: 'warning' as const },
@@ -3449,7 +3450,7 @@ function displayFindingTitle(params: {
                     key: 'all' as const,
                     labelAr: 'الكل',
                     labelEn: 'All',
-                    count: categories.reduce((sum, category) => sum + category.count, 0),
+                    count: notesAllCount,
                   },
                   ...categories,
                 ];
@@ -3465,7 +3466,7 @@ function displayFindingTitle(params: {
                     <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                       <Info className="w-5 h-5 text-info" />
                       {section === 'article' ? (lang === 'ar' ? 'المخالفات' : 'Violations') : (lang === 'ar' ? 'الملاحظات' : 'Notes')}
-                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{displaySectionCounts.notes}</Badge>
+                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{notesAllCount}</Badge>
                     </h3>
                     {reportSection !== 'all' && (
                       <div className="mt-4 space-y-4">
