@@ -1340,17 +1340,18 @@ export function Results() {
     fallbackFindingsCount: report.findingsCount,
     fallbackTypeCounts: report.typeCounts,
   });
-  const notesTotalCount = noteCategoryCounts.reduce((sum, cat) => sum + cat.count, 0);
-  const notesAllCount = notesTotalCount;
   const informationalNoteCategories = noteCategoryCounts.filter((category) => !category.key.startsWith('article_'));
   const articleNoteCategories = noteCategoryCounts.filter((category) => category.key.startsWith('article_'));
+  const articleNotesAllCount = articleNoteCategories.reduce((sum, category) => sum + category.count, 0);
+  const informationalNotesAllCount = informationalNoteCategories.reduce((sum, category) => sum + category.count, 0);
+  const notesTotalCount = articleNotesAllCount + informationalNotesAllCount;
   const activeNoteCategories = noteSubSection === 'article' ? articleNoteCategories : informationalNoteCategories;
   const activeNoteFilterTabs = [
     {
       key: 'all' as const,
       labelAr: 'الكل',
       labelEn: 'All',
-      count: activeNoteCategories.reduce((sum, category) => sum + (category.count ?? 0), 0),
+      count: noteSubSection === 'article' ? articleNotesAllCount : informationalNotesAllCount,
     },
     ...activeNoteCategories.map((category) => ({
       ...category,
@@ -1512,8 +1513,8 @@ export function Results() {
         ? filteredDisplayViolations.length === 0
         : filteredCanonicalSummaryFindings.length === 0;
 
-  const bannerViolationsCount = violationAllCount;
-  const bannerNotesCount = notesAllCount;
+  const bannerViolationsCount = articleNotesAllCount;
+  const bannerNotesCount = informationalNotesAllCount;
   const primaryReportSections = [
     { key: 'all' as const, labelAr: 'الكل', labelEn: 'All', value: displaySectionCounts.all, tone: 'neutral' as const },
     { key: 'violations' as const, labelAr: 'المخالفات', labelEn: 'Violations', value: bannerViolationsCount, tone: 'warning' as const },
@@ -3445,12 +3446,13 @@ function displayFindingTitle(params: {
                 : [reportSection === 'violations' ? 'article' : 'informational'] as const
               ).map((section) => {
                 const categories = section === 'article' ? articleNoteCategories : informationalNoteCategories;
+                const sectionAllCount = section === 'article' ? articleNotesAllCount : informationalNotesAllCount;
                 const filterTabs = [
                   {
                     key: 'all' as const,
                     labelAr: 'الكل',
                     labelEn: 'All',
-                    count: notesAllCount,
+                    count: sectionAllCount,
                   },
                   ...categories,
                 ];
@@ -3466,7 +3468,7 @@ function displayFindingTitle(params: {
                     <h3 className="font-bold text-xl text-text-main border-b border-info/40 pb-2 flex items-center gap-2">
                       <Info className="w-5 h-5 text-info" />
                       {section === 'article' ? (lang === 'ar' ? 'المخالفات' : 'Violations') : (lang === 'ar' ? 'الملاحظات' : 'Notes')}
-                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{notesAllCount}</Badge>
+                      <Badge variant="outline" className="ms-2 bg-info/10 text-info border-info/30">{sectionAllCount}</Badge>
                     </h3>
                     {reportSection !== 'all' && (
                       <div className="mt-4 space-y-4">
