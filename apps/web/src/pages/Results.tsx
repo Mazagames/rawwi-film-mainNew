@@ -1428,7 +1428,7 @@ export function Results() {
     ? dedupedReviewViolationsForCounts.filter((finding) => reportFamilyForReviewFinding(finding) === 'glossary')
     : dedupedRealFindingsForCounts.filter((finding) => reportFamilyForFinding(finding) === 'glossary');
   const displaySections = buildReportDisplaySections<unknown>({
-    violations: displayViolations,
+    violations: useRealFindingsUi ? displayViolations : [],
     notes: Object.values(dedupedNotesByCategory).flatMap((categoryNotes) => categoryNotes ?? []),
     manual: displayManualItems,
     glossary: displayGlossaryItems,

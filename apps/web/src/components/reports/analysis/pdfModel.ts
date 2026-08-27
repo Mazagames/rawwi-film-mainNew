@@ -98,11 +98,17 @@ function articleReference(articleId: number | null | undefined, lang: "ar" | "en
 
 function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCard[] {
   const visibleReviewRows = (params.reviewFindings ?? []).filter((row) => !row.isHidden);
+  
+  const overriddenIds = new Set<string>();
+  visibleReviewRows.forEach(row => {
+    if (row.canonicalFindingId) overriddenIds.add(row.canonicalFindingId);
+  });
+
   const reviewRows = visibleReviewRows
     .filter((row) => row.includeInReport !== false && row.reviewStatus !== "approved" && row.sourceKind !== "special")
     .map((row, originalIndex) => ({
       id: row.canonicalFindingId?.trim() || row.id,
-      title: row.titleAr || "—",
+      title: row.titleAr || "-",
       classification: sourceClassification(row),
       reference: articleReference(row.primaryArticleId, params.lang),
       pageNumber: row.pageNumber ?? null,
@@ -112,18 +118,18 @@ function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCa
       confidence: row.anchorConfidence ?? null,
       originalIndex,
     }));
-  if (visibleReviewRows.length > 0) return reviewRows;
 
   const reportHintIds = new Set((params.reportHints ?? []).map((hint) => hint.canonical_finding_id).filter((id): id is string => Boolean(id)));
+  
   const realRows = (params.findings ?? [])
     .filter((row) => {
       const v3 = (row.location?.v3 as Record<string, unknown> | undefined) ?? {};
       const canonicalId = typeof v3.canonical_finding_id === "string" ? v3.canonical_finding_id : null;
-      return row.reviewStatus !== "approved" && (!canonicalId || !reportHintIds.has(canonicalId));
+      return row.reviewStatus !== "approved" && (!canonicalId || !reportHintIds.has(canonicalId)) && (!canonicalId || !overriddenIds.has(canonicalId));
     })
     .map((row, originalIndex) => ({
       id: row.id,
-      title: row.titleAr || "—",
+      title: row.titleAr || "-",
       classification: sourceClassification(row),
       reference: articleReference(row.articleId, params.lang),
       pageNumber: row.pageNumber ?? null,
@@ -133,38 +139,46 @@ function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCa
       confidence: row.confidence ?? null,
       originalIndex,
     }));
-  if (realRows.length > 0) return realRows;
 
-  const canonicalRows = (params.canonicalFindings ?? []).map((row, originalIndex) => ({
-    id: row.canonical_finding_id || `canonical-${originalIndex}`,
-    title: row.title_ar || "—",
-    classification: sourceClassification(row),
-    reference: articleReference(row.primary_article_id, params.lang),
-    pageNumber: row.page_number ?? null,
-    position: row.start_offset_global ?? null,
-    evidence: row.evidence_snippet || "",
-    description: row.rationale || row.description_ar || null,
-    confidence: row.confidence ?? null,
-    originalIndex,
-  }));
-  if (canonicalRows.length > 0) return canonicalRows;
-
-  return (params.findingsByArticle ?? []).flatMap((article, articleIndex) =>
-    (article.top_findings ?? []).map((row, findingIndex) => ({
-      id: `summary-${article.article_id}-${findingIndex}`,
-      title: row.title_ar || "—",
+  const canonicalRows = (params.canonicalFindings ?? [])
+    .filter((row) => {
+      const id = row.canonical_finding_id;
+      return !id || !overriddenIds.has(id);
+    })
+    .map((row, originalIndex) => ({
+      id: row.canonical_finding_id || `canonical-${originalIndex}`,
+      title: row.title_ar || "-",
       classification: sourceClassification(row),
-      reference: articleReference(article.article_id, params.lang),
-      pageNumber: null,
-      position: null,
+      reference: articleReference(row.primary_article_id, params.lang),
+      pageNumber: row.page_number ?? null,
+      position: row.start_offset_global ?? null,
       evidence: row.evidence_snippet || "",
-      description: null,
+      description: row.rationale || row.description_ar || null,
       confidence: row.confidence ?? null,
-      originalIndex: articleIndex * 10_000 + findingIndex,
-    }))
-  );
-}
+      originalIndex,
+    }));
 
+  const summaryRows = (params.findingsByArticle ?? [])
+    .flatMap((article, articleIndex) =>
+      (article.top_findings ?? []).map((row, findingIndex) => ({
+        id: `summary-${article.article_id}-${findingIndex}`,
+        title: row.title_ar || "-",
+        classification: sourceClassification(row),
+        reference: articleReference(article.article_id, params.lang),
+        pageNumber: null,
+        position: null,
+        evidence: row.evidence_snippet || "",
+        description: null,
+        confidence: row.confidence ?? null,
+        originalIndex: articleIndex * 10_000 + findingIndex,
+      }))
+    )
+    .filter((row) => !overriddenIds.has(row.id));
+
+  const merged = [...reviewRows, ...realRows, ...canonicalRows];
+  if (merged.length > 0) return merged;
+  return summaryRows;
+}
 function buildNoteCards(params: BuildPdfReportCollectionsParams): PdfReportCard[] {
   const notesByCategory = params.notes ?? {};
   const cards: PdfReportCard[] = [];
@@ -179,10 +193,11 @@ function buildNoteCards(params: BuildPdfReportCollectionsParams): PdfReportCard[
     );
     for (const note of deduped) {
       if (note.included_in_report === false) continue;
+      const cls = sourceClassification({ category: note.category, severity: note.severity, source: note.source });
       cards.push({
         id: note.id,
-        title: note.title || "—",
-        classification: "note",
+        title: note.title || "-",
+        classification: cls,
         reference: getNoteCategoryLabel(note.category, params.lang) || note.category,
         pageNumber: null,
         position: note.event_id || null,
