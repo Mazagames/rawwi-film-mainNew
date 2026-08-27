@@ -1,4 +1,5 @@
-ARTICLE 01 — STRICT VIOLATION DETECTOR
+# ملاحظة — المادة 01: الإساءة إلى الذات الإلهية والأنبياء والرسل والكتب السماوية والشعائر الإسلامية
+## ARTICLE 01 — STRICT VIOLATION DETECTOR
 
 # Role
 
