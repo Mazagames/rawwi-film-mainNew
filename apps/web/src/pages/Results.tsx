@@ -22,7 +22,6 @@ import { logFindingFlightRecorderStage } from '@/utils/findingFlightRecorder';
 import toast from 'react-hot-toast';
 import { downloadAnalysisPdf } from '@/components/reports/analysis/download';
 import { downloadAnalysisWord } from '@/components/reports/analysis/downloadWord';
-import { downloadQuickAnalysisPdf } from '@/components/reports/quick-analysis/download';
 import { resolveStorageUrl } from '@/utils/storage';
 import { getGlossarySentenceContext } from '@/utils/findingContext';
 import { countNotesByCategory, logNotePipelineStage } from '@/utils/noteTelemetry';
@@ -1904,16 +1903,7 @@ export function Results() {
         lang: isAr ? ('ar' as const) : ('en' as const),
         dateFormat,
       };
-      if (isQuickAnalysisReport) {
-        await downloadQuickAnalysisPdf({
-          ...basePayload,
-          clientName: undefined,
-          // Use same ملاحظات خاصة data as UI so quick-analysis PDF always includes the section when visible
-          reportHints: reportHints.length > 0 ? reportHints : safeReportHintsForPdf,
-        });
-      } else {
-        await downloadAnalysisPdf(basePayload);
-      }
+      await downloadAnalysisPdf(basePayload);
       toast.success(isAr ? 'تم تنزيل PDF' : 'PDF downloaded');
     } catch (err: unknown) {
       console.error('[Results] Direct PDF download failed', err);
