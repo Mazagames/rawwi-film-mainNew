@@ -1,0 +1,214 @@
+[
+  {
+    "id": "10a4a5d7-0ed9-4d9f-a693-2fa4dd67543a",
+    "run_key": "1b57035d9a3fa37eafde4f980e99af78ee948544c835c46cbb8df12e35bf4130",
+    "job_id": "3ff94672-46e7-48a5-83ae-316977bc62cd",
+    "router_candidates": {
+      "reason": "always_check_covers_all_scannable_articles",
+      "skipped": true,
+      "candidate_articles": [
+        {
+          "article_id": 4,
+          "confidence": 1
+        },
+        {
+          "article_id": 5,
+          "confidence": 1
+        },
+        {
+          "article_id": 6,
+          "confidence": 1
+        },
+        {
+          "article_id": 7,
+          "confidence": 1
+        },
+        {
+          "article_id": 8,
+          "confidence": 1
+        },
+        {
+          "article_id": 9,
+          "confidence": 1
+        },
+        {
+          "article_id": 10,
+          "confidence": 1
+        },
+        {
+          "article_id": 11,
+          "confidence": 1
+        },
+        {
+          "article_id": 12,
+          "confidence": 1
+        },
+        {
+          "article_id": 13,
+          "confidence": 1
+        },
+        {
+          "article_id": 14,
+          "confidence": 1
+        },
+        {
+          "article_id": 15,
+          "confidence": 1
+        },
+        {
+          "article_id": 16,
+          "confidence": 1
+        },
+        {
+          "article_id": 17,
+          "confidence": 1
+        },
+        {
+          "article_id": 18,
+          "confidence": 1
+        },
+        {
+          "article_id": 19,
+          "confidence": 1
+        },
+        {
+          "article_id": 20,
+          "confidence": 1
+        },
+        {
+          "article_id": 21,
+          "confidence": 1
+        },
+        {
+          "article_id": 22,
+          "confidence": 1
+        },
+        {
+          "article_id": 23,
+          "confidence": 1
+        },
+        {
+          "article_id": 24,
+          "confidence": 1
+        }
+      ]
+    },
+    "ai_findings": [],
+    "created_at": "2026-08-24T01:34:29.801044+00:00",
+    "raw_ai_findings": [],
+    "validated_ai_findings": null,
+    "truth_layer_meta": {
+      "stage": "advisory",
+      "architecture": "advisory_model_plus_validator",
+      "advisory_count": 0,
+      "validated_count": null,
+      "auditor_layer_version": "v4"
+    }
+  },
+  {
+    "id": "166e4f02-4931-4dbf-a929-95e9bbd23a4a",
+    "run_key": "96cf59a8ba324855fff25e3346508c80aa460b344f848063d5c7de887b1fbf15",
+    "job_id": "3ff94672-46e7-48a5-83ae-316977bc62cd",
+    "router_candidates": {
+      "reason": "always_check_covers_all_scannable_articles",
+      "skipped": true,
+      "candidate_articles": [
+        {
+          "article_id": 4,
+          "confidence": 1
+        },
+        {
+          "article_id": 5,
+          "confidence": 1
+        },
+        {
+          "article_id": 6,
+          "confidence": 1
+        },
+        {
+          "article_id": 7,
+          "confidence": 1
+        },
+        {
+          "article_id": 8,
+          "confidence": 1
+        },
+        {
+          "article_id": 9,
+          "confidence": 1
+        },
+        {
+          "article_id": 10,
+          "confidence": 1
+        },
+        {
+          "article_id": 11,
+          "confidence": 1
+        },
+        {
+          "article_id": 12,
+          "confidence": 1
+        },
+        {
+          "article_id": 13,
+          "confidence": 1
+        },
+        {
+          "article_id": 14,
+          "confidence": 1
+        },
+        {
+          "article_id": 15,
+          "confidence": 1
+        },
+        {
+          "article_id": 16,
+          "confidence": 1
+        },
+        {
+          "article_id": 17,
+          "confidence": 1
+        },
+        {
+          "article_id": 18,
+          "confidence": 1
+        },
+        {
+          "article_id": 19,
+          "confidence": 1
+        },
+        {
+          "article_id": 20,
+          "confidence": 1
+        },
+        {
+          "article_id": 21,
+          "confidence": 1
+        },
+        {
+          "article_id": 22,
+          "confidence": 1
+        },
+        {
+          "article_id": 23,
+          "confidence": 1
+        },
+        {
+          "article_id": 24,
+          "confidence": 1
+        }
+      ]
+    },
+    "ai_findings": [],
+    "created_at": "2026-08-24T01:41:50.190464+00:00",
+    "raw_ai_findings": [],
+    "validated_ai_findings": null,
+    "truth_layer_meta": {
+      "stage": "advisory",
+      "architecture": "advisory_model_plus_validator",
+      "advisory_count": 0,
+      "validated_count": null,
+      "auditor_layer_version": "v4"
+    }
+  }
+]

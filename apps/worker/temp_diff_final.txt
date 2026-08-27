@@ -1,0 +1,171 @@
+diff --git a/apps/worker/src/evidenceGrounding.ts b/apps/worker/src/evidenceGrounding.ts
+index 6253281..ef0854a 100644
+--- a/apps/worker/src/evidenceGrounding.ts
++++ b/apps/worker/src/evidenceGrounding.ts
+@@ -17,13 +17,13 @@ export type GroundedFindingResult = {
+     finding_id?: string | null;
+     evidence: string;
+     candidate_matches: Array<{
+-      method: "rationale_quote" | "evidence_exact" | "line_candidate" | "sentence_candidate" | "offset_span";
++      method: "rationale_quote" | "evidence_exact" | "structured_event" | "token_overlap" | "line_candidate" | "sentence_candidate" | "offset_span";
+       text: string;
+       start: number;
+       end: number;
+     }>;
+     selected_match: {
+-      method: "rationale_quote" | "evidence_exact" | "line_candidate" | "sentence_candidate" | "offset_span" | "unresolved";
++      method: "rationale_quote" | "evidence_exact" | "structured_event" | "token_overlap" | "line_candidate" | "sentence_candidate" | "offset_span" | "unresolved";
+       text: string | null;
+       start: number | null;
+       end: number | null;
+@@ -194,13 +194,23 @@ function buildDiagnostics(args: {
+     candidate_matches: args.candidateMatches,
+     selected_match: args.selectedMatch,
+     grounding_score: args.grounded
+-      ? (args.selectedMatch?.method === "rationale_quote" || args.selectedMatch?.method === "evidence_exact" ? 1 : 0.75)
++      ? (args.selectedMatch?.method === "rationale_quote" || args.selectedMatch?.method === "evidence_exact" || args.selectedMatch?.method === "structured_event" ? 1 : 0.75)
+       : 0,
+     rejection_reason: args.grounded ? null : args.reason ?? null,
+   };
+ }
+ 
+-export function groundFindingEvidenceToChunk(finding: JudgeFinding, chunkText: string): GroundedFindingResult {
++// Very basic token set for fallback overlap checking
++function tokenSet(text: string): Set<string> {
++  const words = text.replace(/[\s"'“”‘’«»()[\]{}:,\u060C;؛.!?؟…\-–—]+/gu, " ").trim().split(" ");
++  return new Set(words.filter(w => w.length > 0));
++}
++
++export function groundFindingEvidenceToChunk(
++  finding: JudgeFinding,
++  chunkText: string,
++  events: any[] = [] // Optional structured events to fallback on
++): GroundedFindingResult {
+   const rawEvidence = compactSpace(finding.evidence_snippet ?? "");
+   const hintStart = typeof finding.location?.start_offset === "number" ? finding.location.start_offset : null;
+   const hintEnd = typeof finding.location?.end_offset === "number" ? finding.location.end_offset : hintStart;
+@@ -269,6 +279,89 @@ export function groundFindingEvidenceToChunk(finding: JudgeFinding, chunkText: s
+     }
+   }
+ 
++  // Fallback 1: Attempt to match against Structured Event quotes
++  if (events && events.length > 0) {
++    const { findBestEventMatch } = require("./eventConsistency.js");
++    const match = findBestEventMatch(finding, events);
++    // Score threshold: 30 is decent semantic/overlap match
++    if (match.matchedEvent && match.matchedScore >= 30) {
++      const quote = compactSpace(match.matchedEvent.quote);
++      if (isDetectionVerbatim(chunkText, quote)) {
++        candidateMatches.push({ method: "structured_event", text: quote, start: match.matchedEvent.start_offset, end: match.matchedEvent.end_offset });
++        const diagnostics = buildDiagnostics({
++          finding,
++          evidence: quote,
++          candidateMatches,
++          selectedMatch: { method: "structured_event", text: quote, start: match.matchedEvent.start_offset, end: match.matchedEvent.end_offset },
++          grounded: true,
++        });
++        return {
++          finding: {
++            ...finding,
++            evidence_snippet: quote,
++            location: {
++              ...finding.location,
++              start_offset: match.matchedEvent.start_offset,
++              end_offset: match.matchedEvent.end_offset,
++            },
++          },
++          grounded: true,
++          method: "structured_event",
++          diagnostics,
++        };
++      }
++    }
++  }
++
++  // Fallback 2: Token overlap against sentence candidates
++  if (rawEvidence.length >= 3) {
++    const candidates = buildSentenceCandidates(chunkText);
++    const findingTokens = tokenSet(rawEvidence);
++    let bestCandidate: LocalSpan | null = null;
++    let bestScore = 0;
++
++    for (const candidate of candidates) {
++      const candidateTokens = tokenSet(candidate.text);
++      if (candidateTokens.size === 0) continue;
++      let overlap = 0;
++      for (const token of findingTokens) {
++        if (candidateTokens.has(token)) overlap++;
++      }
++      const score = overlap / Math.max(findingTokens.size, 1);
++      if (score > bestScore) {
++        bestScore = score;
++        bestCandidate = candidate;
++      }
++    }
++
++    // Require at least 75% token overlap to safely replace paraphrased evidence
++    if (bestCandidate && bestScore >= 0.75 && isDetectionVerbatim(chunkText, bestCandidate.text)) {
++      const bestText = compactSpace(bestCandidate.text);
++      candidateMatches.push({ method: "token_overlap", text: bestText, start: bestCandidate.start, end: bestCandidate.end });
++      const diagnostics = buildDiagnostics({
++        finding,
++        evidence: bestText,
++        candidateMatches,
++        selectedMatch: { method: "token_overlap", text: bestText, start: bestCandidate.start, end: bestCandidate.end },
++        grounded: true,
++      });
++      return {
++        finding: {
++          ...finding,
++          evidence_snippet: bestText,
++          location: {
++            ...finding.location,
++            start_offset: bestCandidate.start,
++            end_offset: bestCandidate.end,
++          },
++        },
++        grounded: true,
++        method: "token_overlap",
++        diagnostics,
++      };
++    }
++  }
++
+   const lineCandidates = buildLineCandidates(chunkText);
+   const sentenceCandidates = buildSentenceCandidates(chunkText);
+ 
+diff --git a/apps/worker/src/pipeline.ts b/apps/worker/src/pipeline.ts
+index e3909a4..707c9b0 100644
+--- a/apps/worker/src/pipeline.ts
++++ b/apps/worker/src/pipeline.ts
+@@ -2467,7 +2467,7 @@ export async function processChunkJudge(
+           finding_hash: findingHash,
+           evidence_hash: evidenceSnippet != null ? sha256(evidenceSnippet) : null,
+         });
+-        const result = groundFindingEvidenceToChunk(f, chunkText);
++        const result = groundFindingEvidenceToChunk(f, chunkText, multiPassEventUnderstanding?.events || []);
+         const findingId = (f as { canonical_finding_id?: string | null; finding_id?: string | null }).finding_id
+           ?? (f as { canonical_finding_id?: string | null }).canonical_finding_id
+           ?? null;
+diff --git a/apps/worker/src/validatorAudit.ts b/apps/worker/src/validatorAudit.ts
+index 663dc22..2b3c154 100644
+--- a/apps/worker/src/validatorAudit.ts
++++ b/apps/worker/src/validatorAudit.ts
+@@ -947,7 +947,7 @@ function simulateValidatorPath(
+   memory2Enabled: boolean,
+   useEventConsistencyChecks: boolean,
+ ): { rejectionReason: string | null; functionName: string | null; validationStage: string | null; rule: string | null } {
+-  const grounded = groundFindingEvidenceToChunk(finding as JudgeFinding, chunkText);
++  const grounded = groundFindingEvidenceToChunk(finding as JudgeFinding, chunkText, events);
+   if (!grounded.grounded) {
+     return {
+       rejectionReason: grounded.reason ?? grounded.diagnostics?.rejection_reason ?? "no_meaningful_exact_local_evidence",
+@@ -1085,7 +1085,7 @@ export function buildValidatorAuditReport(args: {
+       const claimedArticleId: number | null = finding.article_id ?? reviewerArticleId;
+       const bestMatch = bestEventMatch(finding, events);
+       const event = bestMatch.event;
+-      const groundedPreview = groundFindingEvidenceToChunk(finding, args.chunkText);
++      const groundedPreview = groundFindingEvidenceToChunk(finding, args.chunkText, events);
+       const previewFinding: FindingWithGlobalOffsets = groundedPreview.grounded
+         ? {
+             ...(groundedPreview.finding as AuditFindingLike),

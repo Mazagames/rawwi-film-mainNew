@@ -1,0 +1,13 @@
+Running Focused Tests for Evidence Grounding Fallbacks:
+
+- valid paraphrased finding -> structured-event quote [DEBUG] event match score: 38.280701754385966, contextOverlap: 5
+[DEBUG] quote verbatim? true
+✅ PASS
+- unrelated event -> rejected                        [DEBUG] event match score: 42.62753036437247, contextOverlap: 0
+✅ PASS
+- weak semantic event match -> rejected              ✅ PASS
+- >=75% token-overlap recovery                       ✅ PASS
+- below-threshold token overlap -> rejected          ✅ PASS
+- candidate text must exist verbatim in original chunk ✅ PASS
+
+Done.

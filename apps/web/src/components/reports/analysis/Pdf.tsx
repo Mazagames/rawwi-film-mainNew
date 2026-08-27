@@ -51,7 +51,7 @@ function FindingCard({ card, isAr }: { card: PdfReportCard; isAr: boolean }) {
   const style = sectionStyle(card.classification);
   return (
     <View wrap={false} style={[s.finding, { borderColor: style.borderColor, backgroundColor: style.backgroundColor }]}>
-      <View style={s.cardHeading}>
+      <View style={[s.cardHeading, isAr ? { flexDirection: "row-reverse" as const } : {}]}>
         <Text style={[s.findingTitle, isAr ? s.rtl : {}]}>{card.title}</Text>
         <Text style={[s.cardClassification, { color: style.accent, borderColor: style.borderColor }, isAr ? s.rtl : {}]}>
           {sectionCopy(card.classification, isAr)}
@@ -71,7 +71,7 @@ function ReportSection({ section, cards, isAr }: { section: SectionKey; cards: P
   const style = sectionStyle(section);
   return (
     <Page size="A4" style={[s.page, isAr ? s.pageAr : {}]}>
-      <View minPresenceAhead={80} style={[s.sectionHeading, { borderBottomColor: style.borderColor }]}>
+      <View minPresenceAhead={80} style={[s.sectionHeading, { borderBottomColor: style.borderColor }, isAr ? { flexDirection: "row-reverse" as const } : {}]}>
         <Text style={[s.sectionTitle, { color: style.accent }, isAr ? s.rtl : {}]}>{sectionCopy(section, isAr)}</Text>
         <Text style={[s.sectionCount, { color: style.accent, borderColor: style.borderColor }]}>{cards.length}</Text>
       </View>
@@ -115,7 +115,7 @@ export const AnalysisSectionPdf: React.FC<AnalysisSectionPdfProps> = ({ data, da
       <Page size="A4" style={[s.page, isAr ? s.pageAr : {}]}>
         <Text style={[s.title, rtl]}>{isAr ? "إحصاءات التقرير" : "Report Statistics"}</Text>
         <Text style={[s.subtitle, rtl]}>{data.scriptTitle}</Text>
-        <View style={s.statisticsGrid}>
+        <View style={[s.statisticsGrid, isAr ? { flexDirection: "row-reverse" as const } : {}]}>
           {stats.map((stat) => (
             <View key={stat.key} style={[s.stat, { borderColor: stat.color }]}>
               <Text style={[s.statValue, { color: stat.color }]}>{totals[stat.key]}</Text>

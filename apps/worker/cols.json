@@ -1,0 +1,11 @@
+[
+  "id",
+  "run_key",
+  "job_id",
+  "router_candidates",
+  "ai_findings",
+  "created_at",
+  "raw_ai_findings",
+  "validated_ai_findings",
+  "truth_layer_meta"
+]

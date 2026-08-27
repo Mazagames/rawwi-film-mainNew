@@ -1,0 +1,1811 @@
+[policyMap] Loaded from: D:\Waheed\MypProjects\raawi emergency\rawwi-film-mainNew\PolicyMap.json
+V5 reviewer discovery {
+  cwd: 'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\apps\\worker',
+  importMetaUrl: 'file:///D:/Waheed/MypProjects/raawi%20emergency/rawwi-film-mainNew/apps/worker/src/v5PromptPack.ts',
+  moduleDir: 'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\apps\\worker\\src',
+  resolvedReviewerDirectory: 'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\reviewers\\v5',
+  searchAnchors: [
+    'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\apps\\worker',
+    'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\apps\\worker',
+    'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\apps\\worker\\src'
+  ]
+}
+Loaded Reviewer Pack V5 {
+  cwd: 'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\apps\\worker',
+  importMetaUrl: 'file:///D:/Waheed/MypProjects/raawi%20emergency/rawwi-film-mainNew/apps/worker/src/v5PromptPack.ts',
+  moduleDir: 'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\apps\\worker\\src',
+  Directory: 'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\reviewers\\v5',
+  reviewerCount: 24,
+  reviewerFilesLoaded: [
+    'article_01_religion.md',
+    'article_02_state_leadership.md',
+    'article_03_terrorism.md',
+    'article_04_drugs_alcohol.md',
+    'article_05_violence_torture.md',
+    'article_06_suicide_self_harm.md',
+    'article_07_sexual_content_nudity.md',
+    'article_08_magic_sorcery.md',
+    'article_09_crime_criminal_methods.md',
+    'article_10_hate_speech_discrimination.md',
+    'article_11_media_credibility.md',
+    'article_12_child_protection_exploitation.md',
+    'article_13_medical_health_misinformation.md',
+    'article_14_profanity_personal_insults.md',
+    'article_15_public_order.md',
+    'article_16_misinformation_rumors.md',
+    'article_17_dignity_reputation_privacy.md',
+    'article_18_international_relations.md',
+    'article_19_economic_stability.md',
+    'article_20_bankruptcy_commercial_cases.md',
+    'article_21_classified_documents.md',
+    'article_22_treaties_agreements.md',
+    'article_23_public_appearance.md',
+    'article_24_clothing_modesty.md'
+  ],
+  reviewerArticlesLoaded: [
+     1,  2,  3,  4,  5,  6,  7,  8,
+     9, 10, 11, 12, 13, 14, 15, 16,
+    17, 18, 19, 20, 21, 22, 23, 24
+  ],
+  reviewerLabelsLoaded: [
+    '╪º┘ä┘à╪º╪»╪⌐ 01: ╪º┘ä╪Ñ╪│╪º╪í╪⌐ ╪Ñ┘ä┘ë ╪º┘ä╪░╪º╪¬ ╪º┘ä╪Ñ┘ä┘ç┘è╪⌐ ┘ê╪º┘ä╪ú┘å╪¿┘è╪º╪í ┘ê╪º┘ä╪▒╪│┘ä ┘ê╪º┘ä┘â╪¬╪¿ ╪º┘ä╪│┘à╪º┘ê┘è╪⌐ ┘ê╪º┘ä╪┤╪╣╪º╪ª╪▒ ╪º┘ä╪Ñ╪│┘ä╪º┘à┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 02: ╪º┘ä╪Ñ╪│╪º╪í╪⌐ ╪Ñ┘ä┘ë ╪º┘ä┘é┘è╪º╪»╪⌐ ╪º┘ä╪│┘è╪º╪│┘è╪⌐ ┘ê╪▒┘à┘ê╪▓ ╪º┘ä╪»┘ê┘ä╪⌐ ┘ê╪º┘ä╪│┘è╪º╪»╪⌐ ╪º┘ä┘ê╪╖┘å┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 03: ╪º┘ä╪Ñ╪▒┘ç╪º╪¿ ┘ê╪º┘ä╪¬╪╖╪▒┘ü ┘ê╪º┘ä╪¼┘à╪º╪╣╪º╪¬ ╪º┘ä╪Ñ╪▒┘ç╪º╪¿┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 04: ╪º┘ä┘à╪«╪»╪▒╪º╪¬ ┘ê╪º┘ä┘â╪¡┘ê┘ä ┘ê╪¬╪╡┘å┘è╪╣┘ç╪º ┘ê╪º┘ä╪¬╪▒┘ê┘è╪¼ ┘ä┘ç╪º',
+    '╪º┘ä┘à╪º╪»╪⌐ 05: ╪º┘ä╪╣┘å┘ü ┘ê╪º┘ä┘é╪¬┘ä ┘ê╪º┘ä╪¬╪╣╪░┘è╪¿ ┘ê╪º┘ä╪¬┘à╪½┘è┘ä ╪¿╪º┘ä╪¼╪½╪½',
+    '╪º┘ä┘à╪º╪»╪⌐ 06: ╪º┘ä╪º┘å╪¬╪¡╪º╪▒ ┘ê╪Ñ┘è╪░╪º╪í ╪º┘ä┘å┘ü╪│ ┘ê╪¬╪┤╪¼┘è╪╣┘ç╪º',
+    '╪º┘ä┘à╪º╪»╪⌐ 07: ╪º┘ä┘à╪¡╪¬┘ê┘ë ╪º┘ä╪¼┘å╪│┘è ┘ê╪º┘ä╪╣╪▒┘è',
+    '╪º┘ä┘à╪º╪»╪⌐ 08: ╪º┘ä╪│╪¡╪▒ ┘ê╪º┘ä╪┤╪╣┘ê╪░╪⌐ ┘ê╪º┘ä╪«╪▒╪º┘ü╪º╪¬ ┘ê╪º┘ä╪¬┘å╪¼┘è┘à',
+    '╪º┘ä┘à╪º╪»╪⌐ 09: ╪º┘ä╪¼╪▒╪º╪ª┘à ┘ê╪¬┘é┘å┘è╪º╪¬ ╪º╪▒╪¬┘â╪º╪¿┘ç╪º ┘ê╪¬╪╣┘ä┘è┘à┘ç╪º',
+    '╪º┘ä┘à╪º╪»╪⌐ 10: ╪«╪╖╪º╪¿ ╪º┘ä┘â╪▒╪º┘ç┘è╪⌐ ┘ê╪º┘ä╪¬┘à┘è┘è╪▓ ┘ê╪º┘ä╪Ñ┘ç╪º┘å╪⌐ ╪╢╪» ╪º┘ä┘ü╪ª╪º╪¬',
+    '╪º┘ä┘à╪º╪»╪⌐ 11: ╪º┘ä┘à╪╡╪»╪º┘é┘è╪⌐ ╪º┘ä╪Ñ╪╣┘ä╪º┘à┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 12: ╪¡┘à╪º┘è╪⌐ ╪º┘ä╪ú╪╖┘ü╪º┘ä ┘ê╪º┘ä┘é┘Å╪╡┘æ╪▒',
+    '╪º┘ä┘à╪º╪»╪⌐ 13: ╪º┘ä┘à╪╣┘ä┘ê┘à╪º╪¬ ╪º┘ä╪╖╪¿┘è╪⌐ ┘ê╪º┘ä╪╡╪¡┘è╪⌐ ╪º┘ä┘à╪╢┘ä┘ä╪⌐ ┘ê╪º┘ä╪«╪╖┘è╪▒╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 14: ╪º┘ä╪ú┘ä┘ü╪º╪╕ ╪º┘ä┘å╪º╪¿┘è╪⌐ ┘ê╪º┘ä╪┤╪¬╪º╪ª┘à ┘ê╪º┘ä╪Ñ┘ç╪º┘å╪º╪¬ ╪º┘ä╪┤╪«╪╡┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 15: ╪º┘ä┘å╪╕╪º┘à ╪º┘ä╪╣╪º┘à',
+    '╪º┘ä┘à╪º╪»╪⌐ 16: ╪º┘ä╪┤╪º╪ª╪╣╪º╪¬ ┘ê╪º┘ä┘à╪╣┘ä┘ê┘à╪º╪¬ ╪º┘ä┘à╪╢┘ä┘ä╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 17: ╪º┘ä┘â╪▒╪º┘à╪⌐ ┘ê╪º┘ä╪│┘à╪╣╪⌐ ┘ê╪º┘ä╪«╪╡┘ê╪╡┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 18: ╪º┘ä╪╣┘ä╪º┘é╪º╪¬ ╪º┘ä╪»┘ê┘ä┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 19: ╪º┘ä╪º┘é╪¬╪╡╪º╪» ┘ê╪º┘ä╪º╪│╪¬┘é╪▒╪º╪▒ ╪º┘ä┘à╪º┘ä┘è',
+    '╪º┘ä┘à╪º╪»╪⌐ 20: ╪º┘ä╪Ñ┘ü┘ä╪º╪│ ┘ê╪º┘ä┘é╪╢╪º┘è╪º ╪º┘ä╪¬╪¼╪º╪▒┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 21: ╪º┘ä┘ê╪½╪º╪ª┘é ┘ê╪º┘ä┘à╪╣┘ä┘ê┘à╪º╪¬ ╪º┘ä╪│╪▒┘è╪⌐',
+    '╪º┘ä┘à╪º╪»╪⌐ 22: ╪º┘ä╪º╪¬┘ü╪º┘é┘è╪º╪¬ ┘ê╪º┘ä┘à╪╣╪º┘ç╪»╪º╪¬',
+    '╪º┘ä┘à╪º╪»╪⌐ 23: ╪º┘ä┘à╪╕┘ç╪▒ ╪º┘ä╪╣╪º┘à',
+    '╪º┘ä┘à╪º╪»╪⌐ 24: ╪º┘ä╪▓┘è ┘ê╪º┘ä╪º╪¡╪¬╪┤╪º┘à'
+  ]
+}
+24 reviewers loaded {
+  Directory: 'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\reviewers\\v5'
+}
+Validation passed {
+  Directory: 'D:\\Waheed\\MypProjects\\raawi emergency\\rawwi-film-mainNew\\reviewers\\v5',
+  articleChecks: [
+    'Article 01 Γ£ô', 'Article 02 Γ£ô',
+    'Article 03 Γ£ô', 'Article 04 Γ£ô',
+    'Article 05 Γ£ô', 'Article 06 Γ£ô',
+    'Article 07 Γ£ô', 'Article 08 Γ£ô',
+    'Article 09 Γ£ô', 'Article 10 Γ£ô',
+    'Article 11 Γ£ô', 'Article 12 Γ£ô',
+    'Article 13 Γ£ô', 'Article 14 Γ£ô',
+    'Article 15 Γ£ô', 'Article 16 Γ£ô',
+    'Article 17 Γ£ô', 'Article 18 Γ£ô',
+    'Article 19 Γ£ô', 'Article 20 Γ£ô',
+    'Article 21 Γ£ô', 'Article 22 Γ£ô',
+    'Article 23 Γ£ô', 'Article 24 Γ£ô'
+  ]
+}
+Running real multi-pass detection on small script...
+[DEBUG] Event understanding request prepared {
+  model: 'gemini-2.5-flash',
+  chunkStart: 0,
+  chunkEnd: 534,
+  chunkLength: 534
+}
+[DEBUG] Event understanding response received {
+  model: 'gemini-2.5-flash',
+  contentLength: 1258,
+  finishReason: 'stop'
+}
+[DEBUG] Event understanding verifier request prepared {
+  model: 'gemini-2.5-flash',
+  chunkStart: 0,
+  chunkEnd: 534,
+  eventCount: 3
+}
+[DEBUG] Event understanding verifier response received { model: 'gemini-2.5-flash', contentLength: 16, finishReason: 'stop' }
+Event Understanding Diagnostics {
+  chunkIndex: undefined,
+  model: 'gemini-2.5-flash',
+  inputTokens: 1599,
+  outputTokens: 457,
+  finishReason: 'stop',
+  eventCount: 3,
+  elapsedMs: 3273
+}
+[DEBUG] runMultiPassDetection started {
+  chunkTextLength: 534,
+  chunkStart: 0,
+  chunkEnd: 534,
+  allArticlesCount: 24,
+  allArticleIds: [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
+  ],
+  lexiconTermsCount: 0,
+  passCount: 21,
+  activePassCount: 21,
+  skippedPassCount: 0,
+  hasPromptContext: true
+}
+Starting multi-pass detection {
+  chunkStart: 0,
+  chunkEnd: 534,
+  passCount: 21,
+  activePassCount: 21,
+  skippedPassCount: 0,
+  lexiconTermsCount: 0,
+  hasPromptContext: true
+}
+Event understanding pass completed {
+  chunkStart: 0,
+  chunkEnd: 534,
+  eventCount: 3,
+  sampleQuotes: [
+    '┘ê╪º┘ä┘ä┘ç ╪º┘ä╪╣╪╕┘è┘à ┘è╪º ╪«╪º┘ä╪» ┘ä┘ê ╪┤┘ü╪¬┘ç ╪¬╪º┘å┘è ┘ü┘è ╪º┘ä╪¡╪º╪▒╪⌐ ┘ä╪ú┘â╪│╪▒ ╪▒╪¼┘ä┘ç ┘ê╪ú╪«┘ä┘è┘ç ╪╣╪¿╪▒╪⌐ ┘ä┘à┘å ┘ä╪º ┘è╪╣╪¬╪¿╪▒.',
+    '┘è╪╢╪▒╪¿ ╪ú╪¡┘à╪» ╪º┘ä╪╖╪º┘ê┘ä╪⌐ ╪¿┘è╪»┘ç ╪¿┘é┘ê╪⌐',
+    '╪┤╪▒╪╖╪⌐ ╪Ñ┘è┘ç╪ƒ ╪ú┘å╪º ┘ç╪º╪«╪» ╪¡┘é┘è ╪¿┘è╪»┘è╪î ┘ê╪º┘ä┘ä┘è ┘è╪¡╪╡┘ä ┘è╪¡╪╡┘ä.'
+  ]
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_01',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 01: ╪º┘ä╪Ñ╪│╪º╪í╪⌐ ╪Ñ┘ä┘ë ╪º┘ä╪░╪º╪¬ ╪º┘ä╪Ñ┘ä┘ç┘è╪⌐ ┘ê╪º┘ä╪ú┘å╪¿┘è╪º╪í ┘ê╪º┘ä╪▒╪│┘ä ┘ê╪º┘ä┘â╪¬╪¿ ╪º┘ä╪│┘à╪º┘ê┘è╪⌐ ┘ê╪º┘ä╪┤╪╣╪º╪ª╪▒ ╪º┘ä╪Ñ╪│┘ä╪º┘à┘è╪⌐',
+  markdownFile: 'article_01_religion.md',
+  promptCharacters: 6953,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_02',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 02: ╪º┘ä╪Ñ╪│╪º╪í╪⌐ ╪Ñ┘ä┘ë ╪º┘ä┘é┘è╪º╪»╪⌐ ╪º┘ä╪│┘è╪º╪│┘è╪⌐ ┘ê╪▒┘à┘ê╪▓ ╪º┘ä╪»┘ê┘ä╪⌐ ┘ê╪º┘ä╪│┘è╪º╪»╪⌐ ╪º┘ä┘ê╪╖┘å┘è╪⌐',
+  markdownFile: 'article_02_state_leadership.md',
+  promptCharacters: 7446,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_03',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 03: ╪º┘ä╪Ñ╪▒┘ç╪º╪¿ ┘ê╪º┘ä╪¬╪╖╪▒┘ü ┘ê╪º┘ä╪¼┘à╪º╪╣╪º╪¬ ╪º┘ä╪Ñ╪▒┘ç╪º╪¿┘è╪⌐',
+  markdownFile: 'article_03_terrorism.md',
+  promptCharacters: 2985,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_04',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 04: ╪º┘ä┘à╪«╪»╪▒╪º╪¬ ┘ê╪º┘ä┘â╪¡┘ê┘ä ┘ê╪¬╪╡┘å┘è╪╣┘ç╪º ┘ê╪º┘ä╪¬╪▒┘ê┘è╪¼ ┘ä┘ç╪º',
+  markdownFile: 'article_04_drugs_alcohol.md',
+  promptCharacters: 3011,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_05',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 05: ╪º┘ä╪╣┘å┘ü ┘ê╪º┘ä┘é╪¬┘ä ┘ê╪º┘ä╪¬╪╣╪░┘è╪¿ ┘ê╪º┘ä╪¬┘à╪½┘è┘ä ╪¿╪º┘ä╪¼╪½╪½',
+  markdownFile: 'article_05_violence_torture.md',
+  promptCharacters: 2976,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_06',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 06: ╪º┘ä╪º┘å╪¬╪¡╪º╪▒ ┘ê╪Ñ┘è╪░╪º╪í ╪º┘ä┘å┘ü╪│ ┘ê╪¬╪┤╪¼┘è╪╣┘ç╪º',
+  markdownFile: 'article_06_suicide_self_harm.md',
+  promptCharacters: 2988,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_07',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 07: ╪º┘ä┘à╪¡╪¬┘ê┘ë ╪º┘ä╪¼┘å╪│┘è ┘ê╪º┘ä╪╣╪▒┘è',
+  markdownFile: 'article_07_sexual_content_nudity.md',
+  promptCharacters: 2992,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_08',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 08: ╪º┘ä╪│╪¡╪▒ ┘ê╪º┘ä╪┤╪╣┘ê╪░╪⌐ ┘ê╪º┘ä╪«╪▒╪º┘ü╪º╪¬ ┘ê╪º┘ä╪¬┘å╪¼┘è┘à',
+  markdownFile: 'article_08_magic_sorcery.md',
+  promptCharacters: 7677,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_09',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 09: ╪º┘ä╪¼╪▒╪º╪ª┘à ┘ê╪¬┘é┘å┘è╪º╪¬ ╪º╪▒╪¬┘â╪º╪¿┘ç╪º ┘ê╪¬╪╣┘ä┘è┘à┘ç╪º',
+  markdownFile: 'article_09_crime_criminal_methods.md',
+  promptCharacters: 7263,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_10',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 10: ╪«╪╖╪º╪¿ ╪º┘ä┘â╪▒╪º┘ç┘è╪⌐ ┘ê╪º┘ä╪¬┘à┘è┘è╪▓ ┘ê╪º┘ä╪Ñ┘ç╪º┘å╪⌐ ╪╢╪» ╪º┘ä┘ü╪ª╪º╪¬',
+  markdownFile: 'article_10_hate_speech_discrimination.md',
+  promptCharacters: 7683,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_12',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 12: ╪¡┘à╪º┘è╪⌐ ╪º┘ä╪ú╪╖┘ü╪º┘ä ┘ê╪º┘ä┘é┘Å╪╡┘æ╪▒',
+  markdownFile: 'article_12_child_protection_exploitation.md',
+  promptCharacters: 2204,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_14',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 14: ╪º┘ä╪ú┘ä┘ü╪º╪╕ ╪º┘ä┘å╪º╪¿┘è╪⌐ ┘ê╪º┘ä╪┤╪¬╪º╪ª┘à ┘ê╪º┘ä╪Ñ┘ç╪º┘å╪º╪¬ ╪º┘ä╪┤╪«╪╡┘è╪⌐',
+  markdownFile: 'article_14_profanity_personal_insults.md',
+  promptCharacters: 6520,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_15',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 15: ╪º┘ä┘å╪╕╪º┘à ╪º┘ä╪╣╪º┘à',
+  markdownFile: 'article_15_public_order.md',
+  promptCharacters: 3007,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_16',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 16: ╪º┘ä╪┤╪º╪ª╪╣╪º╪¬ ┘ê╪º┘ä┘à╪╣┘ä┘ê┘à╪º╪¬ ╪º┘ä┘à╪╢┘ä┘ä╪⌐',
+  markdownFile: 'article_16_misinformation_rumors.md',
+  promptCharacters: 3173,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_17',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 17: ╪º┘ä┘â╪▒╪º┘à╪⌐ ┘ê╪º┘ä╪│┘à╪╣╪⌐ ┘ê╪º┘ä╪«╪╡┘ê╪╡┘è╪⌐',
+  markdownFile: 'article_17_dignity_reputation_privacy.md',
+  promptCharacters: 3125,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_18',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 18: ╪º┘ä╪╣┘ä╪º┘é╪º╪¬ ╪º┘ä╪»┘ê┘ä┘è╪⌐',
+  markdownFile: 'article_18_international_relations.md',
+  promptCharacters: 3207,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_19',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 19: ╪º┘ä╪º┘é╪¬╪╡╪º╪» ┘ê╪º┘ä╪º╪│╪¬┘é╪▒╪º╪▒ ╪º┘ä┘à╪º┘ä┘è',
+  markdownFile: 'article_19_economic_stability.md',
+  promptCharacters: 3288,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_20',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 20: ╪º┘ä╪Ñ┘ü┘ä╪º╪│ ┘ê╪º┘ä┘é╪╢╪º┘è╪º ╪º┘ä╪¬╪¼╪º╪▒┘è╪⌐',
+  markdownFile: 'article_20_bankruptcy_commercial_cases.md',
+  promptCharacters: 3149,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_22',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 22: ╪º┘ä╪º╪¬┘ü╪º┘é┘è╪º╪¬ ┘ê╪º┘ä┘à╪╣╪º┘ç╪»╪º╪¬',
+  markdownFile: 'article_22_treaties_agreements.md',
+  promptCharacters: 3187,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_23',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 23: ╪º┘ä┘à╪╕┘ç╪▒ ╪º┘ä╪╣╪º┘à',
+  markdownFile: 'article_23_public_appearance.md',
+  promptCharacters: 2874,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+V5 reviewer prompt prepared {
+  chunkId: null,
+  reviewer: 'v5_article_24',
+  reviewerLabel: '╪º┘ä┘à╪º╪»╪⌐ 24: ╪º┘ä╪▓┘è ┘ê╪º┘ä╪º╪¡╪¬╪┤╪º┘à',
+  markdownFile: 'article_24_clothing_modesty.md',
+  promptCharacters: 2952,
+  reviewerInputOverrideCharacters: 1358
+}
+[DEBUG] Judge request prepared {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 123,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 534,
+  globalStart: 0,
+  globalEnd: 534
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_07',
+  articleId: 7,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1690,
+  outputTokens: 1,
+  thoughtsTokens: 449,
+  totalTokens: 2140,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 7443
+}
+Pass v5_article_07 completed { findingsCount: 0, duration: 7443, model: 'gpt-4.1' }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_16',
+  articleId: 16,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1738,
+  outputTokens: 1,
+  thoughtsTokens: 624,
+  totalTokens: 2363,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 7874
+}
+Pass v5_article_16 completed { findingsCount: 0, duration: 7874, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_14',
+  articleId: 14,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 2893,
+  outputTokens: 1,
+  thoughtsTokens: 600,
+  totalTokens: 3494,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 8674
+}
+Pass v5_article_14 completed { findingsCount: 0, duration: 8674, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_19',
+  articleId: 19,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1756,
+  outputTokens: 1,
+  thoughtsTokens: 723,
+  totalTokens: 2480,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 9025
+}
+Pass v5_article_19 completed { findingsCount: 0, duration: 9025, model: 'gpt-4.1' }
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 2,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 2 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "object",\n' +
+    '    "received": "array",\n' +
+    '    "path": [],\n' +
+    '    "message": "Expected object, received array"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 2, sliceLength: 2 }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_10',
+  articleId: 10,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 3359,
+  outputTokens: 1,
+  thoughtsTokens: 781,
+  totalTokens: 4141,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 9694
+}
+Pass v5_article_10 completed { findingsCount: 0, duration: 9694, model: 'gpt-4.1' }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_01',
+  articleId: 1,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 3055,
+  outputTokens: 1,
+  thoughtsTokens: 566,
+  totalTokens: 3622,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 9836
+}
+Pass v5_article_01 completed { findingsCount: 0, duration: 9836, model: 'gpt-4.1' }
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 618,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 618 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 1, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_15',
+  articleId: 15,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1693,
+  outputTokens: 229,
+  thoughtsTokens: 1040,
+  totalTokens: 2962,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 0,
+  durationMs: 10184
+}
+Pass v5_article_15 completed { findingsCount: 1, duration: 10184, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 562,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 562 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "array",\n' +
+    '    "received": "undefined",\n' +
+    '    "path": [\n' +
+    '      "findings"\n' +
+    '    ],\n' +
+    '    "message": "Required"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 562, sliceLength: 562 }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gpt-4.1',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 658,
+  finishReason: 'stop'
+}
+[DEBUG] Judge parse/repair started { model: 'gpt-4.1', rawLength: 658 }
+Judge parse/validation failed, attempting repair {
+  attempt: 0,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "array",\n' +
+    '    "received": "undefined",\n' +
+    '    "path": [\n' +
+    '      "findings"\n' +
+    '    ],\n' +
+    '    "message": "Required"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 658, sliceLength: 658 }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_24',
+  articleId: 24,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1682,
+  outputTokens: 1,
+  thoughtsTokens: 723,
+  totalTokens: 2406,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 11522
+}
+Pass v5_article_24 completed { findingsCount: 0, duration: 11522, model: 'gpt-4.1' }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_20',
+  articleId: 20,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1737,
+  outputTokens: 1,
+  thoughtsTokens: 812,
+  totalTokens: 2550,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 11829
+}
+Pass v5_article_20 completed { findingsCount: 0, duration: 11829, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_03',
+  articleId: 3,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1689,
+  outputTokens: 1,
+  thoughtsTokens: 1138,
+  totalTokens: 2828,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 11948
+}
+Pass v5_article_03 completed { findingsCount: 0, duration: 11948, model: 'gpt-4.1' }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_05',
+  articleId: 5,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1692,
+  outputTokens: 1,
+  thoughtsTokens: 826,
+  totalTokens: 2519,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 12101
+}
+Pass v5_article_05 completed { findingsCount: 0, duration: 12101, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_18',
+  articleId: 18,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1754,
+  outputTokens: 1,
+  thoughtsTokens: 725,
+  totalTokens: 2480,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 13251
+}
+Pass v5_article_18 completed { findingsCount: 0, duration: 13251, model: 'gpt-4.1' }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_12',
+  articleId: 12,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1401,
+  outputTokens: 1,
+  thoughtsTokens: 864,
+  totalTokens: 2266,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 13323
+}
+Pass v5_article_12 completed { findingsCount: 0, duration: 13323, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_04',
+  articleId: 4,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1699,
+  outputTokens: 1,
+  thoughtsTokens: 849,
+  totalTokens: 2549,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 13978
+}
+Pass v5_article_04 completed { findingsCount: 0, duration: 13978, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 20 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 0, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_22',
+  articleId: 22,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1750,
+  outputTokens: 1,
+  thoughtsTokens: 716,
+  totalTokens: 2467,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 17179
+}
+Pass v5_article_22 completed { findingsCount: 0, duration: 17179, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 850 }
+Judge parse/validation failed, attempting repair {
+  attempt: 1,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "too_big",\n' +
+    '    "maximum": 25,\n' +
+    '    "type": "number",\n' +
+    '    "inclusive": true,\n' +
+    '    "exact": false,\n' +
+    '    "message": "Number must be less than or equal to 25",\n' +
+    '    "path": [\n' +
+    '      "findings",\n' +
+    '      0,\n' +
+    '      "article_id"\n' +
+    '    ]\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 850, sliceLength: 850 }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 850 }
+Judge parse/validation failed, attempting repair {
+  attempt: 1,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "too_big",\n' +
+    '    "maximum": 25,\n' +
+    '    "type": "number",\n' +
+    '    "inclusive": true,\n' +
+    '    "exact": false,\n' +
+    '    "message": "Number must be less than or equal to 25",\n' +
+    '    "path": [\n' +
+    '      "findings",\n' +
+    '      0,\n' +
+    '      "article_id"\n' +
+    '    ]\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 850, sliceLength: 850 }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 850 }
+Judge parse/validation failed, attempting repair {
+  attempt: 1,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "too_big",\n' +
+    '    "maximum": 25,\n' +
+    '    "type": "number",\n' +
+    '    "inclusive": true,\n' +
+    '    "exact": false,\n' +
+    '    "message": "Number must be less than or equal to 25",\n' +
+    '    "path": [\n' +
+    '      "findings",\n' +
+    '      0,\n' +
+    '      "article_id"\n' +
+    '    ]\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 850, sliceLength: 850 }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 766 }
+[DEBUG] Judge parse succeeded { model: 'gpt-4.1', findingsCount: 1, missingTitleCount: 0 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_02',
+  articleId: 2,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 3149,
+  outputTokens: 278,
+  thoughtsTokens: 1117,
+  totalTokens: 4544,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 23500
+}
+Pass v5_article_02 completed { findingsCount: 1, duration: 23503, model: 'gpt-4.1' }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 702 }
+Judge parse/validation failed, attempting repair {
+  attempt: 1,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "invalid_type",\n' +
+    '    "expected": "string",\n' +
+    '    "received": "number",\n' +
+    '    "path": [\n' +
+    '      "findings",\n' +
+    '      0,\n' +
+    '      "atom_id"\n' +
+    '    ],\n' +
+    '    "message": "Expected string, received number"\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 702, sliceLength: 702 }
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 1, repairedLength: 850 }
+Judge parse/validation failed, attempting repair {
+  attempt: 1,
+  error: '[\n' +
+    '  {\n' +
+    '    "code": "too_big",\n' +
+    '    "maximum": 25,\n' +
+    '    "type": "number",\n' +
+    '    "inclusive": true,\n' +
+    '    "exact": false,\n' +
+    '    "message": "Number must be less than or equal to 25",\n' +
+    '    "path": [\n' +
+    '      "findings",\n' +
+    '      0,\n' +
+    '      "article_id"\n' +
+    '    ]\n' +
+    '  }\n' +
+    ']'
+}
+[DEBUG] Judge repair request prepared { model: 'gpt-4.1', brokenContentLength: 850, sliceLength: 850 }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 2, repairedLength: 850 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_23',
+  articleId: 23,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1647,
+  outputTokens: 1,
+  thoughtsTokens: 586,
+  totalTokens: 2234,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 33192
+}
+Pass v5_article_23 completed { findingsCount: 0, duration: 33192, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 2, repairedLength: 850 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_06',
+  articleId: 6,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1689,
+  outputTokens: 1,
+  thoughtsTokens: 657,
+  totalTokens: 2347,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 33839
+}
+Pass v5_article_06 completed { findingsCount: 0, duration: 33839, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 2, repairedLength: 850 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_08',
+  articleId: 8,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 3266,
+  outputTokens: 1,
+  thoughtsTokens: 602,
+  totalTokens: 3869,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 34497
+}
+Pass v5_article_08 completed { findingsCount: 0, duration: 34497, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 2, repairedLength: 850 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_17',
+  articleId: 17,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 1740,
+  outputTokens: 1,
+  thoughtsTokens: 794,
+  totalTokens: 2535,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 35208
+}
+Pass v5_article_17 completed { findingsCount: 0, duration: 35208, model: 'gpt-4.1' }
+reportChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+reportChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+[DEBUG] Judge repair attempted { model: 'gpt-4.1', attempt: 2, repairedLength: 702 }
+Judge Call Diagnostics {
+  jobId: null,
+  chunkId: null,
+  passName: 'v5_article_09',
+  articleId: 9,
+  provider: 'gemini',
+  configuredModel: 'gpt-4.1',
+  resolvedModel: 'gemini-2.5-pro',
+  promptTokens: 3159,
+  outputTokens: 224,
+  thoughtsTokens: 1024,
+  totalTokens: 4407,
+  maxTokens: 8192,
+  finishReason: 'stop',
+  repairAttempts: 1,
+  durationMs: 37758
+}
+Pass v5_article_09 completed { findingsCount: 0, duration: 37758, model: 'gpt-4.1' }
+flushChunkPassProgress failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+flushChunkFindingsCount failed {
+  chunkId: 'test_chunk_001',
+  err: 'invalid input syntax for type uuid: "test_chunk_001"'
+}
+Multi-pass detection completed {
+  totalFindings: 2,
+  afterDedup: 2,
+  dropped: 0,
+  totalDuration: 41235,
+  executedPassCount: 21,
+  skippedPassCount: 0,
+  passResults: [
+    {
+      pass: 'v5_article_01',
+      findings: 0,
+      duration: 9836,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_02',
+      findings: 1,
+      duration: 23503,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_03',
+      findings: 0,
+      duration: 11948,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_04',
+      findings: 0,
+      duration: 13978,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_05',
+      findings: 0,
+      duration: 12101,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_06',
+      findings: 0,
+      duration: 33839,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_07',
+      findings: 0,
+      duration: 7443,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_08',
+      findings: 0,
+      duration: 34497,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_09',
+      findings: 0,
+      duration: 37758,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_10',
+      findings: 0,
+      duration: 9694,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_12',
+      findings: 0,
+      duration: 13323,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_14',
+      findings: 0,
+      duration: 8674,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_15',
+      findings: 1,
+      duration: 10184,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_16',
+      findings: 0,
+      duration: 7874,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_17',
+      findings: 0,
+      duration: 35208,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_18',
+      findings: 0,
+      duration: 13251,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_19',
+      findings: 0,
+      duration: 9025,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_20',
+      findings: 0,
+      duration: 11829,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_22',
+      findings: 0,
+      duration: 17179,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_23',
+      findings: 0,
+      duration: 33192,
+      skipped: false,
+      reason: null
+    },
+    {
+      pass: 'v5_article_24',
+      findings: 0,
+      duration: 11522,
+      skipped: false,
+      reason: null
+    }
+  ]
+}
+
+=== TEST RESULTS ===
+Total Duration: 41236 ms
+Executed Passes: 21
+Skipped Passes: 0
+Total Findings Count: 2
+
+Findings:
+
+[Finding 1] ╪º┘å╪¬┘é╪º╪╡ ┘à┘å ╪»┘ê╪▒ ╪º┘ä╪┤╪▒╪╖╪⌐ ┘ê╪º┘ä╪»╪╣┘ê╪⌐ ┘ä╪ú╪«╪░ ╪º┘ä╪¡┘é ╪¿╪º┘ä┘è╪»
+Article: 2, Pass: v5_article_02, Atom: PUBLIC_ORDER
+Evidence: "╪┤╪▒╪╖╪⌐ ╪Ñ┘è┘ç╪ƒ ╪ú┘å╪º ┘ç╪º╪«╪» ╪¡┘é┘è ╪¿┘è╪»┘è"
+
+[Finding 2] ╪º┘ä╪»╪╣┘ê╪⌐ ┘ä╪¬╪¼╪º┘ê╪▓ ╪º┘ä╪ú┘å╪╕┘à╪⌐ ┘ê╪ú╪«╪░ ╪º┘ä╪¡┘é ╪¿╪º┘ä┘è╪»
+Article: 15, Pass: v5_article_15, Atom: PUBLIC_ORDER
+Evidence: "╪ú┘å╪º ┘ç╪º╪«╪» ╪¡┘é┘è ╪¿┘è╪»┘è╪î ┘ê╪º┘ä┘ä┘è ┘è╪¡╪╡┘ä ┘è╪¡╪╡┘ä."

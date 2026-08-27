@@ -1,0 +1,6 @@
+Job not found {
+  code: '42703',
+  details: null,
+  hint: null,
+  message: 'column analysis_jobs.diagnostic_logs does not exist'
+}

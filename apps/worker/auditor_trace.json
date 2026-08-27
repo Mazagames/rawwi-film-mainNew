@@ -1,0 +1,82 @@
+[
+  {
+    "article_id": 2,
+    "finding_uuid": "7099c15b-4fbb-4e02-b2cf-22724ad82150",
+    "event_id_before_auditor": null,
+    "matched_structured_event_id": null,
+    "evidenceSnippet": "حرامية",
+    "title": "إهانة الجهات الرسمية ووصفها بالسرقة",
+    "rejection_rule": "no_meaningful_exact_local_evidence",
+    "rejection_reason": "no_meaningful_exact_local_evidence"
+  },
+  {
+    "article_id": 5,
+    "finding_uuid": "df4fa5f1-08e5-4794-8854-10d3b28fbaec",
+    "event_id_before_auditor": null,
+    "matched_structured_event_id": null,
+    "evidenceSnippet": "ناصر ينظر للطلاب:\nناصر:\nاضحكوا… عشان يتعلم",
+    "title": "تهديد بالعنف الشديد",
+    "rejection_rule": "evidence_mismatch",
+    "rejection_reason": "evidence_mismatch"
+  },
+  {
+    "article_id": 9,
+    "finding_uuid": "ccb4b3d7-75f9-4bb5-9470-40065af9a371",
+    "event_id_before_auditor": null,
+    "matched_structured_event_id": null,
+    "evidenceSnippet": "بس هذا متعلق بجهة رسمية…\nمو لعبة.\nفهد (بتهكم):\nجهة",
+    "title": "تسهيل جريمة باستخدام ملفات مسربة",
+    "rejection_rule": "no_meaningful_exact_local_evidence",
+    "rejection_reason": "no_meaningful_exact_local_evidence"
+  },
+  {
+    "article_id": 9,
+    "finding_uuid": "ce57505c-6454-4ca7-ba32-8d85b09fab58",
+    "event_id_before_auditor": null,
+    "matched_structured_event_id": null,
+    "evidenceSnippet": "كلهم حرامية في الجهات الرسمية حقتكم…\nما عندهم إلا ",
+    "title": "التحريض على إثارة الفوضى باستخدام معلومات مسربة",
+    "rejection_rule": "no_meaningful_exact_local_evidence",
+    "rejection_reason": "no_meaningful_exact_local_evidence"
+  },
+  {
+    "article_id": 10,
+    "finding_uuid": "5df77063-1598-4782-a4de-9eae8ca70268",
+    "event_id_before_auditor": null,
+    "matched_structured_event_id": null,
+    "evidenceSnippet": "ل الناس تعرف… خلهم يكرهون… خلهم يطل",
+    "title": "إهانة وتعميم سلبي ضد موظفي الجهات الرسمية",
+    "rejection_rule": "no_meaningful_exact_local_evidence",
+    "rejection_reason": "no_meaningful_exact_local_evidence"
+  },
+  {
+    "article_id": 15,
+    "finding_uuid": "091b45d0-1456-4cad-a494-a662bf6d1ae0",
+    "event_id_before_auditor": null,
+    "matched_structured_event_id": null,
+    "evidenceSnippet": "أنا أبغى اللخبطة.\nالدنيا لازم تنقلب عليهم",
+    "title": "التحريض على إثارة الفوضى وزعزعة الاستقرار",
+    "rejection_rule": "no_meaningful_exact_local_evidence",
+    "rejection_reason": "no_meaningful_exact_local_evidence"
+  },
+  {
+    "article_id": 15,
+    "finding_uuid": "10c78775-c33c-49f2-b05f-1846f16e7cee",
+    "event_id_before_auditor": null,
+    "matched_structured_event_id": null,
+    "evidenceSnippet": "الناس تعرف… خلهم يكرهون… خلهم يطلعون",
+    "title": "الإساءة للجهات الرسمية والتحريض ضدها",
+    "rejection_rule": "no_meaningful_exact_local_evidence",
+    "rejection_reason": "no_meaningful_exact_local_evidence"
+  },
+  {
+    "article_id": 20,
+    "finding_uuid": "88c41ac7-d369-4a1b-981e-d9c42c914a1f",
+    "event_id_before_auditor": null,
+    "matched_structured_event_id": null,
+    "evidenceSnippet": "حرامية",
+    "title": "الإساءة للجهات الرسمية واتهامها بالسرقة",
+    "rejection_rule": "no_meaningful_exact_local_evidence",
+    "rejection_reason": "no_meaningful_exact_local_evidence"
+  }
+]

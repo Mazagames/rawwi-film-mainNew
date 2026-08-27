@@ -1,0 +1,39 @@
+Running Article 17 test...
+[DEBUG] Judge request prepared {
+  configuredModel: 'gemini-2.5-pro',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  temperature: 0,
+  seed: 42,
+  selectedArticleCount: 1,
+  chunkPreviewLength: 161,
+  globalStart: 0,
+  globalEnd: 100
+}
+[DEBUG] Judge response received {
+  configuredModel: 'gemini-2.5-pro',
+  provider: 'gemini',
+  resolvedModel: 'gemini-2.5-pro',
+  contentLength: 637,
+  finishReason: 'stop'
+}
+
+--- RESULT ---
+Duration: 9121 ms
+Finish Reason: stop
+Usage: {
+  prompt_tokens: 1460,
+  completion_tokens: 242,
+  total_tokens: 2489,
+  thoughts_tokens: 787
+}
+Raw Response Length: 637
+Raw Response Snippet: [
+  {
+    "article_id": 17,
+    "canonical_atom": "PRIVACY",
+    "intensity": 4,
+    "context_impact": 4,
+    "legal_sensitivity": 4,
+    "audience_risk": 4,
+    "title_ar": "تصوير خلسة بهدف الابتزاز"

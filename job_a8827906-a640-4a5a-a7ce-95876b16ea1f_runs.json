@@ -1,0 +1,532 @@
+[
+  {
+    "id": "1cb68ead-0e1e-4d75-bd1d-0e445850b0f9",
+    "run_key": "e2189f5ea7a4461de423f81b4e79c90273190ffe6417a574a948e3a60c6038e4",
+    "job_id": "a8827906-a640-4a5a-a7ce-95876b16ea1f",
+    "router_candidates": {
+      "reason": "always_check_covers_all_scannable_articles",
+      "skipped": true,
+      "candidate_articles": [
+        {
+          "article_id": 4,
+          "confidence": 1
+        },
+        {
+          "article_id": 5,
+          "confidence": 1
+        },
+        {
+          "article_id": 6,
+          "confidence": 1
+        },
+        {
+          "article_id": 7,
+          "confidence": 1
+        },
+        {
+          "article_id": 8,
+          "confidence": 1
+        },
+        {
+          "article_id": 9,
+          "confidence": 1
+        },
+        {
+          "article_id": 10,
+          "confidence": 1
+        },
+        {
+          "article_id": 11,
+          "confidence": 1
+        },
+        {
+          "article_id": 12,
+          "confidence": 1
+        },
+        {
+          "article_id": 13,
+          "confidence": 1
+        },
+        {
+          "article_id": 14,
+          "confidence": 1
+        },
+        {
+          "article_id": 15,
+          "confidence": 1
+        },
+        {
+          "article_id": 16,
+          "confidence": 1
+        },
+        {
+          "article_id": 17,
+          "confidence": 1
+        },
+        {
+          "article_id": 18,
+          "confidence": 1
+        },
+        {
+          "article_id": 19,
+          "confidence": 1
+        },
+        {
+          "article_id": 20,
+          "confidence": 1
+        },
+        {
+          "article_id": 21,
+          "confidence": 1
+        },
+        {
+          "article_id": 22,
+          "confidence": 1
+        },
+        {
+          "article_id": 23,
+          "confidence": 1
+        },
+        {
+          "article_id": 24,
+          "confidence": 1
+        }
+      ]
+    },
+    "ai_findings": [],
+    "created_at": "2026-07-27T08:30:58.724736+00:00",
+    "raw_ai_findings": [],
+    "validated_ai_findings": null,
+    "truth_layer_meta": {
+      "stage": "advisory",
+      "architecture": "advisory_model_plus_validator",
+      "advisory_count": 0,
+      "validated_count": null,
+      "auditor_layer_version": "v4"
+    }
+  },
+  {
+    "id": "32f6e60f-c726-4ab8-b5b0-661f9bf5aacc",
+    "run_key": "583ac3476ac64205cf48132efb388f138afdd1b9600c69447ad1a5cf51f9d376",
+    "job_id": "a8827906-a640-4a5a-a7ce-95876b16ea1f",
+    "router_candidates": {
+      "reason": "always_check_covers_all_scannable_articles",
+      "skipped": true,
+      "candidate_articles": [
+        {
+          "article_id": 4,
+          "confidence": 1
+        },
+        {
+          "article_id": 5,
+          "confidence": 1
+        },
+        {
+          "article_id": 6,
+          "confidence": 1
+        },
+        {
+          "article_id": 7,
+          "confidence": 1
+        },
+        {
+          "article_id": 8,
+          "confidence": 1
+        },
+        {
+          "article_id": 9,
+          "confidence": 1
+        },
+        {
+          "article_id": 10,
+          "confidence": 1
+        },
+        {
+          "article_id": 11,
+          "confidence": 1
+        },
+        {
+          "article_id": 12,
+          "confidence": 1
+        },
+        {
+          "article_id": 13,
+          "confidence": 1
+        },
+        {
+          "article_id": 14,
+          "confidence": 1
+        },
+        {
+          "article_id": 15,
+          "confidence": 1
+        },
+        {
+          "article_id": 16,
+          "confidence": 1
+        },
+        {
+          "article_id": 17,
+          "confidence": 1
+        },
+        {
+          "article_id": 18,
+          "confidence": 1
+        },
+        {
+          "article_id": 19,
+          "confidence": 1
+        },
+        {
+          "article_id": 20,
+          "confidence": 1
+        },
+        {
+          "article_id": 21,
+          "confidence": 1
+        },
+        {
+          "article_id": 22,
+          "confidence": 1
+        },
+        {
+          "article_id": 23,
+          "confidence": 1
+        },
+        {
+          "article_id": 24,
+          "confidence": 1
+        }
+      ]
+    },
+    "ai_findings": [],
+    "created_at": "2026-07-27T08:34:37.476349+00:00",
+    "raw_ai_findings": [],
+    "validated_ai_findings": null,
+    "truth_layer_meta": {
+      "stage": "advisory",
+      "architecture": "advisory_model_plus_validator",
+      "advisory_count": 0,
+      "validated_count": null,
+      "auditor_layer_version": "v4"
+    }
+  },
+  {
+    "id": "eebd72dc-8592-4948-86a8-05c7e1ad7a72",
+    "run_key": "7c9987da4d3491c766704c25f34e926c0b3efe1b35a66738864751aaef57f36e",
+    "job_id": "a8827906-a640-4a5a-a7ce-95876b16ea1f",
+    "router_candidates": {
+      "reason": "always_check_covers_all_scannable_articles",
+      "skipped": true,
+      "candidate_articles": [
+        {
+          "article_id": 4,
+          "confidence": 1
+        },
+        {
+          "article_id": 5,
+          "confidence": 1
+        },
+        {
+          "article_id": 6,
+          "confidence": 1
+        },
+        {
+          "article_id": 7,
+          "confidence": 1
+        },
+        {
+          "article_id": 8,
+          "confidence": 1
+        },
+        {
+          "article_id": 9,
+          "confidence": 1
+        },
+        {
+          "article_id": 10,
+          "confidence": 1
+        },
+        {
+          "article_id": 11,
+          "confidence": 1
+        },
+        {
+          "article_id": 12,
+          "confidence": 1
+        },
+        {
+          "article_id": 13,
+          "confidence": 1
+        },
+        {
+          "article_id": 14,
+          "confidence": 1
+        },
+        {
+          "article_id": 15,
+          "confidence": 1
+        },
+        {
+          "article_id": 16,
+          "confidence": 1
+        },
+        {
+          "article_id": 17,
+          "confidence": 1
+        },
+        {
+          "article_id": 18,
+          "confidence": 1
+        },
+        {
+          "article_id": 19,
+          "confidence": 1
+        },
+        {
+          "article_id": 20,
+          "confidence": 1
+        },
+        {
+          "article_id": 21,
+          "confidence": 1
+        },
+        {
+          "article_id": 22,
+          "confidence": 1
+        },
+        {
+          "article_id": 23,
+          "confidence": 1
+        },
+        {
+          "article_id": 24,
+          "confidence": 1
+        }
+      ]
+    },
+    "ai_findings": [],
+    "created_at": "2026-07-27T08:36:30.425227+00:00",
+    "raw_ai_findings": [],
+    "validated_ai_findings": null,
+    "truth_layer_meta": {
+      "stage": "advisory",
+      "architecture": "advisory_model_plus_validator",
+      "advisory_count": 0,
+      "validated_count": null,
+      "auditor_layer_version": "v4"
+    }
+  },
+  {
+    "id": "2629f8f5-7c83-4b46-8707-d159421b7f07",
+    "run_key": "d113d18f20f004ac108d7e23edf6f6abbf53d97fdd5e4a9590fd5aa3e039d534",
+    "job_id": "a8827906-a640-4a5a-a7ce-95876b16ea1f",
+    "router_candidates": {
+      "reason": "always_check_covers_all_scannable_articles",
+      "skipped": true,
+      "candidate_articles": [
+        {
+          "article_id": 4,
+          "confidence": 1
+        },
+        {
+          "article_id": 5,
+          "confidence": 1
+        },
+        {
+          "article_id": 6,
+          "confidence": 1
+        },
+        {
+          "article_id": 7,
+          "confidence": 1
+        },
+        {
+          "article_id": 8,
+          "confidence": 1
+        },
+        {
+          "article_id": 9,
+          "confidence": 1
+        },
+        {
+          "article_id": 10,
+          "confidence": 1
+        },
+        {
+          "article_id": 11,
+          "confidence": 1
+        },
+        {
+          "article_id": 12,
+          "confidence": 1
+        },
+        {
+          "article_id": 13,
+          "confidence": 1
+        },
+        {
+          "article_id": 14,
+          "confidence": 1
+        },
+        {
+          "article_id": 15,
+          "confidence": 1
+        },
+        {
+          "article_id": 16,
+          "confidence": 1
+        },
+        {
+          "article_id": 17,
+          "confidence": 1
+        },
+        {
+          "article_id": 18,
+          "confidence": 1
+        },
+        {
+          "article_id": 19,
+          "confidence": 1
+        },
+        {
+          "article_id": 20,
+          "confidence": 1
+        },
+        {
+          "article_id": 21,
+          "confidence": 1
+        },
+        {
+          "article_id": 22,
+          "confidence": 1
+        },
+        {
+          "article_id": 23,
+          "confidence": 1
+        },
+        {
+          "article_id": 24,
+          "confidence": 1
+        }
+      ]
+    },
+    "ai_findings": [],
+    "created_at": "2026-07-27T08:33:29.685874+00:00",
+    "raw_ai_findings": [],
+    "validated_ai_findings": null,
+    "truth_layer_meta": {
+      "stage": "advisory",
+      "architecture": "advisory_model_plus_validator",
+      "advisory_count": 0,
+      "validated_count": null,
+      "auditor_layer_version": "v4"
+    }
+  },
+  {
+    "id": "5f8d57be-0e45-415c-8eab-1f409acfd988",
+    "run_key": "da56103b6640ae105e481caea925b03789c1b6b4eaef2280e6db7628226c874f",
+    "job_id": "a8827906-a640-4a5a-a7ce-95876b16ea1f",
+    "router_candidates": {
+      "reason": "always_check_covers_all_scannable_articles",
+      "skipped": true,
+      "candidate_articles": [
+        {
+          "article_id": 4,
+          "confidence": 1
+        },
+        {
+          "article_id": 5,
+          "confidence": 1
+        },
+        {
+          "article_id": 6,
+          "confidence": 1
+        },
+        {
+          "article_id": 7,
+          "confidence": 1
+        },
+        {
+          "article_id": 8,
+          "confidence": 1
+        },
+        {
+          "article_id": 9,
+          "confidence": 1
+        },
+        {
+          "article_id": 10,
+          "confidence": 1
+        },
+        {
+          "article_id": 11,
+          "confidence": 1
+        },
+        {
+          "article_id": 12,
+          "confidence": 1
+        },
+        {
+          "article_id": 13,
+          "confidence": 1
+        },
+        {
+          "article_id": 14,
+          "confidence": 1
+        },
+        {
+          "article_id": 15,
+          "confidence": 1
+        },
+        {
+          "article_id": 16,
+          "confidence": 1
+        },
+        {
+          "article_id": 17,
+          "confidence": 1
+        },
+        {
+          "article_id": 18,
+          "confidence": 1
+        },
+        {
+          "article_id": 19,
+          "confidence": 1
+        },
+        {
+          "article_id": 20,
+          "confidence": 1
+        },
+        {
+          "article_id": 21,
+          "confidence": 1
+        },
+        {
+          "article_id": 22,
+          "confidence": 1
+        },
+        {
+          "article_id": 23,
+          "confidence": 1
+        },
+        {
+          "article_id": 24,
+          "confidence": 1
+        }
+      ]
+    },
+    "ai_findings": [],
+    "created_at": "2026-07-27T08:32:10.31387+00:00",
+    "raw_ai_findings": [],
+    "validated_ai_findings": null,
+    "truth_layer_meta": {
+      "stage": "advisory",
+      "architecture": "advisory_model_plus_validator",
+      "advisory_count": 0,
+      "validated_count": null,
+      "auditor_layer_version": "v4"
+    }
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "job": null,
+  "jobErr": {
+    "code": "42703",
+    "details": null,
+    "hint": null,
+    "message": "column analysis_jobs.diagnostic_logs does not exist"
+  },
+  "logsErr": {
+    "code": "PGRST205",
+    "details": null,
+    "hint": "Perhaps you meant the table 'public.analysis_jobs'",
+    "message": "Could not find the table 'public.analysis_logs' in the schema cache"
+  },
+  "chunksCount": 1,
+  "runsCount": 0,
+  "run0Diags": null,
+  "run0RawNotes": null
+}

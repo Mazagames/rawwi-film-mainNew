@@ -1,0 +1,58 @@
+[
+  {
+    "originalGeminiEvidence": "حرامية",
+    "exactScreenplayEvidence": "NO EVENT MATCH FOUND",
+    "article": 2,
+    "acceptanceResult": "Rejected (no_meaningful_exact_local_evidence)",
+    "matchedScore": 0
+  },
+  {
+    "originalGeminiEvidence": "ناصر ينظر للطلاب:\nناصر:\nاضحكوا… عشان يتعلم",
+    "exactScreenplayEvidence": "NO EVENT MATCH FOUND",
+    "article": 5,
+    "acceptanceResult": "Rejected (no_meaningful_exact_local_evidence)",
+    "matchedScore": 0
+  },
+  {
+    "originalGeminiEvidence": "بس هذا متعلق بجهة رسمية…\nمو لعبة.\nفهد (بتهكم):\nجهة رسمية؟! كلهم حرامية في الجهات الرسمية حقتكم",
+    "exactScreenplayEvidence": "NO EVENT MATCH FOUND",
+    "article": 9,
+    "acceptanceResult": "Rejected (no_meaningful_exact_local_evidence)",
+    "matchedScore": 0
+  },
+  {
+    "originalGeminiEvidence": "كلهم حرامية في الجهات الرسمية حقتكم…\nما عندهم إلا كلام.\nحسام (بحذر",
+    "exactScreenplayEvidence": "NO EVENT MATCH FOUND",
+    "article": 9,
+    "acceptanceResult": "Rejected (no_meaningful_exact_local_evidence)",
+    "matchedScore": 0
+  },
+  {
+    "originalGeminiEvidence": "ل الناس تعرف… خلهم يكرهون… خلهم يطل",
+    "exactScreenplayEvidence": "NO EVENT MATCH FOUND",
+    "article": 10,
+    "acceptanceResult": "Rejected (no_meaningful_exact_local_evidence)",
+    "matchedScore": 0
+  },
+  {
+    "originalGeminiEvidence": "أنا أبغى اللخبطة.\nالدنيا لازم تنقلب عليهم",
+    "exactScreenplayEvidence": "NO EVENT MATCH FOUND",
+    "article": 15,
+    "acceptanceResult": "Rejected (no_meaningful_exact_local_evidence)",
+    "matchedScore": 0
+  },
+  {
+    "originalGeminiEvidence": "الناس تعرف… خلهم يكرهون… خلهم يطلعون",
+    "exactScreenplayEvidence": "NO EVENT MATCH FOUND",
+    "article": 15,
+    "acceptanceResult": "Rejected (no_meaningful_exact_local_evidence)",
+    "matchedScore": 0
+  },
+  {
+    "originalGeminiEvidence": "حرامية",
+    "exactScreenplayEvidence": "NO EVENT MATCH FOUND",
+    "article": 20,
+    "acceptanceResult": "Rejected (no_meaningful_exact_local_evidence)",
+    "matchedScore": 0
+  }
+]

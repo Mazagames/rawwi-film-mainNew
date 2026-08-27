@@ -1,0 +1,27 @@
+
+> web@0.0.0 build D:\Waheed\MypProjects\raawi emergency\rawwi-film-mainNew\apps\web
+> vite build
+
+[36mvite v7.2.4 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 3232 modules transformed.
+rendering chunks...
+[plugin vite:reporter] 
+(!) D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/api/httpClient.ts is dynamically imported by D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/components/RecentDecisionsWidget.tsx but also statically imported by D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/api/index.ts, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Overview.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/services/activityService.ts, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/services/auditService.ts, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/services/dashboardService.ts, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/api/index.ts is dynamically imported by D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ClientDetails.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ClientDetails.tsx but also statically imported by D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/components/ScriptRecommendationBar.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/components/client-portal/ClientCertificatesSection.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/layout/AppLayout.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/AccessControl.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Audit.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/CertificateDesigner.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/CertificateVerify.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Certificates.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ClientDetails.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ClientPortal.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ClientRegister.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ClientRegistrationRequest.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ClientSubmissions.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Clients.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Glossary.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/InternalClientEdit.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Performance.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/QuickAnalysis.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ReportBuilder.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Reports.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Results.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/ScriptWorkspace.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/SetPassword.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Settings.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/pages/Tasks.tsx, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/services/reportService.ts, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/store/authStore.ts, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/store/dataStore.ts, D:/Waheed/MypProjects/raawi emergency/rawwi-film-mainNew/apps/web/src/utils/waitForVersionExtraction.ts, dynamic import will not move module into another chunk.
+
+computing gzip size...
+[2mdist/[22m[32mindex.html                     [39m[1m[2m    0.71 kB[22m[1m[22m[2m Γöé gzip:     0.41 kB[22m
+[2mdist/[22m[32massets/pdf.worker-BgryrOlp.js  [39m[1m[2m2,209.73 kB[22m[1m[22m
+[2mdist/[22m[35massets/index-BrJ5fvZ9.css      [39m[1m[2m  115.19 kB[22m[1m[22m[2m Γöé gzip:    17.00 kB[22m
+[2mdist/[22m[36massets/pdf.worker-DCJHVh25.js  [39m[1m[2m    0.06 kB[22m[1m[22m[2m Γöé gzip:     0.08 kB[22m
+[2mdist/[22m[36massets/download-DtB2ZHUy.js    [39m[1m[2m    4.85 kB[22m[1m[22m[2m Γöé gzip:     2.03 kB[22m
+[2mdist/[22m[36massets/index-XZ91-rO-.js       [39m[1m[33m4,462.14 kB[39m[22m[2m Γöé gzip: 1,322.76 kB[22m
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[32mΓ£ô built in 14.28s[39m

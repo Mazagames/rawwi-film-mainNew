@@ -1,0 +1,108 @@
+[
+  {
+    "id": "62675deb-912a-41e1-b500-5af216f7d52c",
+    "run_key": "b5491d93a658588870423b5b6d6be0aeebe761c5019421297b89f5ea00196366",
+    "job_id": "8a9ad4e3-05c5-42f9-83ad-165ed6c70812",
+    "router_candidates": {
+      "reason": "always_check_covers_all_scannable_articles",
+      "skipped": true,
+      "candidate_articles": [
+        {
+          "article_id": 4,
+          "confidence": 1
+        },
+        {
+          "article_id": 5,
+          "confidence": 1
+        },
+        {
+          "article_id": 6,
+          "confidence": 1
+        },
+        {
+          "article_id": 7,
+          "confidence": 1
+        },
+        {
+          "article_id": 8,
+          "confidence": 1
+        },
+        {
+          "article_id": 9,
+          "confidence": 1
+        },
+        {
+          "article_id": 10,
+          "confidence": 1
+        },
+        {
+          "article_id": 11,
+          "confidence": 1
+        },
+        {
+          "article_id": 12,
+          "confidence": 1
+        },
+        {
+          "article_id": 13,
+          "confidence": 1
+        },
+        {
+          "article_id": 14,
+          "confidence": 1
+        },
+        {
+          "article_id": 15,
+          "confidence": 1
+        },
+        {
+          "article_id": 16,
+          "confidence": 1
+        },
+        {
+          "article_id": 17,
+          "confidence": 1
+        },
+        {
+          "article_id": 18,
+          "confidence": 1
+        },
+        {
+          "article_id": 19,
+          "confidence": 1
+        },
+        {
+          "article_id": 20,
+          "confidence": 1
+        },
+        {
+          "article_id": 21,
+          "confidence": 1
+        },
+        {
+          "article_id": 22,
+          "confidence": 1
+        },
+        {
+          "article_id": 23,
+          "confidence": 1
+        },
+        {
+          "article_id": 24,
+          "confidence": 1
+        }
+      ]
+    },
+    "ai_findings": [],
+    "created_at": "2026-08-24T02:57:47.827076+00:00",
+    "raw_ai_findings": [],
+    "validated_ai_findings": null,
+    "truth_layer_meta": {
+      "stage": "advisory",
+      "architecture": "advisory_model_plus_validator",
+      "advisory_count": 0,
+      "validated_count": null,
+      "auditor_layer_version": "v4"
+    }
+  }
+]

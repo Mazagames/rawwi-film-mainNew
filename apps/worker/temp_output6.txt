@@ -1,0 +1,10 @@
+Running Focused Tests for Evidence Grounding Fallbacks:
+
+- valid paraphrased finding -> structured-event quote ❌ FAIL (Expected structured_event, got token_recall)
+- unrelated event -> rejected                        ✅ PASS
+- weak semantic event match -> rejected              ✅ PASS
+- >=75% token-overlap recovery                       ❌ FAIL (Did not recover exact candidate text)
+- below-threshold token overlap -> rejected          ✅ PASS
+- candidate text must exist verbatim in original chunk ✅ PASS
+
+Done.

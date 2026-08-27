@@ -54,7 +54,7 @@ export const analysisStyles = StyleSheet.create({
   findingBody: { fontSize: 9, lineHeight: 1.4 },
   findingRationaleLabel: { fontSize: 9, fontWeight: "bold", marginTop: 6, marginBottom: 2, color: "#111827" },
   findingRationaleText: { fontSize: 9, lineHeight: 1.45, color: "#374151" },
-  rtl: { textAlign: "right" },
+  rtl: { textAlign: "right", direction: "rtl" as const },
   cover: { backgroundColor: "#FFFFFF", padding: 0, justifyContent: "flex-end" },
   coverTitle: { color: "#111827", fontSize: 24, fontWeight: "bold", marginBottom: 8 },
   coverText: { color: "#374151", fontSize: 11, marginBottom: 4 },

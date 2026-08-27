@@ -1,0 +1,9 @@
+{
+  "hasRouter": true,
+  "eventsCount": 0,
+  "keys": [
+    "reason",
+    "skipped",
+    "candidate_articles"
+  ]
+}

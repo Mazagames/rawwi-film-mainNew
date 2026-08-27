@@ -58,9 +58,20 @@ export type BuildPdfReportCollectionsParams = {
   lang: "ar" | "en";
 };
 
-function sourceClassification(source: string | null | undefined): "violation" | "manual" | "glossary" {
-  if (source === "manual") return "manual";
-  if (source === "lexicon_mandatory" || source === "glossary") return "glossary";
+function sourceClassification(row: { source?: string | null; sourceKind?: string | null; severity?: string | null; category?: string | null }): "violation" | "note" | "manual" | "glossary" {
+  const src = row.sourceKind || row.source;
+  if (src === "manual") return "manual";
+  if (src === "lexicon_mandatory" || src === "glossary") return "glossary";
+  const sev = row.severity?.toLowerCase();
+  if (
+    sev === "note" ||
+    sev === "ملاحظة" ||
+    row.category === "ملاحظة" ||
+    src === "informational" ||
+    src === "special"
+  ) {
+    return "note";
+  }
   return "violation";
 }
 
@@ -92,7 +103,7 @@ function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCa
     .map((row, originalIndex) => ({
       id: row.canonicalFindingId?.trim() || row.id,
       title: row.titleAr || "—",
-      classification: sourceClassification(row.sourceKind),
+      classification: sourceClassification(row),
       reference: articleReference(row.primaryArticleId, params.lang),
       pageNumber: row.pageNumber ?? null,
       position: row.startOffsetGlobal ?? null,
@@ -113,7 +124,7 @@ function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCa
     .map((row, originalIndex) => ({
       id: row.id,
       title: row.titleAr || "—",
-      classification: sourceClassification(row.source),
+      classification: sourceClassification(row),
       reference: articleReference(row.articleId, params.lang),
       pageNumber: row.pageNumber ?? null,
       position: row.startOffsetGlobal ?? null,
@@ -127,7 +138,7 @@ function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCa
   const canonicalRows = (params.canonicalFindings ?? []).map((row, originalIndex) => ({
     id: row.canonical_finding_id || `canonical-${originalIndex}`,
     title: row.title_ar || "—",
-    classification: sourceClassification(row.source),
+    classification: sourceClassification(row),
     reference: articleReference(row.primary_article_id, params.lang),
     pageNumber: row.page_number ?? null,
     position: row.start_offset_global ?? null,
@@ -142,7 +153,7 @@ function buildFindingCards(params: BuildPdfReportCollectionsParams): PdfReportCa
     (article.top_findings ?? []).map((row, findingIndex) => ({
       id: `summary-${article.article_id}-${findingIndex}`,
       title: row.title_ar || "—",
-      classification: "violation" as const,
+      classification: sourceClassification(row),
       reference: articleReference(article.article_id, params.lang),
       pageNumber: null,
       position: null,

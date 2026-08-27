@@ -1,0 +1,51 @@
+Running Focused Tests for Evidence Grounding Fallbacks:
+
+- valid paraphrased finding -> structured-event quote ❌ FAIL (Expected structured_event, got token_recall)
+{
+  "finding_id": null,
+  "evidence": "في المشهد الأول، نرى الشخصية الرئيسية تحمل سلاحاً نارياً غير مرخص وتطلق النار في الهواء",
+  "candidate_matches": [
+    {
+      "method": "token_recall",
+      "text": "في المشهد الأول، نرى الشخصية الرئيسية تحمل سلاحاً نارياً غير مرخص وتطلق النار في الهواء",
+      "start": 0,
+      "end": 87
+    }
+  ],
+  "selected_match": {
+    "method": "token_recall",
+    "text": "في المشهد الأول، نرى الشخصية الرئيسية تحمل سلاحاً نارياً غير مرخص وتطلق النار في الهواء",
+    "start": 0,
+    "end": 87
+  },
+  "grounding_score": 0.75,
+  "rejection_reason": null
+}
+- unrelated event -> rejected                        [DEBUG] event match score: 42.62753036437247, contextOverlap: 0
+✅ PASS
+- weak semantic event match -> rejected              ✅ PASS
+- >=75% token-overlap recovery                       ❌ FAIL (Did not recover exact candidate text)
+{
+  "finding_id": null,
+  "evidence": "الجو كان متوتراً للغاية والناس يركضون في كل اتجاه",
+  "candidate_matches": [
+    {
+      "method": "token_recall",
+      "text": "الجو كان متوتراً للغاية والناس يركضون في كل اتجاه",
+      "start": 198,
+      "end": 247
+    }
+  ],
+  "selected_match": {
+    "method": "token_recall",
+    "text": "الجو كان متوتراً للغاية والناس يركضون في كل اتجاه",
+    "start": 198,
+    "end": 247
+  },
+  "grounding_score": 0.75,
+  "rejection_reason": null
+}
+- below-threshold token overlap -> rejected          ✅ PASS
+- candidate text must exist verbatim in original chunk ✅ PASS
+
+Done.

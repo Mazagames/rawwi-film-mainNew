@@ -1,0 +1,8 @@
+Γ£ô normalizeNote removes 0109: from the beginning of an evidence line
+Γ£ô normalizeNote removes multiple leaked line IDs
+Γ£ô normalizeNote preserves legitimate 4-digit colon content in the middle of a line
+Γ£ô normalizeNote preserves original line boundaries
+Γ£ô buildNoteSystemPrompt correctly includes new constraints
+Γ£ô adaptive reviewer scheduler reduces concurrency and recovers gradually under transient overload
+Γ£ô Notes use bounded concurrency, transient retries, failure isolation, and unchanged deduplication
+Γ£ô Gemini-only reviewer retries stay within the Gemini-only policy and do not invoke OpenAI fallback
