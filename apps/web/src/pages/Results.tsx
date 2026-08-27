@@ -3652,7 +3652,7 @@ function displayFindingTitle(params: {
                     const availableCategoriesMap = new Map<string, number>();
                     for (const n of displaySections.notes) {
                       const cat = n.category;
-                      availableCategoriesMap.set(cat, (availableCategoriesMap.get(cat) ?? 0) + 1);
+                      if (!cat.startsWith('article_')) { availableCategoriesMap.set(cat, (availableCategoriesMap.get(cat) ?? 0) + 1); }
                     }
 
                     const availableCategories = Array.from(availableCategoriesMap.entries())
