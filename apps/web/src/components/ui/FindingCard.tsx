@@ -205,8 +205,8 @@ export function FindingCard({
                   {/* Severity Badge */}
                   <div className={cn(
                     "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold border",
-                    severityConfig[finding!.severity].bg,
-                    severityConfig[finding!.severity].color,
+                    sevConfig.bg,
+                    sevConfig.color,
                     "border-current/20",
                     isOverriddenNotViolation && "opacity-60"
                   )}>
