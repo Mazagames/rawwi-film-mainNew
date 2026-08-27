@@ -103,11 +103,12 @@ export function FindingCard({
   const showHiddenFromOwner = isHiddenFromOwner && enableHiddenOverrides;
 
   // Strip Color Logic
-  let stripColor = isNoteCard ? (noteAccent === 'error' ? 'bg-error' : 'bg-info') : severityConfig[finding!.severity].strip;
+  const sevConfig = !isNoteCard && finding?.severity ? (severityConfig[finding.severity] || severityConfig['Medium']) : severityConfig['Medium'];
+  let stripColor = isNoteCard ? (noteAccent === 'error' ? 'bg-error' : 'bg-info') : sevConfig.strip;
   if (isOverriddenNotViolation) stripColor = 'bg-success';
   if (showHiddenFromOwner) stripColor = 'bg-text-muted';
 
-  const SevIcon = isNoteCard ? AlertCircle : severityConfig[finding!.severity].icon;
+  const SevIcon = isNoteCard ? AlertCircle : sevConfig.icon;
 
   const displayPage = !isNoteCard
     ? displayPageForFinding(

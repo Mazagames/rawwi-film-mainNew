@@ -1,38 +1,173 @@
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { JudgeFinding } from "./schemas.js";
 import type { StructuredEvent } from "./eventUnderstanding.js";
 import { findBestEventMatch, getEventConsistencyIssue } from "./eventConsistency.js";
 
-const STRICT_ARTICLE_RULES: Record<number, { subject: RegExp; conduct: RegExp }> = {
-  18: {
-    subject: /(دولة|حكومة|شعب|أجنبية|سفارة|سفير|منظمة دولية|الأمم المتحدة|مجلس الأمن|دبلوماسي|علاقات دولية|دولية|أجنبية)/i,
-    conduct: /(تحريض|تضليل|إضرار|تسبب|تدمير|قطع|علاقات دولية|علاقات خارجية|ردود فعل دولية|احتجاج|استفزاز|عدائي)/i,
-  },
-  19: {
-    subject: /(بنك|سوق|عملة|استثمار|أزمة مالية|استقرار اقتصادي|اقتصادي|تمويل|مؤسسة مالية|اقتصاد)/i,
-    conduct: /(تضليل مالي|ذعر مالي|سحب أموال|أزمة مالية|أضرار مالية|تأثير مالي|تخريب|إفلاس|تلاعب|انهيار|خسارة مالية|معلومات مالية مضللة)/i,
-  },
-  20: {
-    subject: /(شركة|مؤسسة|تجاري|استثمار|سوق|تجارة|عمل|ثقة|إفلاس|مستثمر|اقتصادي)/i,
-    conduct: /(مضللة|تجارية|استثمارية|ثقة تجارية|سمعة تجارية|إضرار|تسبب|إفلاس|تجاري|استثمار)/i,
-  },
-  21: {
-    subject: /(سرية|مصنف|محمي|مقيد|غير علني|معلومات سرية|معلومات محمية|ملف سري|وثيقة سرية|معلومات مصنفة)/i,
-    conduct: /(تسريب|اكتساب|وصول غير مصرح|إفشاء|نشر|توزيع|نقل|استخدام|استعمال|سرقة|اختراق|حصول بدون تصريح|إساءة استخدام)/i,
-  },
-};
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const repoRoot = join(__dirname, "..", "..", "..");
+const reviewerRoot = join(repoRoot, "reviewers", "v5");
+
+const STOPWORDS = new Set([
+  "ال", "أن", "و", "في", "من", "على", "إلى", "عن", "لا", "هذا", "هذه", "ذلك", "لذا", "لكن", "أو", "ثم", "قد", "إذا", "كان",
+  "يجب", "ما", "لم", "لن", "لن", "بأن", "بما", "كما", "أي", "كل", "بعض", "تلك", "الذي", "التي", "أحد", "أكثر", "أقل",
+  "المادة", "المراجع", "الملاحظة", "المرشح", "الحدث", "الاقتباس", "القرار", "الهدف", "السبب", "النتيجة", "المنشأ", "اللغة",
+  "بشكل", "عليه", "ليس", "يكون", "لأن", "حتى", "مع", "بعد", "قبل", "تكون", "غير", "ممكن", "متى", "فقط", "أثناء",
+  "ذكر", "ذكروا", "تذكر", "مذكور", "تتضمن", "يتضمن", "تستوفي", "تخرج", "تعتبر", "تثبت", "تظهر", "يظهر", "تؤثر", "يؤثر",
+  "تحتاج", "يحتاج", "الذي", "التي", "الذي", "التي", "تحدد", "يحدد", "تعمل", "يعمل", "تدل", "تدلل", "تدخل",
+]);
+
+const GENERIC_TERMS = new Set(["مادة", "ملاحظة", "مرشح", "حدث", "اقتباس", "قرار", "هدف", "سبب", "نتيجة", "منشأ", "لغة", "سياق", "مراجعة", "بناء", "تحليل", "محتوى", "مهم"]);
+
+function normalizeArabicToken(token: string): string {
+  return token
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[ًٌٍَُِّْ]/g, "")
+    .replace(/^ال/, "")
+    .trim();
+}
+
+function extractArabicTokens(text: string): string[] {
+  return Array.from(text.matchAll(/[\u0600-\u06FF]+/g), (match) => normalizeArabicToken(match[0]))
+    .filter((token) => token.length >= 3 && !STOPWORDS.has(token) && !GENERIC_TERMS.has(token));
+}
+
+function getMarkdownDefinition(articleId: number): string | null {
+  if (!existsSync(reviewerRoot)) return null;
+
+  const files = readdirSync(reviewerRoot)
+    .filter((fileName) => /^article_\d{2}_/.test(fileName))
+    .sort();
+
+  const targetFile = files.find((fileName) => fileName.startsWith(`article_${String(articleId).padStart(2, "0")}_`));
+  if (!targetFile) return null;
+
+  const filePath = join(reviewerRoot, targetFile);
+  if (!existsSync(filePath)) return null;
+
+  return readFileSync(filePath, "utf8");
+}
+
+function normalizeForTermMatch(value: string): string {
+  const normalized = normalizeArabicToken(value)
+    .replace(/[ة]/g, "")
+    .replace(/[ى]/g, "ي")
+    .replace(/[ًًٌٍ]/g, "")
+    .replace(/ا$/g, "")
+    .replace(/وا$/g, "")
+    .replace(/ين$/g, "")
+    .trim();
+  return normalized;
+}
+
+function tokenMatchesTerm(token: string, term: string): boolean {
+  const normalizedToken = normalizeForTermMatch(token);
+  const normalizedTerm = normalizeForTermMatch(term);
+  if (!normalizedToken || !normalizedTerm) return false;
+  return normalizedToken === normalizedTerm
+    || normalizedToken.includes(normalizedTerm)
+    || normalizedTerm.includes(normalizedToken)
+    || normalizedToken.slice(0, 3) === normalizedTerm.slice(0, 3);
+}
+
+function hasNegativeCue(text: string): boolean {
+  const normalized = normalizeArabicToken(text);
+  return /(دون|بدون|بلا|من دون|ما لم|ليس|غير|عدم|لا ضرر|لا damage|لا ضرر مالي|لا سلوك|لا دليل|لا كذب|لا تضليل)/i.test(normalized);
+}
+
+function buildDefinitionTerms(articleId: number): { subjectTerms: string[]; conductTerms: string[] } {
+  const markdown = getMarkdownDefinition(articleId);
+  if (!markdown) return { subjectTerms: [], conductTerms: [] };
+
+  const lines = markdown.split(/\r?\n/);
+  const subjectLines: string[] = [];
+  const conductLines: string[] = [];
+  let currentSection: "subject" | "conduct" | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const headingMatch = trimmed.match(/^(#{1,6})\s*(Decision Principle|Gate 1|Gate 2|Gate 3)/i);
+    if (headingMatch) {
+      if (/gate 1|decision principle/i.test(headingMatch[2])) {
+        currentSection = "subject";
+      } else if (/gate 2|gate 3/i.test(headingMatch[2])) {
+        currentSection = "conduct";
+      } else {
+        currentSection = null;
+      }
+      continue;
+    }
+
+    if (!trimmed) continue;
+    if (currentSection === "subject") {
+      subjectLines.push(trimmed);
+    } else if (currentSection === "conduct") {
+      conductLines.push(trimmed);
+    }
+  }
+
+  const collectTerms = (lines: string[]): string[] => {
+    const counts = new Map<string, number>();
+
+    for (const line of lines.slice(0, 6)) {
+      for (const token of extractArabicTokens(line)) {
+        const normalized = normalizeArabicToken(token);
+        if (!normalized || normalized.length < 2 || STOPWORDS.has(normalized)) continue;
+        counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+      }
+    }
+
+    return [...counts.entries()]
+      .filter(([, count]) => count >= 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 16)
+      .map(([term]) => term);
+  };
+
+  return {
+    subjectTerms: collectTerms(subjectLines),
+    conductTerms: collectTerms(conductLines),
+  };
+}
 
 function articleSpecificEvidenceScore(articleId: number, evidence: string, eventText: string): { pass: boolean; reason: string } {
-  const rules = STRICT_ARTICLE_RULES[articleId];
-  if (!rules) return { pass: true, reason: "no strict rule" };
+  const localEvidence = (evidence || eventText).trim();
+  if (!localEvidence) return { pass: true, reason: "no evidence to evaluate" };
 
-  const localEvidence = `${evidence}\n${eventText}`.trim();
-  const hasSubject = rules.subject.test(localEvidence);
-  const hasConduct = rules.conduct.test(localEvidence);
+  const { subjectTerms, conductTerms } = buildDefinitionTerms(articleId);
+  if (!subjectTerms.length || !conductTerms.length) {
+    return { pass: true, reason: "no reviewer definition available" };
+  }
+
+  const evidenceTokens = Array.from(new Set(extractArabicTokens(localEvidence)));
+  const hasSubject = subjectTerms.some((term) => evidenceTokens.some((token) => tokenMatchesTerm(token, term)));
+  const hasConduct = conductTerms.some((term) => evidenceTokens.some((token) => tokenMatchesTerm(token, term)));
+
+  if (articleId === 14) {
+    const explicitInsultSignal = /(فاشل|حمارة|غبي|أحمق|قذر|مقرف|خائن|متخلف|عديم التربية|سافل|دنيء|حقير|مخجل|مقزز|مذل|مجرم|وحش|غليظ|عبيط|شتيمة|إهانة|مهين|مسيئ|محتقر|مذل)/i;
+    if (explicitInsultSignal.test(localEvidence)) {
+      return { pass: true, reason: "explicit insult evidence present" };
+    }
+  }
+
+  if (hasNegativeCue(localEvidence)) {
+    return {
+      pass: false,
+      reason: `article ${articleId} requires explicit positive article-specific evidence; negated or weak wording does not satisfy the gate`,
+    };
+  }
+
+  if (subjectTerms.length < 2 || conductTerms.length < 2) {
+    return { pass: true, reason: "definition did not expose enough article-specific cues" };
+  }
 
   if (!hasSubject || !hasConduct) {
     return {
       pass: false,
-      reason: `article ${articleId} requires an article-specific subject and conduct pair; evidence was too generic or topic-only`,
+      reason: `article ${articleId} requires article-specific subject and conduct evidence from the reviewer definition`,
     };
   }
 

@@ -106,10 +106,70 @@ function testArticleOwnershipGateKeepsExplicitCommercialConduct(): void {
   console.log("✓ article ownership gate preserves explicit commercial conduct");
 }
 
+function testArticleOwnershipGateRejectsWeakInternationalAssignmentForInsultEvidence(): void {
+  const events: StructuredEvent[] = [
+    {
+      event_id: 4,
+      quote: "قام الرجل وقال: قوم يا عديم التربية، ثم ذكر العراق والسفارة فقط في سياق عام.",
+      event_summary: "insult and stray international reference",
+      actor: "unknown",
+      action: "insult",
+      target: "unknown",
+      intent: "humiliate",
+      consequence: "none",
+      dominant_meaning: "insult",
+      start_offset: 700,
+      end_offset: 820,
+    } as StructuredEvent,
+  ];
+
+  const findings = [
+    buildFinding(18, "ذكر العراق والسفارة في المشهد السياسي", 4, 700, 760),
+    buildFinding(14, "قوم يا عديم التربية", 4, 700, 760),
+  ];
+
+  const result = enforceDeterministicOwnership(findings, events, "");
+  const survivingArticleIds = result.finalFindings.map((finding) => finding.article_id).sort((a, b) => a - b);
+
+  assert.deepEqual(survivingArticleIds, [14], `expected only article 14 to survive for the insult evidence, got ${survivingArticleIds.join(",")}`);
+  console.log("✓ article ownership gate rejects weak article 18 assignment for insult-only evidence");
+}
+
+function testArticleOwnershipGateKeepsDistinctArticlesWhenEachHasOwnProof(): void {
+  const events: StructuredEvent[] = [
+    {
+      event_id: 5,
+      quote: "انشروا أكاذيب ضد السفارة العراقية لقطع العلاقات الدبلوماسية، وسمعوا شخصاً يهذي: يا فاشل يا عديم التربية.",
+      event_summary: "international harm and personal insult",
+      actor: "unknown",
+      action: "spread",
+      target: "unknown",
+      intent: "harm",
+      consequence: "international tension",
+      dominant_meaning: "multi-harm",
+      start_offset: 900,
+      end_offset: 1040,
+    } as StructuredEvent,
+  ];
+
+  const findings = [
+    buildFinding(18, "انشروا أكاذيب ضد السفارة العراقية لقطع العلاقات الدبلوماسية", 5, 900, 980),
+    buildFinding(14, "يا فاشل يا عديم التربية", 5, 900, 980),
+  ];
+
+  const result = enforceDeterministicOwnership(findings, events, "");
+  const survivingArticleIds = result.finalFindings.map((finding) => finding.article_id).sort((a, b) => a - b);
+
+  assert.deepEqual(survivingArticleIds, [14, 18], `expected articles 14 and 18 to survive when each has its own proof, got ${survivingArticleIds.join(",")}`);
+  console.log("✓ article ownership gate preserves distinct article assignments when each article has independent proof");
+}
+
 function main(): void {
   testArticleOwnershipGateRejectsFalsePositiveArticle18And19();
   testArticleOwnershipGateKeepsExplicitInternationalAndConfidentialConduct();
   testArticleOwnershipGateKeepsExplicitCommercialConduct();
+  testArticleOwnershipGateRejectsWeakInternationalAssignmentForInsultEvidence();
+  testArticleOwnershipGateKeepsDistinctArticlesWhenEachHasOwnProof();
 }
 
 main();
